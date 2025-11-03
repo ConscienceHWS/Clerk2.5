@@ -10,6 +10,250 @@ from .table_parser import extract_table_with_rowspan_colspan, parse_operational_
 
 logger = get_logger("pdf_converter_v2.parser.noise")
 
+
+def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> None:
+    """从文本中解析天气数据，支持多条记录
+    
+    文本格式示例：
+    日期:2025.9.23 天气 多云 温度26.7-27.4℃湿度66.6-67.4%RH 风速0.9-1.0 m/s 风向东偏北 日期:2025.9.24 天气 多云 温度24.5-28.6℃湿度65.3-67.1%RH 风速1.4-1.5 m/s 风向东偏北
+    """
+    if not weather_text or "日期" not in weather_text:
+        return
+    
+    # 直接使用分段解析方式，因为第一个正则表达式太复杂且容易出错
+    # 首先尝试分段解析，按日期分段，然后逐字段提取
+    date_pattern = r'日期[:：]\s*([\d.\-]+)'
+    weather_pattern_simple = r'天气\s+([^\s温度湿度风速风向日期]+)'
+    # 温度模式：温度后跟数字，直到遇到"℃"或"湿度"
+    temp_pattern = r'温度\s*([0-9.\-]+)[℃°C]?'
+    # 湿度模式：湿度后跟数字，直到遇到"%RH"或"风速"
+    humidity_pattern = r'湿度\s*([0-9.\-]+)[%RH]?'
+    # 风速模式：风速后跟数字和"m/s"
+    wind_speed_pattern = r'风速\s*([0-9.\-]+)\s*m/s'
+    # 风向模式：风向后跟方向描述，直到遇到"日期"或文本结束
+    wind_dir_pattern = r'风向\s*([^\s日期温度湿度风速]+)'
+    
+    # 找到所有日期位置，然后为每个日期解析一条记录
+    dates = list(re.finditer(date_pattern, weather_text))
+    if not dates:
+        logger.warning(f"[噪声检测] 未找到日期信息: {weather_text[:100]}")
+        return
+    
+    weather_found = False
+    for idx, date_match in enumerate(dates):
+        date_start = date_match.start()
+        # 找到下一个日期位置或文本末尾
+        if idx + 1 < len(dates):
+            next_date_match = dates[idx + 1]
+            section_end = next_date_match.start()
+        else:
+            section_end = len(weather_text)
+        
+        section = weather_text[date_start:section_end]
+        logger.debug(f"[噪声检测] 解析天气段落: {section}")
+        
+        weather = WeatherData()
+        weather.monitorAt = date_match.group(1).strip()
+        
+        # 提取天气（格式：天气 多云 或 天气多云）
+        w_match = re.search(weather_pattern_simple, section)
+        if w_match:
+            weather.weather = w_match.group(1).strip()
+            logger.debug(f"[噪声检测] 提取到天气: {weather.weather}")
+        
+        # 提取温度（格式：温度26.7-27.4℃ 或 温度 26.7-27.4℃）
+        t_match = re.search(temp_pattern, section)
+        if t_match:
+            temp = t_match.group(1).strip()
+            weather.temp = temp
+            logger.debug(f"[噪声检测] 提取到温度: {weather.temp}")
+        
+        # 提取湿度（格式：湿度66.6-67.4%RH 或 湿度 66.6-67.4%RH）
+        h_match = re.search(humidity_pattern, section)
+        if h_match:
+            humidity = h_match.group(1).strip()
+            weather.humidity = humidity
+            logger.debug(f"[噪声检测] 提取到湿度: {weather.humidity}")
+        
+        # 提取风速（格式：风速0.9-1.0 m/s 或 风速 0.9-1.0 m/s）
+        ws_match = re.search(wind_speed_pattern, section)
+        if ws_match:
+            wind_speed = ws_match.group(1).strip()
+            weather.windSpeed = wind_speed
+            logger.debug(f"[噪声检测] 提取到风速: {weather.windSpeed}")
+        
+        # 提取风向（格式：风向东北 或 风向 东北）
+        wd_match = re.search(wind_dir_pattern, section)
+        if wd_match:
+            weather.windDirection = wd_match.group(1).strip()
+            logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
+        
+        # 如果至少有一个字段不为空，则添加这条记录
+        if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
+            record.weather.append(weather)
+            weather_found = True
+            logger.info(f"[噪声检测] 解析到天气记录: {weather.to_dict()}")
+        else:
+            logger.warning(f"[噪声检测] 天气记录字段全为空，跳过: {section}")
+    
+    # 如果分段解析成功，就不需要继续执行后面的代码
+    if weather_found:
+        return
+    
+    # 如果分段解析没有成功，尝试其他方式（向后兼容）
+    if not weather_found:
+        # 尝试分段解析，更精确地匹配格式：日期:2025.9.23 天气 多云 温度26.7-27.4℃湿度66.6-67.4%RH 风速0.9-1.0 m/s 风向东北
+        # 注意：格式中字段和值之间可能没有空格，如"温度26.7-27.4℃"、"湿度66.6-67.4%RH"、"风速0.9-1.0 m/s"
+        # 需要在遇到单位符号或下一个字段名时停止匹配
+        date_pattern = r'日期[:：]\s*([\d.\-]+)'
+        weather_pattern_simple = r'天气\s+([^\s温度湿度风速风向日期]+)'
+        # 温度模式：温度后跟数字和单位，直到遇到"湿度"或其他字段
+        temp_pattern = r'温度\s*([0-9.\-]+)[℃°C]?'
+        # 湿度模式：湿度后跟数字和单位，直到遇到"风速"或其他字段
+        humidity_pattern = r'湿度\s*([0-9.\-]+)[%RH]?'
+        # 风速模式：风速后跟数字和单位，直到遇到"风向"或其他字段
+        wind_speed_pattern = r'风速\s*([0-9.\-]+)\s*m/s'
+        # 风向模式：风向后跟方向描述，直到遇到"日期"或文本结束
+        wind_dir_pattern = r'风向\s*([^\s日期温度湿度风速]+)'
+        
+        # 找到所有日期位置，然后为每个日期解析一条记录
+        dates = list(re.finditer(date_pattern, weather_text))
+        if not dates:
+            logger.warning(f"[噪声检测] 未找到日期信息: {weather_text[:100]}")
+            return
+        
+        for idx, date_match in enumerate(dates):
+            date_start = date_match.start()
+            # 找到下一个日期位置或文本末尾
+            if idx + 1 < len(dates):
+                next_date_match = dates[idx + 1]
+                section_end = next_date_match.start()
+            else:
+                section_end = len(weather_text)
+            
+            section = weather_text[date_start:section_end]
+            logger.debug(f"[噪声检测] 解析天气段落: {section}")
+            
+            weather = WeatherData()
+            weather.monitorAt = date_match.group(1).strip()
+            
+            # 提取天气（格式：天气 多云 或 天气多云）
+            w_match = re.search(weather_pattern_simple, section)
+            if w_match:
+                weather.weather = w_match.group(1).strip()
+                logger.debug(f"[噪声检测] 提取到天气: {weather.weather}")
+            
+            # 提取温度（格式：温度26.7-27.4℃ 或 温度 26.7-27.4℃）
+            t_match = re.search(temp_pattern, section)
+            if t_match:
+                temp = t_match.group(1).strip()
+                weather.temp = temp
+                logger.debug(f"[噪声检测] 提取到温度: {weather.temp}")
+            
+            # 提取湿度（格式：湿度66.6-67.4%RH 或 湿度 66.6-67.4%RH）
+            h_match = re.search(humidity_pattern, section)
+            if h_match:
+                humidity = h_match.group(1).strip()
+                weather.humidity = humidity
+                logger.debug(f"[噪声检测] 提取到湿度: {weather.humidity}")
+            
+            # 提取风速（格式：风速0.9-1.0 m/s 或 风速 0.9-1.0 m/s）
+            ws_match = re.search(wind_speed_pattern, section)
+            if ws_match:
+                wind_speed = ws_match.group(1).strip()
+                weather.windSpeed = wind_speed
+                logger.debug(f"[噪声检测] 提取到风速: {weather.windSpeed}")
+            
+            # 提取风向（格式：风向东北 或 风向 东北）
+            wd_match = re.search(wind_dir_pattern, section)
+            if wd_match:
+                weather.windDirection = wd_match.group(1).strip()
+                logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
+            
+            # 如果至少有一个字段不为空，则添加这条记录
+            if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
+                record.weather.append(weather)
+                logger.info(f"[噪声检测] 解析到天气记录(简化模式): {weather.to_dict()}")
+            else:
+                logger.warning(f"[噪声检测] 天气记录字段全为空，跳过: {section}")
+
+
+def parse_header_from_combined_cell(cell_text: str) -> dict:
+    """从组合单元格中解析头部信息
+    
+    单元格格式示例：
+    项目名称:武汉黄陂路102号南站改造工程竣工验收检测依据:GB 12348-2008 □GB3096-2008 □其他:声级计型号/编号:AY2201 声校准器型号/编号:AY2204 检测前校准值:93.8 dB(A) 检测后校准值:94.0 dB(A)气象条件...
+    """
+    result = {
+        "project": "",
+        "standardReferences": "",
+        "soundLevelMeterMode": "",
+        "soundCalibratorMode": "",
+        "calibrationValueBefore": "",
+        "calibrationValueAfter": ""
+    }
+    
+    if not cell_text or "项目名称" not in cell_text:
+        return result
+    
+    # 解析项目名称：项目名称:xxx（后面跟着检测依据或其他字段，可能没有分隔符）
+    # 匹配模式：项目名称:xxx（直到检测依据、监测依据、声级计、声校准器、检测前、检测后或气象条件）
+    # 注意：项目名称后面可能直接跟着"检测依据"没有分隔符
+    project_match = re.search(r'项目名称[:：](.+?)(?:检测依据|监测依据|声级计|声校准器|检测前|检测后|气象条件)', cell_text)
+    if project_match:
+        result["project"] = project_match.group(1).strip()
+    
+    # 解析检测依据：检测依据:GB 12348-2008 □GB3096-2008 □其他:声级计...
+    # 也可能格式为：检测依据:xxx或监测依据:xxx
+    # 注意：检测依据后面可能跟着"□其他:"，需要截断到"声级计"或"声校准器"或"检测前"或"检测后"或"气象条件"
+    standard_match = re.search(r'(?:检测依据|监测依据)[:：](.+?)(?:声级计|声校准器|检测前|检测后|气象条件)', cell_text)
+    if standard_match:
+        standard_text = standard_match.group(1).strip()
+        # 去掉可能的"□其他:"部分（如果存在）
+        standard_text = re.sub(r'□其他[:：]?$', '', standard_text).strip()
+        # 提取所有GB标准（格式如 GB 12348-2008 或 GB3096-2008）
+        gb_standards = re.findall(r'GB\s*\d+[-\.]?\d*[-\.]?\d*', standard_text)
+        if gb_standards:
+            result["standardReferences"] = " ".join(gb_standards)
+        else:
+            # 如果没有找到GB标准，保留原文本（去掉可能的□标记）
+            result["standardReferences"] = re.sub(r'□\s*', '', standard_text).strip()
+    
+    # 解析声级计型号/编号：声级计型号/编号:AY2201 或 声级计型号:AY2201
+    sound_meter_match = re.search(r'声级计型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9]+)', cell_text)
+    if sound_meter_match:
+        result["soundLevelMeterMode"] = sound_meter_match.group(1).strip()
+    
+    # 解析声校准器型号/编号：声校准器型号/编号:AY2204 或 声校准器型号:AY2204
+    calibrator_match = re.search(r'声校准器型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9]+)', cell_text)
+    if calibrator_match:
+        result["soundCalibratorMode"] = calibrator_match.group(1).strip()
+    
+    # 解析检测前校准值：检测前校准值:93.8 dB(A)
+    before_cal_match = re.search(r'检测前校准值[:：]\s*([0-9.]+)\s*dB\(A\)', cell_text)
+    if before_cal_match:
+        cal_value = before_cal_match.group(1).strip()
+        result["calibrationValueBefore"] = f"{cal_value} dB(A)"
+    else:
+        # 如果没有单位，只提取数值
+        before_cal_match2 = re.search(r'检测前校准值[:：]\s*([0-9.]+)', cell_text)
+        if before_cal_match2:
+            result["calibrationValueBefore"] = before_cal_match2.group(1).strip()
+    
+    # 解析检测后校准值：检测后校准值:94.0 dB(A)
+    after_cal_match = re.search(r'检测后校准值[:：]\s*([0-9.]+)\s*dB\(A\)', cell_text)
+    if after_cal_match:
+        cal_value = after_cal_match.group(1).strip()
+        result["calibrationValueAfter"] = f"{cal_value} dB(A)"
+    else:
+        # 如果没有单位，只提取数值
+        after_cal_match2 = re.search(r'检测后校准值[:：]\s*([0-9.]+)', cell_text)
+        if after_cal_match2:
+            result["calibrationValueAfter"] = after_cal_match2.group(1).strip()
+    
+    return result
+
+
 def parse_noise_detection_record(markdown_content: str, first_page_image: Optional = None, output_dir: Optional[str] = None) -> NoiseDetectionRecord:
     """解析噪声检测记录 - v2版本不依赖OCR，只从markdown内容解析"""
     record = NoiseDetectionRecord()
@@ -21,103 +265,115 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
         return record
 
     first_table = tables[0]
+    
+    # 首先尝试从组合单元格中解析头部信息（这种情况是多个字段都在一个单元格中）
+    header_extracted = False
+    weather_extracted = False
     for row in first_table:
-        logger.debug(f"[噪声检测][ROW] len={len(row)}, content={row}")
-        if len(row) >= 2:
-            if "项目名称" in row[0]:
-                for i, cell in enumerate(row):
-                    if "项目名称" in cell and i + 1 < len(row):
-                        record.project = row[i + 1]
-                        if not record.project.strip():
-                            logger.error(f"[噪声检测] 项目名称 为空，行数据: {row}")
+        for cell in row:
+            # 检查单元格是否包含多个头部字段的关键词
+            if "项目名称" in cell and ("检测依据" in cell or "监测依据" in cell or "声级计" in cell or "声校准器" in cell):
+                logger.debug(f"[噪声检测] 发现组合单元格，尝试解析: {cell[:100]}...")
+                parsed_header = parse_header_from_combined_cell(cell)
+                if parsed_header["project"]:
+                    record.project = parsed_header["project"]
+                    header_extracted = True
+                if parsed_header["standardReferences"]:
+                    record.standardReferences = parsed_header["standardReferences"]
+                if parsed_header["soundLevelMeterMode"]:
+                    record.soundLevelMeterMode = parsed_header["soundLevelMeterMode"]
+                if parsed_header["soundCalibratorMode"]:
+                    record.soundCalibratorMode = parsed_header["soundCalibratorMode"]
+                if parsed_header["calibrationValueBefore"]:
+                    record.calibrationValueBefore = parsed_header["calibrationValueBefore"]
+                if parsed_header["calibrationValueAfter"]:
+                    record.calibrationValueAfter = parsed_header["calibrationValueAfter"]
+                
+                # 如果单元格中包含气象条件，也从这里解析
+                if "气象条件" in cell:
+                    weather_text = cell
+                    # 从"气象条件"之后的内容开始解析
+                    if "气象条件" in weather_text:
+                        # 提取气象条件部分（从"气象条件"开始到字符串末尾或下一个主要字段）
+                        weather_section = weather_text.split("气象条件")[-1] if "气象条件" in weather_text else weather_text
+                        parse_weather_from_text(weather_section, record)
+                        weather_extracted = True
+                        logger.info(f"[噪声检测] 从组合单元格解析到天气信息: {len(record.weather)} 条记录")
+                
+                if header_extracted:
+                    logger.info(f"[噪声检测] 从组合单元格解析到头部信息: project={record.project}, "
+                              f"standardReferences={record.standardReferences}, "
+                              f"soundLevelMeterMode={record.soundLevelMeterMode}, "
+                              f"soundCalibratorMode={record.soundCalibratorMode}")
+                    if not weather_extracted:
                         break
-            if any(k in row[0] for k in ["检测依据", "监测依据"]):
-                for i, cell in enumerate(row):
-                    if any(k in cell for k in ["检测依据", "监测依据"]) and i + 1 < len(row):
-                        record.standardReferences = row[i + 1]
-                        if not record.standardReferences.strip():
-                            logger.error(f"[噪声检测] 检测/监测依据 为空，行数据: {row}")
-                        break
-            if any(k in row[0] for k in ["声纹计型号", "声级计型号"]):
-                for i, cell in enumerate(row):
-                    if any(k in cell for k in ["声纹计型号", "声级计型号"]) and i + 1 < len(row):
-                        record.soundLevelMeterMode = row[i + 1]
-                        if not record.soundLevelMeterMode.strip():
-                            logger.error(f"[噪声检测] 声级计型号 为空，行数据: {row}")
-                        break
-            if any(k in row[0] for k in ["声纹准器型号", "声级计校准器型号"]):
-                for i, cell in enumerate(row):
-                    if any(k in cell for k in ["声纹准器型号", "声级计校准器型号"]) and i + 1 < len(row):
-                        record.soundCalibratorMode = row[i + 1]
-                        if not record.soundCalibratorMode.strip():
-                            logger.error(f"[噪声检测] 声级计校准器型号 为空，行数据: {row}")
-                        break
-            if "检测前校准值" in row[0]:
-                for i, cell in enumerate(row):
-                    if "检测前校准值" in cell and i + 1 < len(row):
-                        record.calibrationValueBefore = row[i + 1]
-                        if not record.calibrationValueBefore.strip():
-                            logger.error(f"[噪声检测] 检测前校准值 为空，行数据: {row}")
-                        break
-            if "检测后校准值" in row[0]:
-                for i, cell in enumerate(row):
-                    if "检测后校准值" in cell and i + 1 < len(row):
-                        record.calibrationValueAfter = row[i + 1]
-                        if not record.calibrationValueAfter.strip():
-                            logger.error(f"[噪声检测] 检测后校准值 为空，行数据: {row}")
-                        break
+    
+    # 如果还没有提取到头部信息，使用原来的方法（假设字段分布在不同的单元格中）
+    if not header_extracted:
+        for row in first_table:
+            logger.debug(f"[噪声检测][ROW] len={len(row)}, content={row}")
+            if len(row) >= 2:
+                if "项目名称" in row[0]:
+                    for i, cell in enumerate(row):
+                        if "项目名称" in cell and i + 1 < len(row):
+                            record.project = row[i + 1]
+                            if not record.project.strip():
+                                logger.error(f"[噪声检测] 项目名称 为空，行数据: {row}")
+                            break
+                if any(k in row[0] for k in ["检测依据", "监测依据"]):
+                    for i, cell in enumerate(row):
+                        if any(k in cell for k in ["检测依据", "监测依据"]) and i + 1 < len(row):
+                            record.standardReferences = row[i + 1]
+                            if not record.standardReferences.strip():
+                                logger.error(f"[噪声检测] 检测/监测依据 为空，行数据: {row}")
+                            break
+                if any(k in row[0] for k in ["声纹计型号", "声级计型号"]):
+                    for i, cell in enumerate(row):
+                        if any(k in cell for k in ["声纹计型号", "声级计型号"]) and i + 1 < len(row):
+                            record.soundLevelMeterMode = row[i + 1]
+                            if not record.soundLevelMeterMode.strip():
+                                logger.error(f"[噪声检测] 声级计型号 为空，行数据: {row}")
+                            break
+                if any(k in row[0] for k in ["声纹准器型号", "声级计校准器型号"]):
+                    for i, cell in enumerate(row):
+                        if any(k in cell for k in ["声纹准器型号", "声级计校准器型号"]) and i + 1 < len(row):
+                            record.soundCalibratorMode = row[i + 1]
+                            if not record.soundCalibratorMode.strip():
+                                logger.error(f"[噪声检测] 声级计校准器型号 为空，行数据: {row}")
+                            break
+                if "检测前校准值" in row[0]:
+                    for i, cell in enumerate(row):
+                        if "检测前校准值" in cell and i + 1 < len(row):
+                            record.calibrationValueBefore = row[i + 1]
+                            if not record.calibrationValueBefore.strip():
+                                logger.error(f"[噪声检测] 检测前校准值 为空，行数据: {row}")
+                            break
+                if "检测后校准值" in row[0]:
+                    for i, cell in enumerate(row):
+                        if "检测后校准值" in cell and i + 1 < len(row):
+                            record.calibrationValueAfter = row[i + 1]
+                            if not record.calibrationValueAfter.strip():
+                                logger.error(f"[噪声检测] 检测后校准值 为空，行数据: {row}")
+                            break
 
-    # 解析气象条件 - 支持多条记录
-    for row in first_table:
-        if len(row) >= 2 and "气象条件" in row[0]:
-            text = " ".join(row[1:])
+    # 解析气象条件 - 支持多条记录（如果还没有从组合单元格中提取到天气数据）
+    if not weather_extracted:
+        for row in first_table:
+            if len(row) >= 2 and "气象条件" in row[0]:
+                text = " ".join(row[1:])
+                parse_weather_from_text(text, record)
+                break
             
-            # 使用正则表达式匹配所有天气记录（以"日期："开始）
-            # 匹配模式：日期：xxx 天气xxx 温度xxx 湿度xxx 风速xxx 风向xxx
-            weather_pattern = r'日期[:：]\s*([\d.\-]+).*?(?:天气[:：]\s*([^\s温度湿度风速风向]+))?.*?(?:温度[:：]?\s*([0-9.\-\s~]+))?.*?(?:湿度[:：]?\s*([0-9.\-\s~]+))?.*?(?:风速[:：]?\s*([0-9.\-\s~]+))?.*?(?:风向[:：]?\s*([^\s温度湿度风速日期]+))?'
-            weather_matches = re.finditer(weather_pattern, text, re.DOTALL | re.IGNORECASE)
-            
-            weather_found = False
-            for match in weather_matches:
-                weather = WeatherData()
-                if match.group(1):
-                    weather.monitorAt = match.group(1).strip()
-                if match.group(2):
-                    weather.weather = match.group(2).strip()
-                if match.group(3):
-                    weather.temp = match.group(3).strip()
-                if match.group(4):
-                    weather.humidity = match.group(4).strip()
-                if match.group(5):
-                    weather.windSpeed = match.group(5).strip()
-                if match.group(6):
-                    weather.windDirection = match.group(6).strip()
-                
-                # 如果至少有一个字段不为空，则添加这条记录
-                if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
-                    record.weather.append(weather)
-                    weather_found = True
-            
-            # 如果没有找到匹配的记录，使用旧的单条记录解析方式（向后兼容）
-            if not weather_found:
-                weather = WeatherData()
-                m = re.search(r'日期[:：]\s*([\d.\-]+)', text)
-                if m: weather.monitorAt = m.group(1).strip()
-                m = re.search(r'天气[:：]\s*([^\s]+)', text)
-                if m: weather.weather = m.group(1).strip()
-                m = re.search(r'温度[:：]?\s*([0-9.\-]+)', text)
-                if m: weather.temp = m.group(1).strip()
-                m = re.search(r'湿度[:：]?\s*([0-9.\-]+)', text)
-                if m: weather.humidity = m.group(1).strip()
-                m = re.search(r'风速[:：]?\s*([0-9.\-]+)', text)
-                if m: weather.windSpeed = m.group(1).strip()
-                m = re.search(r'风向[:：]?\s*([^\s]+)', text)
-                if m: weather.windDirection = m.group(1).strip()
-                
-                # 如果至少有一个字段不为空，则添加这条记录
-                if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
-                    record.weather.append(weather)
-            break
+            # 也检查是否在其他单元格中有气象条件
+            for cell in row:
+                if "气象条件" in cell and "日期" in cell:
+                    # 提取气象条件部分
+                    weather_section = cell.split("气象条件")[-1] if "气象条件" in cell else cell
+                    parse_weather_from_text(weather_section, record)
+                    weather_extracted = True
+                    break
+            if weather_extracted:
+                break
 
     for table in tables:
         # 首先识别表头，找到各列的索引

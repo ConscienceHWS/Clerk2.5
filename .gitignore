@@ -19,3 +19,4 @@ output/
 *.pdf
 *.png
 bak/
+test_output/
