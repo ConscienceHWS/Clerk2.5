@@ -9,11 +9,33 @@ from ..utils.logging_config import get_logger
 from .document_type import detect_document_type
 from .noise_parser import parse_noise_detection_record
 from .electromagnetic_parser import parse_electromagnetic_detection_record
+from .table_parser import parse_operational_conditions
 
 logger = get_logger("pdf_converter_v2.parser.json")
 
-def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Image.Image] = None, output_dir: Optional[str] = None) -> Dict[str, Any]:
-    """将Markdown内容转换为JSON - v2独立版本，不依赖v1和OCR"""
+def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Image.Image] = None, output_dir: Optional[str] = None, forced_document_type: Optional[str] = None) -> Dict[str, Any]:
+    """将Markdown内容转换为JSON - v2独立版本，不依赖v1和OCR
+    如果提供 forced_document_type（正式全称），则优先按指定类型解析。
+    支持映射：
+      - noiseMonitoringRecord -> 使用噪声解析
+      - electromagneticTestRecord -> 使用电磁解析
+      - 其他类型：返回空数据占位
+    """
+    if forced_document_type:
+        if forced_document_type == "noiseMonitoringRecord":
+            data = parse_noise_detection_record(markdown_content, first_page_image=None, output_dir=output_dir).to_dict()
+            return {"document_type": forced_document_type, "data": data}
+        if forced_document_type == "electromagneticTestRecord":
+            data = parse_electromagnetic_detection_record(markdown_content).to_dict()
+            return {"document_type": forced_document_type, "data": data}
+        if forced_document_type == "operatingConditionInfo":
+            # 仅解析工况信息
+            op_list = parse_operational_conditions(markdown_content)
+            # 序列化为可JSON编码的结构
+            serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
+            return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
+        return {"document_type": forced_document_type, "data": {}}
+
     doc_type = detect_document_type(markdown_content)
     
     if doc_type == "noise_detection":

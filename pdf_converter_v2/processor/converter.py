@@ -42,7 +42,8 @@ async def convert_to_markdown(
     return_model_output: bool = True,
     return_md: bool = True,
     return_images: bool = False,
-    return_content_list: bool = False
+    return_content_list: bool = False,
+    forced_document_type: Optional[str] = None
 ):
     """将PDF/图片转换为Markdown的主要函数（使用新的API接口）"""
     
@@ -86,7 +87,23 @@ async def convert_to_markdown(
             # 打开文件并添加到表单数据（文件会在请求发送时读取）
             file_obj = open(input_file, 'rb')
             try:
-                form_data.add_field('files', file_obj, filename=os.path.basename(input_file), content_type='application/pdf')
+                # 根据扩展名设置内容类型，默认使用application/octet-stream
+                ext = (Path(input_file).suffix or "").lower()
+                content_type = 'application/octet-stream'
+                if ext == '.pdf':
+                    content_type = 'application/pdf'
+                elif ext in {'.png'}:
+                    content_type = 'image/png'
+                elif ext in {'.jpg', '.jpeg'}:
+                    content_type = 'image/jpeg'
+                elif ext in {'.bmp'}:
+                    content_type = 'image/bmp'
+                elif ext in {'.tif', '.tiff'}:
+                    content_type = 'image/tiff'
+                elif ext in {'.webp'}:
+                    content_type = 'image/webp'
+
+                form_data.add_field('files', file_obj, filename=os.path.basename(input_file), content_type=content_type)
                 
                 # 发送API请求
                 async with aiohttp.ClientSession() as session:
@@ -183,7 +200,12 @@ async def convert_to_markdown(
                     # 注意：v2版本不涉及MinerU和PaddleOCR的具体调用，只进行JSON解析
                     # first_page_image设为None，因为v2版本不处理PDF图片
                     from ..parser.json_converter import parse_markdown_to_json
-                    json_data = parse_markdown_to_json(original_content, first_page_image=None, output_dir=output_dir)
+                    json_data = parse_markdown_to_json(
+                        original_content,
+                        first_page_image=None,
+                        output_dir=output_dir,
+                        forced_document_type=forced_document_type,
+                    )
                     json_path = os.path.join(output_dir, f"{file_name}.json")
                     async with aiofiles.open(json_path, 'w', encoding='utf-8') as f:
                         await f.write(json.dumps(json_data, ensure_ascii=False, indent=2))

@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse
 import json
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing_extensions import Annotated
+from typing_extensions import Annotated, Literal
 
 from ..processor.converter import convert_to_markdown
 from ..utils.logging_config import get_logger
@@ -94,16 +94,9 @@ task_status = {}
 
 
 class ConversionRequest(BaseModel):
-    """转换请求模型（与 v1 保持一致）"""
-    max_pages: Optional[int] = DEFAULT_MAX_PAGES
-    formula_enable: bool = True
-    table_enable: bool = True
-    embed_images: bool = True
-    model_name: str = DEFAULT_MODEL_NAME
-    gpu_memory_utilization: float = DEFAULT_GPU_MEMORY_UTILIZATION
-    dpi: int = DEFAULT_DPI
-    output_json: bool = False
-    use_split: bool = False
+    """转换请求模型（v2 精简版）"""
+    # 新增：强制文档类型（正式全称）
+    doc_type: Optional[str] = None
 
 
 class ConversionResponse(BaseModel):
@@ -183,15 +176,16 @@ async def process_conversion_task(
         result = await convert_to_markdown(
             input_file=file_path,
             output_dir=output_dir,
-            max_pages=request.max_pages,
+            # v2: 去除max_pages、公式/表格等前端可调参数
             is_ocr=False,
-            formula_enable=request.formula_enable,
-            table_enable=request.table_enable,
+            formula_enable=True,
+            table_enable=True,
             language=DEFAULT_LANGUAGE,
             backend=DEFAULT_BACKEND,
             url=DEFAULT_API_URL,
-            embed_images=request.embed_images,
-            output_json=request.output_json,
+            # v2: 固定为 False
+            embed_images=False,
+            output_json=True,
             start_page_id=DEFAULT_START_PAGE_ID,
             end_page_id=DEFAULT_END_PAGE_ID,
             parse_method=DEFAULT_PARSE_METHOD,
@@ -201,7 +195,8 @@ async def process_conversion_task(
             return_model_output=DEFAULT_RETURN_MODEL_OUTPUT,
             return_md=DEFAULT_RETURN_MD,
             return_images=DEFAULT_RETURN_IMAGES,
-            return_content_list=DEFAULT_RETURN_CONTENT_LIST
+            return_content_list=DEFAULT_RETURN_CONTENT_LIST,
+            forced_document_type=request.doc_type
         )
         
         if result:
@@ -237,15 +232,8 @@ async def process_conversion_task(
 @app.post("/convert", response_model=ConversionResponse)
 async def convert_file(
     file: Annotated[UploadFile, File(description="上传的PDF或图片文件")],
-    max_pages: Annotated[Optional[int], Form()] = DEFAULT_MAX_PAGES,
-    formula_enable: Annotated[bool, Form()] = True,
-    table_enable: Annotated[bool, Form()] = True,
-    embed_images: Annotated[bool, Form()] = True,
-    model_name: Annotated[str, Form()] = DEFAULT_MODEL_NAME,
-    gpu_memory_utilization: Annotated[float, Form()] = DEFAULT_GPU_MEMORY_UTILIZATION,
-    dpi: Annotated[int, Form()] = DEFAULT_DPI,
-    output_json: Annotated[bool, Form()] = False,
-    use_split: Annotated[bool, Form()] = False,
+    # 新增：类型参数（英文传参） noiseRec | emRec | equipLog | opStatus
+    type: Annotated[Optional[Literal["noiseRec", "emRec", "opStatus"]], Form(description="文档类型：noiseRec | emRec | opStatus")] = None,
 ):
     """
     转换PDF/图片文件（异步处理）
@@ -257,15 +245,7 @@ async def convert_file(
     4. 客户端使用task_id轮询状态或直接获取结果
     
     - **file**: 上传的文件（PDF或图片）
-    - **max_pages**: 最大转换页数（默认10）
-    - **formula_enable**: 启用公式识别（默认True）
-    - **table_enable**: 启用表格识别（默认True）
-    - **embed_images**: 嵌入图片为base64（默认True）
-    - **model_name**: 模型名称
-    - **gpu_memory_utilization**: GPU内存利用率（默认0.9）
-    - **dpi**: PDF转图片的DPI（默认200）
-    - **output_json**: 输出JSON格式（默认False）
-    - **use_split**: 使用图片分割提高精度（默认False）
+    - **type**: 文档类型（noiseRec | emRec | opStatus）
     
     注意：v2 版本内部使用外部API进行转换，v2特有的配置参数（如API URL、backend等）
     通过环境变量或配置文件设置，不通过API参数传入。
@@ -279,7 +259,7 @@ async def convert_file(
     os.makedirs(output_dir, exist_ok=True)
     
     # 保存上传的文件
-    file_path = os.path.join(temp_dir, file.filename or "uploaded_file.pdf")
+    file_path = os.path.join(temp_dir, file.filename or "uploaded_file")
     try:
         with open(file_path, "wb") as f:
             content = await file.read()
@@ -287,6 +267,36 @@ async def convert_file(
         logger.info(f"[任务 {task_id}] 文件已保存: {file_path} ({len(content)} bytes)")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
+    
+    # 计算页数并限制：>20页直接报错；图片按1页处理
+    try:
+        suffix = (Path(file_path).suffix or "").lower()
+        pages = 1
+        if suffix == ".pdf":
+            # 粗略统计：基于PDF标记
+            with open(file_path, "rb") as pf:
+                pdf_bytes = pf.read()
+                try:
+                    pages = pdf_bytes.count(b"/Type /Page")
+                    if pages <= 0:
+                        pages = 1
+                except Exception:
+                    pages = 1
+        else:
+            # 常见图片格式视为单页
+            pages = 1
+        if pages > 20:
+            # 清理临时目录后报错
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+            raise HTTPException(status_code=400, detail="文件页数超过20页，拒绝处理")
+        logger.info(f"[任务 {task_id}] 页数评估: {pages}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[任务 {task_id}] 页数评估失败，按1页处理: {e}")
     
     # 初始化任务状态
     task_status[task_id] = {
@@ -302,17 +312,26 @@ async def convert_file(
         "output_dir": output_dir
     }
     
-    # 创建请求对象（与 v1 保持一致）
+    # 处理类型参数映射
+    type_map = {
+        "noiseRec": "noiseMonitoringRecord",
+        "emRec": "electromagneticTestRecord",
+        "opStatus": "operatingConditionInfo",
+    }
+    doc_type = None
+    if type:
+        if type not in type_map:
+            # 清理临时目录后报错
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+            raise HTTPException(status_code=400, detail="无效的type参数")
+        doc_type = type_map[type]
+
+    # 创建请求对象（v2 精简）
     request = ConversionRequest(
-        max_pages=max_pages,
-        formula_enable=formula_enable,
-        table_enable=table_enable,
-        embed_images=embed_images,
-        model_name=model_name,
-        gpu_memory_utilization=gpu_memory_utilization,
-        dpi=dpi,
-        output_json=output_json,
-        use_split=use_split
+        doc_type=doc_type,
     )
     
     # 使用 asyncio.create_task 创建后台任务，确保立即返回
