@@ -197,11 +197,17 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
         return result
     
     # 解析项目名称：项目名称:xxx（后面跟着检测依据或其他字段，可能没有分隔符）
-    # 匹配模式：项目名称:xxx（直到检测依据、监测依据、声级计、声校准器、检测前、检测后或气象条件）
-    # 注意：项目名称后面可能直接跟着"检测依据"没有分隔符
-    project_match = re.search(r'项目名称[:：](.+?)(?:检测依据|监测依据|声级计|声校准器|检测前|检测后|气象条件)', cell_text)
+    # 匹配模式：项目名称:xxx（直到检测依据、监测依据、声级计、声校准器、检测前、检测后或气象条件，或到字符串末尾）
+    # 注意：项目名称后面可能直接跟着"检测依据"没有分隔符，也可能后面没有其他字段
+    project_match = re.search(r'项目名称[:：](.+?)(?:检测依据|监测依据|声级计|声校准器|检测前|检测后|气象条件|$)', cell_text)
     if project_match:
         result["project"] = project_match.group(1).strip()
+        # 如果提取到的项目名称为空，可能是正则表达式匹配到了但内容为空
+        if not result["project"]:
+            # 尝试更简单的匹配：项目名称:后面直到行尾或换行
+            project_match2 = re.search(r'项目名称[:：]([^<]+?)(?:</td>|</tr>|$)', cell_text)
+            if project_match2:
+                result["project"] = project_match2.group(1).strip()
     
     # 解析检测依据：检测依据:GB 12348-2008 □GB3096-2008 □其他:声级计...
     # 也可能格式为：检测依据:xxx或监测依据:xxx
@@ -266,28 +272,43 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
 
     first_table = tables[0]
     
-    # 首先尝试从组合单元格中解析头部信息（这种情况是多个字段都在一个单元格中）
+    # 首先尝试从组合单元格中解析头部信息（这种情况是多个字段都在一个单元格中，或者单个字段也在同一单元格中）
     header_extracted = False
     weather_extracted = False
     for row in first_table:
         for cell in row:
-            # 检查单元格是否包含多个头部字段的关键词
-            if "项目名称" in cell and ("检测依据" in cell or "监测依据" in cell or "声级计" in cell or "声校准器" in cell):
-                logger.debug(f"[噪声检测] 发现组合单元格，尝试解析: {cell[:100]}...")
+            # 检查单元格是否包含头部字段的关键词（放宽条件，支持单个字段的情况）
+            # 如果单元格包含字段名和冒号，说明值就在同一单元格中
+            has_header_field = any(keyword in cell for keyword in [
+                "项目名称", "检测依据", "监测依据", "声级计型号", "声校准器型号", 
+                "检测前校准值", "检测后校准值", "声纹计型号", "声级计校准器型号"
+            ])
+            has_colon = ":" in cell or "：" in cell
+            
+            if has_header_field and has_colon:
+                logger.debug(f"[噪声检测] 发现包含字段信息的单元格，尝试解析: {cell[:100]}...")
                 parsed_header = parse_header_from_combined_cell(cell)
-                if parsed_header["project"]:
+                
+                # 更新字段（如果解析到值）
+                if parsed_header["project"] and not record.project:
                     record.project = parsed_header["project"]
                     header_extracted = True
-                if parsed_header["standardReferences"]:
+                    logger.debug(f"[噪声检测] 从单元格解析到项目名称: {record.project}")
+                if parsed_header["standardReferences"] and not record.standardReferences:
                     record.standardReferences = parsed_header["standardReferences"]
-                if parsed_header["soundLevelMeterMode"]:
+                    logger.debug(f"[噪声检测] 从单元格解析到检测依据: {record.standardReferences}")
+                if parsed_header["soundLevelMeterMode"] and not record.soundLevelMeterMode:
                     record.soundLevelMeterMode = parsed_header["soundLevelMeterMode"]
-                if parsed_header["soundCalibratorMode"]:
+                    logger.debug(f"[噪声检测] 从单元格解析到声级计型号: {record.soundLevelMeterMode}")
+                if parsed_header["soundCalibratorMode"] and not record.soundCalibratorMode:
                     record.soundCalibratorMode = parsed_header["soundCalibratorMode"]
-                if parsed_header["calibrationValueBefore"]:
+                    logger.debug(f"[噪声检测] 从单元格解析到声校准器型号: {record.soundCalibratorMode}")
+                if parsed_header["calibrationValueBefore"] and not record.calibrationValueBefore:
                     record.calibrationValueBefore = parsed_header["calibrationValueBefore"]
-                if parsed_header["calibrationValueAfter"]:
+                    logger.debug(f"[噪声检测] 从单元格解析到检测前校准值: {record.calibrationValueBefore}")
+                if parsed_header["calibrationValueAfter"] and not record.calibrationValueAfter:
                     record.calibrationValueAfter = parsed_header["calibrationValueAfter"]
+                    logger.debug(f"[噪声检测] 从单元格解析到检测后校准值: {record.calibrationValueAfter}")
                 
                 # 如果单元格中包含气象条件，也从这里解析
                 if "气象条件" in cell:
@@ -300,26 +321,42 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                         weather_extracted = True
                         logger.info(f"[噪声检测] 从组合单元格解析到天气信息: {len(record.weather)} 条记录")
                 
-                if header_extracted:
-                    logger.info(f"[噪声检测] 从组合单元格解析到头部信息: project={record.project}, "
-                              f"standardReferences={record.standardReferences}, "
+                # 如果已经解析到所有需要的字段，可以提前结束
+                if record.project and record.soundLevelMeterMode and record.calibrationValueBefore and record.calibrationValueAfter:
+                    logger.info(f"[噪声检测] 从单元格成功解析到所有头部信息: project={record.project}, "
                               f"soundLevelMeterMode={record.soundLevelMeterMode}, "
-                              f"soundCalibratorMode={record.soundCalibratorMode}")
+                              f"calibrationValueBefore={record.calibrationValueBefore}, "
+                              f"calibrationValueAfter={record.calibrationValueAfter}")
                     if not weather_extracted:
                         break
     
     # 如果还没有提取到头部信息，使用原来的方法（假设字段分布在不同的单元格中）
+    # 但也要尝试从同一单元格中提取（如果单元格包含字段名和冒号）
     if not header_extracted:
         for row in first_table:
             logger.debug(f"[噪声检测][ROW] len={len(row)}, content={row}")
-            if len(row) >= 2:
-                if "项目名称" in row[0]:
-                    for i, cell in enumerate(row):
-                        if "项目名称" in cell and i + 1 < len(row):
-                            record.project = row[i + 1]
-                            if not record.project.strip():
-                                logger.error(f"[噪声检测] 项目名称 为空，行数据: {row}")
-                            break
+            for i, cell in enumerate(row):
+                # 尝试从同一单元格中提取项目名称（如果包含冒号）
+                if "项目名称" in cell and (":" in cell or "：" in cell) and not record.project:
+                    # 使用 parse_header_from_combined_cell 解析
+                    parsed = parse_header_from_combined_cell(cell)
+                    if parsed["project"]:
+                        record.project = parsed["project"]
+                        header_extracted = True
+                        logger.debug(f"[噪声检测] 从单元格 {i} 解析到项目名称: {record.project}")
+                        break
+                
+                # 如果同一单元格没有值，尝试从下一个单元格获取（向后兼容）
+                if "项目名称" in cell and i + 1 < len(row) and not record.project:
+                    # 检查下一个单元格是否有内容
+                    if row[i + 1].strip():
+                        record.project = row[i + 1].strip()
+                        if not record.project.strip():
+                            logger.error(f"[噪声检测] 项目名称 为空，行数据: {row}")
+                        else:
+                            header_extracted = True
+                            logger.debug(f"[噪声检测] 从单元格 {i+1} 解析到项目名称: {record.project}")
+                        break
                 if any(k in row[0] for k in ["检测依据", "监测依据"]):
                     for i, cell in enumerate(row):
                         if any(k in cell for k in ["检测依据", "监测依据"]) and i + 1 < len(row):
@@ -327,33 +364,80 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                             if not record.standardReferences.strip():
                                 logger.error(f"[噪声检测] 检测/监测依据 为空，行数据: {row}")
                             break
-                if any(k in row[0] for k in ["声纹计型号", "声级计型号"]):
-                    for i, cell in enumerate(row):
-                        if any(k in cell for k in ["声纹计型号", "声级计型号"]) and i + 1 < len(row):
-                            record.soundLevelMeterMode = row[i + 1]
+                # 尝试从同一单元格或下一个单元格提取声级计型号
+                for i, cell in enumerate(row):
+                    if any(k in cell for k in ["声纹计型号", "声级计型号"]) and not record.soundLevelMeterMode:
+                        # 先尝试从同一单元格提取（如果包含冒号）
+                        if (":" in cell or "：" in cell):
+                            parsed = parse_header_from_combined_cell(cell)
+                            if parsed["soundLevelMeterMode"]:
+                                record.soundLevelMeterMode = parsed["soundLevelMeterMode"]
+                                logger.debug(f"[噪声检测] 从单元格 {i} 解析到声级计型号: {record.soundLevelMeterMode}")
+                                break
+                        # 如果同一单元格没有值，尝试从下一个单元格获取
+                        elif i + 1 < len(row) and row[i + 1].strip():
+                            record.soundLevelMeterMode = row[i + 1].strip()
                             if not record.soundLevelMeterMode.strip():
                                 logger.error(f"[噪声检测] 声级计型号 为空，行数据: {row}")
+                            else:
+                                logger.debug(f"[噪声检测] 从单元格 {i+1} 解析到声级计型号: {record.soundLevelMeterMode}")
                             break
-                if any(k in row[0] for k in ["声纹准器型号", "声级计校准器型号"]):
-                    for i, cell in enumerate(row):
-                        if any(k in cell for k in ["声纹准器型号", "声级计校准器型号"]) and i + 1 < len(row):
-                            record.soundCalibratorMode = row[i + 1]
+                
+                # 尝试从同一单元格或下一个单元格提取声校准器型号
+                for i, cell in enumerate(row):
+                    if any(k in cell for k in ["声纹准器型号", "声校准器型号", "声级计校准器型号"]) and not record.soundCalibratorMode:
+                        # 先尝试从同一单元格提取（如果包含冒号）
+                        if (":" in cell or "：" in cell):
+                            parsed = parse_header_from_combined_cell(cell)
+                            if parsed["soundCalibratorMode"]:
+                                record.soundCalibratorMode = parsed["soundCalibratorMode"]
+                                logger.debug(f"[噪声检测] 从单元格 {i} 解析到声校准器型号: {record.soundCalibratorMode}")
+                                break
+                        # 如果同一单元格没有值，尝试从下一个单元格获取
+                        elif i + 1 < len(row) and row[i + 1].strip():
+                            record.soundCalibratorMode = row[i + 1].strip()
                             if not record.soundCalibratorMode.strip():
                                 logger.error(f"[噪声检测] 声级计校准器型号 为空，行数据: {row}")
+                            else:
+                                logger.debug(f"[噪声检测] 从单元格 {i+1} 解析到声校准器型号: {record.soundCalibratorMode}")
                             break
-                if "检测前校准值" in row[0]:
-                    for i, cell in enumerate(row):
-                        if "检测前校准值" in cell and i + 1 < len(row):
-                            record.calibrationValueBefore = row[i + 1]
+                
+                # 尝试从同一单元格或下一个单元格提取检测前校准值
+                for i, cell in enumerate(row):
+                    if "检测前校准值" in cell and not record.calibrationValueBefore:
+                        # 先尝试从同一单元格提取（如果包含冒号）
+                        if (":" in cell or "：" in cell):
+                            parsed = parse_header_from_combined_cell(cell)
+                            if parsed["calibrationValueBefore"]:
+                                record.calibrationValueBefore = parsed["calibrationValueBefore"]
+                                logger.debug(f"[噪声检测] 从单元格 {i} 解析到检测前校准值: {record.calibrationValueBefore}")
+                                break
+                        # 如果同一单元格没有值，尝试从下一个单元格获取
+                        elif i + 1 < len(row) and row[i + 1].strip():
+                            record.calibrationValueBefore = row[i + 1].strip()
                             if not record.calibrationValueBefore.strip():
                                 logger.error(f"[噪声检测] 检测前校准值 为空，行数据: {row}")
+                            else:
+                                logger.debug(f"[噪声检测] 从单元格 {i+1} 解析到检测前校准值: {record.calibrationValueBefore}")
                             break
-                if "检测后校准值" in row[0]:
-                    for i, cell in enumerate(row):
-                        if "检测后校准值" in cell and i + 1 < len(row):
-                            record.calibrationValueAfter = row[i + 1]
+                
+                # 尝试从同一单元格或下一个单元格提取检测后校准值
+                for i, cell in enumerate(row):
+                    if "检测后校准值" in cell and not record.calibrationValueAfter:
+                        # 先尝试从同一单元格提取（如果包含冒号）
+                        if (":" in cell or "：" in cell):
+                            parsed = parse_header_from_combined_cell(cell)
+                            if parsed["calibrationValueAfter"]:
+                                record.calibrationValueAfter = parsed["calibrationValueAfter"]
+                                logger.debug(f"[噪声检测] 从单元格 {i} 解析到检测后校准值: {record.calibrationValueAfter}")
+                                break
+                        # 如果同一单元格没有值，尝试从下一个单元格获取
+                        elif i + 1 < len(row) and row[i + 1].strip():
+                            record.calibrationValueAfter = row[i + 1].strip()
                             if not record.calibrationValueAfter.strip():
                                 logger.error(f"[噪声检测] 检测后校准值 为空，行数据: {row}")
+                            else:
+                                logger.debug(f"[噪声检测] 从单元格 {i+1} 解析到检测后校准值: {record.calibrationValueAfter}")
                             break
 
     # 解析气象条件 - 支持多条记录（如果还没有从组合单元格中提取到天气数据）
