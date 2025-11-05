@@ -12,19 +12,19 @@ User=root
 Group=root
 
 # 工作目录
-WorkingDirectory=/home/hws/workspace/GitLab/Clerk2.5
+WorkingDirectory=/mnt/win_d/Clerk2.5
 
 # Python 虚拟环境路径（根据实际情况修改）
 # 如果使用虚拟环境，取消注释并修改路径
-# Environment="PATH=/home/hws/workspace/GitLab/Clerk2.5/venv/bin:/usr/local/bin:/usr/bin:/bin"
-Environment="PYTHONPATH=/home/hws/workspace/GitLab/Clerk2.5"
+# Environment="PATH=/mnt/win_d/Clerk2.5/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONPATH=/mnt/win_d/Clerk2.5"
 
 # API 服务配置
 Environment="API_HOST=0.0.0.0"
 Environment="API_PORT=4214"
 
 # 日志配置
-Environment="PDF_CONVERTER_LOG_DIR=/home/hws/workspace/GitLab/Clerk2.5/logs"
+Environment="PDF_CONVERTER_LOG_DIR=/mnt/win_d/Clerk2.5/logs"
 Environment="LOG_LEVEL=INFO"
 
 # 外部API配置（v2版本使用外部API）
@@ -34,8 +34,8 @@ Environment="PARSE_METHOD=auto"
 Environment="LANGUAGE=ch"
 
 # 启动命令（使用命令行参数）
-# 如果使用虚拟环境，修改为: /home/hws/workspace/GitLab/Clerk2.5/venv/bin/python
-ExecStart=/usr/bin/python3 /home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2/api_server.py --host 0.0.0.0 --port 4214 --log-level info
+# 如果使用虚拟环境，修改为: /mnt/win_d/Clerk2.5/venv/bin/python
+ExecStart=/usr/bin/python3 /mnt/win_d/Clerk2.5/pdf_converter_v2/api_server.py --host 0.0.0.0 --port 4214 --log-level info
 
 # 重启策略
 Restart=always
@@ -58,7 +58,7 @@ SyslogFacility=local0
 # PrivateTmp=true
 # ProtectSystem=strict
 # ProtectHome=true
-# ReadWritePaths=/home/hws/workspace/GitLab/Clerk2.5/tmp /home/hws/workspace/GitLab/Clerk2.5/logs /home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2/test_output
+# ReadWritePaths=/mnt/win_d/Clerk2.5/tmp /mnt/win_d/Clerk2.5/logs /mnt/win_d/Clerk2.5/pdf_converter_v2/test_output
 
 [Install]
 WantedBy=multi-user.target
