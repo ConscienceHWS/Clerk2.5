@@ -9,7 +9,7 @@ from ..utils.logging_config import get_logger
 from .document_type import detect_document_type
 from .noise_parser import parse_noise_detection_record
 from .electromagnetic_parser import parse_electromagnetic_detection_record
-from .table_parser import parse_operational_conditions
+from .table_parser import parse_operational_conditions, parse_operational_conditions_v2
 
 logger = get_logger("pdf_converter_v2.parser.json")
 
@@ -30,9 +30,15 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
             return {"document_type": forced_document_type, "data": data}
         if forced_document_type == "operatingConditionInfo":
             # 仅解析工况信息
-            op_list = parse_operational_conditions(markdown_content)
-            # 序列化为可JSON编码的结构
-            serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
+            # 根据"表1检测工况"标识选择解析逻辑
+            if "表1检测工况" in markdown_content:
+                logger.info("[JSON转换] 检测到'表1检测工况'标识，使用新格式解析")
+                op_list = parse_operational_conditions_v2(markdown_content)
+                serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
+            else:
+                logger.info("[JSON转换] 未检测到'表1检测工况'标识，使用旧格式解析")
+                op_list = parse_operational_conditions(markdown_content)
+                serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
             return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
         return {"document_type": forced_document_type, "data": {}}
 

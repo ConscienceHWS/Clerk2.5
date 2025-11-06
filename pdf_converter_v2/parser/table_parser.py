@@ -7,7 +7,7 @@
 from typing import List
 import re
 from ..utils.logging_config import get_logger
-from ..models.data_models import OperationalCondition
+from ..models.data_models import OperationalCondition, OperationalConditionV2
 
 logger = get_logger("pdf_converter_v2.parser.table")
 
@@ -258,5 +258,161 @@ def parse_operational_conditions(markdown_content: str) -> List[OperationalCondi
             break
     
     logger.info(f"[工况信息] 共解析到 {len(conditions)} 条工况信息")
+    return conditions
+
+
+def parse_operational_conditions_v2(markdown_content: str) -> List[OperationalConditionV2]:
+    """解析工况信息表格（新格式：表1检测工况）
+    
+    表格结构：
+    - 第一行：名称、时间，电压(kV)（colspan=2），电流(A)（colspan=2），有功(MW)（colspan=2），无功(Mvar)（colspan=2）
+    - 第二行：最大值、最小值（重复4次）
+    - 数据行：名称、时间、电压最大值、电压最小值、电流最大值、电流最小值、有功最大值、有功最小值、无功最大值、无功最小值
+    """
+    conditions: List[OperationalConditionV2] = []
+    
+    # 检查是否包含"表1检测工况"标识
+    if "表1检测工况" not in markdown_content:
+        logger.debug("[工况信息V2] 未找到'表1检测工况'标识")
+        return conditions
+    
+    # 提取项目名称（从"项目编号："后面或者"附件 工况及工程信息"部分）
+    project_name = ""
+    project_match = re.search(r'项目编号[:：]\s*([^\n]+)', markdown_content)
+    if project_match:
+        project_name = project_match.group(1).strip()
+    
+    # 如果项目名称为空，尝试从标题或其他地方提取
+    if not project_name:
+        # 尝试从"附件 工况及工程信息"后面提取
+        title_match = re.search(r'附件[^\n]*工况[^\n]*\n+([^\n]+)', markdown_content)
+        if title_match:
+            project_name = title_match.group(1).strip()
+    
+    logger.debug(f"[工况信息V2] 提取项目名称: {project_name}")
+    
+    # 提取表格数据（支持rowspan和colspan）
+    tables = extract_table_with_rowspan_colspan(markdown_content)
+    
+    if not tables:
+        logger.warning("[工况信息V2] 未能提取出任何表格内容")
+        return conditions
+    
+    # 查找包含"表1检测工况"的表格
+    # 表格结构：第一行是名称、时间，然后是电压、电流、有功、无功（各占2列）
+    for table in tables:
+        if not table or len(table) < 3:  # 至少需要表头2行和数据1行
+            continue
+        
+        # 检查第一行表头是否包含"名称"、"时间"、"电压"等关键词
+        first_row = table[0]
+        first_row_text = " ".join(first_row).lower()
+        has_keywords = any(k in first_row_text for k in ["名称", "时间", "电压", "电流", "有功", "无功"])
+        
+        if not has_keywords:
+            continue
+        
+        logger.info(f"[工况信息V2] 找到工况信息表格，行数: {len(table)}")
+        
+        # 列索引映射（根据表格结构）
+        # 列0: 名称
+        # 列1: 时间
+        # 列2: 电压最大值
+        # 列3: 电压最小值
+        # 列4: 电流最大值
+        # 列5: 电流最小值
+        # 列6: 有功最大值
+        # 列7: 有功最小值
+        # 列8: 无功最大值
+        # 列9: 无功最小值
+        
+        name_idx = 0
+        time_idx = 1
+        voltage_max_idx = 2
+        voltage_min_idx = 3
+        current_max_idx = 4
+        current_min_idx = 5
+        active_power_max_idx = 6
+        active_power_min_idx = 7
+        reactive_power_max_idx = 8
+        reactive_power_min_idx = 9
+        
+        # 从第三行开始解析数据（前两行是表头）
+        logger.debug(f"[工况信息V2] 表格总行数: {len(table)}, 开始从第3行（索引2）解析数据行")
+        for row_idx in range(2, len(table)):
+            row = table[row_idx]
+            logger.debug(f"[工况信息V2] 处理第{row_idx}行（索引{row_idx}）: 列数={len(row)}, 内容={row[:5]}...")  # 只打印前5列用于调试
+            
+            # 至少需要10列（名称、时间、电压max/min、电流max/min、有功max/min、无功max/min）
+            if len(row) < 10:
+                logger.warning(f"[工况信息V2] 第{row_idx}行列数不足10列，跳过: {len(row)}列")
+                continue
+            
+            # 检查是否是数据行（第一列应该有名称，且不是"名称"、"最大值"、"最小值"等表头关键词）
+            first_cell = row[name_idx].strip() if name_idx < len(row) else ""
+            if not first_cell or first_cell in ["名称", "最大值", "最小值", "时间"]:
+                logger.debug(f"[工况信息V2] 第{row_idx}行第一列为表头关键词或为空，跳过: '{first_cell}'")
+                continue
+            
+            # 跳过完全空的行（但允许某些字段为空）
+            if not any(cell.strip() for cell in row[:2]):  # 至少名称或时间应该有值
+                logger.debug(f"[工况信息V2] 第{row_idx}行前两列为空，跳过")
+                continue
+            
+            oc = OperationalConditionV2()
+            oc.project = project_name
+            
+            # 名称（列0）
+            if name_idx < len(row):
+                oc.name = row[name_idx].strip()
+            
+            # 时间（列1）
+            if time_idx < len(row):
+                oc.monitorAt = row[time_idx].strip()
+            
+            # 电压最大值（列2）
+            if voltage_max_idx < len(row):
+                oc.maxVoltage = row[voltage_max_idx].strip()
+            
+            # 电压最小值（列3）
+            if voltage_min_idx < len(row):
+                oc.minVoltage = row[voltage_min_idx].strip()
+            
+            # 电流最大值（列4）
+            if current_max_idx < len(row):
+                oc.maxCurrent = row[current_max_idx].strip()
+            
+            # 电流最小值（列5）
+            if current_min_idx < len(row):
+                oc.minCurrent = row[current_min_idx].strip()
+            
+            # 有功功率最大值（列6）
+            if active_power_max_idx < len(row):
+                oc.maxActivePower = row[active_power_max_idx].strip()
+            
+            # 有功功率最小值（列7）
+            if active_power_min_idx < len(row):
+                oc.minActivePower = row[active_power_min_idx].strip()
+            
+            # 无功功率最大值（列8）
+            if reactive_power_max_idx < len(row):
+                oc.maxReactivePower = row[reactive_power_max_idx].strip()
+            
+            # 无功功率最小值（列9）
+            if reactive_power_min_idx < len(row):
+                oc.minReactivePower = row[reactive_power_min_idx].strip()
+            
+            # 添加记录（只要名称不为空，即使为空也记录日志以便调试）
+            if oc.name:
+                conditions.append(oc)
+                logger.info(f"[工况信息V2] 解析到第{len(conditions)}条记录: 名称='{oc.name}', 时间='{oc.monitorAt}'")
+            else:
+                logger.warning(f"[工况信息V2] 第{row_idx}行名称为空，跳过该行: {row[:3]}")
+        
+        # 只处理第一个匹配的表格
+        if conditions:
+            break
+    
+    logger.info(f"[工况信息V2] 共解析到 {len(conditions)} 条工况信息")
     return conditions
 

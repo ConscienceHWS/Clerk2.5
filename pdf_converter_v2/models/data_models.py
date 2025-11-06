@@ -58,7 +58,7 @@ class NoiseData:
 
 
 class OperationalCondition:
-    """工况信息数据模型"""
+    """工况信息数据模型（旧格式）"""
     def __init__(self):
         self.monitorAt: str = ""  # 检测时间
         self.project: str = ""  # 项目名称
@@ -77,6 +77,37 @@ class OperationalCondition:
             "current": self.current,
             "activePower": self.activePower,
             "reactivePower": self.reactivePower
+        }
+
+
+class OperationalConditionV2:
+    """工况信息数据模型（新格式：表1检测工况）"""
+    def __init__(self):
+        self.monitorAt: str = ""  # 检测时间
+        self.project: str = ""  # 项目名称
+        self.name: str = ""  # 名称，如500kV 江黄Ⅰ线
+        self.maxVoltage: str = ""  # 电压最大值
+        self.minVoltage: str = ""  # 电压最小值
+        self.maxCurrent: str = ""  # 电流最大值
+        self.minCurrent: str = ""  # 电流最小值
+        self.maxActivePower: str = ""  # 有功功率最大值
+        self.minActivePower: str = ""  # 有功功率最小值
+        self.maxReactivePower: str = ""  # 无功功率最大值
+        self.minReactivePower: str = ""  # 无功功率最小值
+    
+    def to_dict(self):
+        return {
+            "monitorAt": self.monitorAt,
+            "project": self.project,
+            "name": self.name,
+            "maxVoltage": self.maxVoltage,
+            "minVoltage": self.minVoltage,
+            "maxCurrent": self.maxCurrent,
+            "minCurrent": self.minCurrent,
+            "maxActivePower": self.maxActivePower,
+            "minActivePower": self.minActivePower,
+            "maxReactivePower": self.maxReactivePower,
+            "minReactivePower": self.minReactivePower
         }
 
 
