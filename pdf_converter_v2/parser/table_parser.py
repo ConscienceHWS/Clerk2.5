@@ -271,12 +271,14 @@ def parse_operational_conditions_v2(markdown_content: str) -> List[OperationalCo
     """
     conditions: List[OperationalConditionV2] = []
     
-    # 检查是否包含"表1检测工况"标识
-    if "表1检测工况" not in markdown_content:
-        logger.debug("[工况信息V2] 未找到'表1检测工况'标识")
+    # 检查是否包含"表1检测工况"标识（使用正则表达式，允许中间有空格）
+    # 支持：表1检测工况、表 1 检测工况、表 1检测工况、表1 检测工况 等变体
+    pattern = r'表\s*1\s*检测工况'
+    if not re.search(pattern, markdown_content):
+        logger.debug("[工况信息V2] 未找到'表1检测工况'标识（包括空格变体）")
         return conditions
     
-    logger.debug("[工况信息V2] 检测到'表1检测工况'格式，第一列将映射到project字段，name字段为空")
+    logger.debug("[工况信息V2] 检测到'表1检测工况'格式（包括空格变体），第一列将映射到project字段，name字段为空")
     
     # 提取表格数据（支持rowspan和colspan）
     tables = extract_table_with_rowspan_colspan(markdown_content)

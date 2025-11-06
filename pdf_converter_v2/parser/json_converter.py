@@ -3,6 +3,7 @@
 """JSON转换模块 v2 - 独立版本，不依赖v1"""
 
 from typing import Dict, Any, Optional
+import re
 from PIL import Image
 
 from ..utils.logging_config import get_logger
@@ -30,13 +31,15 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
             return {"document_type": forced_document_type, "data": data}
         if forced_document_type == "operatingConditionInfo":
             # 仅解析工况信息
-            # 根据"表1检测工况"标识选择解析逻辑
-            if "表1检测工况" in markdown_content:
-                logger.info("[JSON转换] 检测到'表1检测工况'标识，使用新格式解析")
+            # 根据"表1检测工况"标识选择解析逻辑（使用正则表达式，允许中间有空格）
+            # 支持：表1检测工况、表 1 检测工况、表 1检测工况、表1 检测工况 等变体
+            pattern = r'表\s*1\s*检测工况'
+            if re.search(pattern, markdown_content):
+                logger.info("[JSON转换] 检测到'表1检测工况'标识（包括空格变体），使用新格式解析")
                 op_list = parse_operational_conditions_v2(markdown_content)
                 serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
             else:
-                logger.info("[JSON转换] 未检测到'表1检测工况'标识，使用旧格式解析")
+                logger.info("[JSON转换] 未检测到'表1检测工况'标识（包括空格变体），使用旧格式解析")
                 op_list = parse_operational_conditions(markdown_content)
                 serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
             return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
