@@ -100,6 +100,11 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 if m: record.weather.windSpeed = m.group(1)
                 m = re.search(r'天气[：:]*\s*([^\s]+)', text)
                 if m: record.weather.weather = m.group(1)
+                # 天气为空但其它气象字段有任意一个不为空时，默认填入“晴”
+                if (not record.weather.weather or not record.weather.weather.strip()) and any([
+                    record.weather.temp, record.weather.humidity, record.weather.windSpeed
+                ]):
+                    record.weather.weather = "晴"
                 i += 2
                 continue
             i += 1

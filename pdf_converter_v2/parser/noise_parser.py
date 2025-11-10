@@ -88,6 +88,10 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
             weather.windDirection = wd_match.group(1).strip()
             logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
         
+        # weather 为空且其它气象字段有任意一个不为空时，默认填入“晴”
+        if not weather.weather.strip() and any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
+            weather.weather = "晴"
+        
         # 如果至少有一个字段不为空，则添加这条记录
         if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
             record.weather.append(weather)
@@ -169,6 +173,10 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
             if wd_match:
                 weather.windDirection = wd_match.group(1).strip()
                 logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
+            
+            # weather 为空且其它气象字段有任意一个不为空时，默认填入“晴”
+            if not weather.weather.strip() and any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
+                weather.weather = "晴"
             
             # 如果至少有一个字段不为空，则添加这条记录
             if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
