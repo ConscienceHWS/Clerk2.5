@@ -278,7 +278,7 @@ def parse_operational_conditions_v2(markdown_content: str) -> List[OperationalCo
         logger.debug("[工况信息V2] 未找到'表1检测工况'标识（包括空格变体）")
         return conditions
     
-    logger.debug("[工况信息V2] 检测到'表1检测工况'格式（包括空格变体），第一列将映射到project字段，name字段为空")
+    logger.debug("[工况信息V2] 检测到'表1检测工况'格式（包括空格变体），第一列将映射到name字段，project字段保持为空")
     
     # 提取表格数据（支持rowspan和colspan）
     tables = extract_table_with_rowspan_colspan(markdown_content)
@@ -304,7 +304,7 @@ def parse_operational_conditions_v2(markdown_content: str) -> List[OperationalCo
         logger.info(f"[工况信息V2] 找到工况信息表格，行数: {len(table)}")
         
         # 列索引映射（根据表格结构）
-        # 列0: 项目名称（映射到project字段）
+        # 列0: 项目名称（映射到name字段）
         # 列1: 时间
         # 列2: 电压最大值
         # 列3: 电压最小值
@@ -314,9 +314,9 @@ def parse_operational_conditions_v2(markdown_content: str) -> List[OperationalCo
         # 列7: 有功最小值
         # 列8: 无功最大值
         # 列9: 无功最小值
-        # 注意：对于"表1检测工况"格式，第一列映射到project，name字段为空
+        # 注意：对于"表1检测工况"格式，第一列映射到name字段，project字段保持为空
         
-        project_idx = 0  # 第一列是项目名称（如"500kV 江黄Ⅰ线"）
+        name_idx = 0  # 第一列是项目名称（如"500kV 江黄Ⅰ线"）
         time_idx = 1
         voltage_max_idx = 2
         voltage_min_idx = 3
@@ -339,24 +339,24 @@ def parse_operational_conditions_v2(markdown_content: str) -> List[OperationalCo
                 continue
             
             # 检查是否是数据行（第一列应该有项目名称，且不是"名称"、"最大值"、"最小值"等表头关键词）
-            first_cell = row[project_idx].strip() if project_idx < len(row) else ""
+            first_cell = row[name_idx].strip() if name_idx < len(row) else ""
             if not first_cell or first_cell in ["名称", "最大值", "最小值", "时间"]:
                 logger.debug(f"[工况信息V2] 第{row_idx}行第一列为表头关键词或为空，跳过: '{first_cell}'")
                 continue
             
             # 跳过完全空的行（但允许某些字段为空）
-            if not any(cell.strip() for cell in row[:2]):  # 至少项目名称或时间应该有值
+            if not any(cell.strip() for cell in row[:2]):  # 至少名称或时间应该有值
                 logger.debug(f"[工况信息V2] 第{row_idx}行前两列为空，跳过")
                 continue
             
             oc = OperationalConditionV2()
             
-            # 项目名称（列0，映射到project字段）
-            if project_idx < len(row):
-                oc.project = row[project_idx].strip()
+            # 名称（列0，映射到name字段）
+            if name_idx < len(row):
+                oc.name = row[name_idx].strip()
             
-            # name字段为空（对于"表1检测工况"格式）
-            oc.name = ""
+            # project字段保持为空（仅在检测工况之外的场景使用）
+            oc.project = ""
             
             # 时间（列1）
             if time_idx < len(row):
@@ -394,12 +394,12 @@ def parse_operational_conditions_v2(markdown_content: str) -> List[OperationalCo
             if reactive_power_min_idx < len(row):
                 oc.minReactivePower = row[reactive_power_min_idx].strip()
             
-            # 添加记录（只要项目名称不为空）
-            if oc.project:
+            # 添加记录（只要名称不为空）
+            if oc.name:
                 conditions.append(oc)
-                logger.info(f"[工况信息V2] 解析到第{len(conditions)}条记录: project='{oc.project}', 时间='{oc.monitorAt}'")
+                logger.info(f"[工况信息V2] 解析到第{len(conditions)}条记录: name='{oc.name}', 时间='{oc.monitorAt}'")
             else:
-                logger.warning(f"[工况信息V2] 第{row_idx}行项目名称为空，跳过该行: {row[:3]}")
+                logger.warning(f"[工况信息V2] 第{row_idx}行名称为空，跳过该行: {row[:3]}")
         
         # 只处理第一个匹配的表格
         if conditions:
