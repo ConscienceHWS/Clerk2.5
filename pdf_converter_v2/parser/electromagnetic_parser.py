@@ -111,7 +111,7 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
 
     for table in tables:
         for row in table:
-            if len(row) >= 8 and row[0] and row[0] not in ["编号", "备注"] and row[0].startswith("EB"):
+            if len(row) >= 8 and row[0] and row[0] not in ["编号", "备注"]:
                 logger.info(row)
                 em = ElectromagneticData()
                 em.code = row[0]
