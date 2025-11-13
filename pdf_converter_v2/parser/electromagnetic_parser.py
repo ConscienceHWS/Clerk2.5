@@ -109,9 +109,21 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 continue
             i += 1
 
+    # 数据行代码匹配模式：以B结尾（不区分大小写）
+    CODE_PATTERN = re.compile(r'B$', re.IGNORECASE)
+    EXCLUDED_HEADERS = {"编号", "备注"}  # 使用集合提高查找效率
+    
+    def is_valid_data_row(row: List[str]) -> bool:
+        """判断是否为有效的数据行"""
+        if len(row) < 8 or not row[0]:
+            return False
+        first_cell = row[0].strip()
+        return (first_cell not in EXCLUDED_HEADERS 
+                and CODE_PATTERN.search(first_cell) is not None)
+    
     for table in tables:
         for row in table:
-            if len(row) >= 8 and row[0] and row[0] not in ["编号", "备注"]:
+            if is_valid_data_row(row):
                 logger.info(row)
                 em = ElectromagneticData()
                 em.code = row[0]
