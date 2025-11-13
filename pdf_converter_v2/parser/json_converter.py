@@ -10,7 +10,7 @@ from ..utils.logging_config import get_logger
 from .document_type import detect_document_type
 from .noise_parser import parse_noise_detection_record
 from .electromagnetic_parser import parse_electromagnetic_detection_record
-from .table_parser import parse_operational_conditions, parse_operational_conditions_v2
+from .table_parser import parse_operational_conditions, parse_operational_conditions_v2, parse_operational_conditions_opstatus
 
 logger = get_logger("pdf_converter_v2.parser.json")
 
@@ -31,17 +31,27 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
             return {"document_type": forced_document_type, "data": data}
         if forced_document_type == "operatingConditionInfo":
             # 仅解析工况信息
-            # 根据"表1检测工况"标识选择解析逻辑（使用正则表达式，允许中间有空格）
+            # 优先级：opStatus格式 > 表1检测工况格式 > 旧格式
+            # 1. 检查是否为opStatus格式（附件 工况及工程信息）
+            if "附件" in markdown_content and "工况" in markdown_content:
+                logger.info("[JSON转换] 检测到'附件 工况及工程信息'格式，使用opStatus格式解析")
+                op_list = parse_operational_conditions_opstatus(markdown_content)
+                serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
+                return {"document_type": forced_document_type, "data": serialized}
+            
+            # 2. 检查是否为"表1检测工况"格式（使用正则表达式，允许中间有空格）
             # 支持：表1检测工况、表 1 检测工况、表 1检测工况、表1 检测工况 等变体
             pattern = r'表\s*1\s*检测工况'
             if re.search(pattern, markdown_content):
                 logger.info("[JSON转换] 检测到'表1检测工况'标识（包括空格变体），使用新格式解析")
                 op_list = parse_operational_conditions_v2(markdown_content)
                 serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
-            else:
-                logger.info("[JSON转换] 未检测到'表1检测工况'标识（包括空格变体），使用旧格式解析")
-                op_list = parse_operational_conditions(markdown_content)
-                serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
+                return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
+            
+            # 3. 使用旧格式解析
+            logger.info("[JSON转换] 未检测到特殊格式标识，使用旧格式解析")
+            op_list = parse_operational_conditions(markdown_content)
+            serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
             return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
         return {"document_type": forced_document_type, "data": {}}
 
