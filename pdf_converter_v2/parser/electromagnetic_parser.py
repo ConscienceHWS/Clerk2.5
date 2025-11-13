@@ -109,8 +109,8 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 continue
             i += 1
 
-    # 数据行代码匹配模式：以B结尾（不区分大小写）
-    CODE_PATTERN = re.compile(r'B$', re.IGNORECASE)
+    # 数据行代码匹配模式：以EB或ZB开头（不区分大小写）
+    CODE_PATTERN = re.compile(r'^(EB|ZB)', re.IGNORECASE)
     EXCLUDED_HEADERS = {"编号", "备注"}  # 使用集合提高查找效率
     
     def is_valid_data_row(row: List[str]) -> bool:
@@ -119,7 +119,7 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
             return False
         first_cell = row[0].strip()
         return (first_cell not in EXCLUDED_HEADERS 
-                and CODE_PATTERN.search(first_cell) is not None)
+                and CODE_PATTERN.match(first_cell) is not None)
     
     for table in tables:
         for row in table:
