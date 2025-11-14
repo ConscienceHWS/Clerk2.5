@@ -48,9 +48,13 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                 serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
                 return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
             
-            # 3. 使用旧格式解析
+            # 3. 使用旧格式解析（先尝试有标题模式，如果失败则尝试无标题模式）
             logger.info("[JSON转换] 未检测到特殊格式标识，使用旧格式解析")
-            op_list = parse_operational_conditions(markdown_content)
+            op_list = parse_operational_conditions(markdown_content, require_title=True)
+            # 如果没有找到结果，尝试无标题模式（仅根据表格结构判断）
+            if not op_list:
+                logger.info("[JSON转换] 有标题模式未找到结果，尝试无标题模式解析")
+                op_list = parse_operational_conditions(markdown_content, require_title=False)
             serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
             return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
         return {"document_type": forced_document_type, "data": {}}

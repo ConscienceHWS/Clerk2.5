@@ -132,14 +132,23 @@ def extract_table_with_rowspan_colspan(markdown_content: str) -> List[List[List[
     return tables
 
 
-def parse_operational_conditions(markdown_content: str) -> List[OperationalCondition]:
-    """解析工况信息表格"""
+def parse_operational_conditions(markdown_content: str, require_title: bool = True) -> List[OperationalCondition]:
+    """解析工况信息表格
+    
+    Args:
+        markdown_content: Markdown内容
+        require_title: 是否要求必须有标题标识（如"附件2 工况信息"），默认为True
+                      如果为False，则仅根据表格结构判断是否为工况信息表格
+    """
     conditions: List[OperationalCondition] = []
     
     # 查找工况信息相关的表格
-    if "附件2 工况信息" not in markdown_content and "工况信息" not in markdown_content:
-        logger.debug("[工况信息] 未找到工况信息标识")
-        return conditions
+    if require_title:
+        if "附件2 工况信息" not in markdown_content and "工况信息" not in markdown_content:
+            logger.debug("[工况信息] 未找到工况信息标识")
+            return conditions
+    else:
+        logger.debug("[工况信息] 无标题模式：仅根据表格结构判断")
     
     # 提取表格数据（支持rowspan和colspan）
     tables = extract_table_with_rowspan_colspan(markdown_content)
