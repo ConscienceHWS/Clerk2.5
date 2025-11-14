@@ -10,6 +10,30 @@ from .table_parser import extract_table_data
 
 logger = get_logger("pdf_converter_v2.parser.electromagnetic")
 
+
+def validate_height(value: str) -> str:
+    """校验高度值格式
+    高度可以为空，但不应包含冒号（排除时间格式如 "14:50"）
+    
+    Args:
+        value: 原始高度值
+        
+    Returns:
+        校验后的高度值，如果包含冒号则返回空字符串
+    """
+    if not value or not value.strip():
+        return ""
+    
+    value = value.strip()
+    
+    # 如果包含冒号，认为是时间格式，返回空字符串
+    if ':' in value:
+        logger.warning(f"[电磁检测] 高度值包含冒号（可能是时间格式），已忽略: '{value}'")
+        return ""
+    
+    return value
+
+
 def calculate_average(values: List[str]) -> str:
     """计算平均值，处理空值和无效值"""
     numeric_values = []
@@ -128,7 +152,9 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 em = ElectromagneticData()
                 em.code = row[0]
                 em.address = row[1] if len(row) > 1 else ""
-                em.height = row[2] if len(row) > 2 else ""
+                # 高度字段校验：可以为空，但不应包含冒号
+                height_value = row[2] if len(row) > 2 else ""
+                em.height = validate_height(height_value)
                 em.monitorAt = row[3] if len(row) > 3 else ""
                 
                 # 电场强度
