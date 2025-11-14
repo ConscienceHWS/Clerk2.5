@@ -10,87 +10,6 @@ from .table_parser import extract_table_data
 
 logger = get_logger("pdf_converter_v2.parser.electromagnetic")
 
-
-def is_valid_height(value: str) -> bool:
-    """校验高度值格式
-    高度应该是数字（可能包含单位如m、cm等），不应该是时间格式或日期格式
-    """
-    if not value or not value.strip():
-        return False
-    
-    value = value.strip()
-    
-    # 排除时间格式（如 "14:50", "14:50:30"）
-    if re.match(r'^\d{1,2}:\d{2}(:\d{2})?$', value):
-        return False
-    
-    # 排除日期格式（如 "2025.09.08", "2025-09-08", "2025年9月8日" 等）
-    date_patterns = [
-        r'^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}',  # 2025.09.08, 2025-09-08, 2025/09/08
-        r'^\d{4}\d{2}\d{2}',  # 20250908
-        r'^\d{4}年\d{1,2}月\d{1,2}日',  # 2025年9月8日
-    ]
-    for pattern in date_patterns:
-        if re.match(pattern, value):
-            return False
-    
-    # 如果包含年月日相关的关键词，排除
-    if any(keyword in value for keyword in ['年', '月', '日']):
-        return False
-    
-    # 检查是否包含数字（高度应该包含数字）
-    if not re.search(r'\d', value):
-        return False
-    
-    # 如果只包含数字和常见单位（m, cm, mm等），认为是有效的高度
-    if re.match(r'^[\d.\-]+\s*(m|cm|mm|M|CM|MM)?$', value):
-        return True
-    
-    # 如果包含其他字符，但主要是数字，也认为是有效的（可能是 "1.5m" 或 "1.5 m" 等）
-    numeric_part = re.sub(r'[^\d.\-]', '', value)
-    if numeric_part and len(numeric_part) >= 1:
-        # 确保不是日期格式（日期通常有4位年份）
-        if len(numeric_part) >= 8 and numeric_part[:4].isdigit() and int(numeric_part[:4]) >= 1900:
-            return False
-        return True
-    
-    return False
-
-
-def is_valid_monitor_time(value: str) -> bool:
-    """校验监测时间格式
-    监测时间应该是日期格式（如 "2025.09.08", "2025-09-08" 等），不应该是简单的时间格式（如 "14:50"）
-    """
-    if not value or not value.strip():
-        return False
-    
-    value = value.strip()
-    
-    # 排除简单的时间格式（如 "14:50", "14:50:30"）
-    if re.match(r'^\d{1,2}:\d{2}(:\d{2})?$', value):
-        return False
-    
-    # 检查是否是日期格式（包含年月日）
-    # 支持格式：2025.09.08, 2025-09-08, 2025/09/08, 20250908 等
-    date_patterns = [
-        r'^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}',  # 2025.09.08, 2025-09-08, 2025/09/08
-        r'^\d{4}\d{2}\d{2}',  # 20250908
-        r'^\d{4}年\d{1,2}月\d{1,2}日',  # 2025年9月8日
-    ]
-    
-    for pattern in date_patterns:
-        if re.match(pattern, value):
-            return True
-    
-    # 如果包含年月日相关的关键词，也认为是有效的
-    if any(keyword in value for keyword in ['年', '月', '日', '-', '.', '/']):
-        # 确保包含数字
-        if re.search(r'\d', value):
-            return True
-    
-    return False
-
-
 def calculate_average(values: List[str]) -> str:
     """计算平均值，处理空值和无效值"""
     numeric_values = []
@@ -209,24 +128,8 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 em = ElectromagneticData()
                 em.code = row[0]
                 em.address = row[1] if len(row) > 1 else ""
-                
-                # 高度字段格式校验
-                height_value = row[2] if len(row) > 2 else ""
-                if height_value and is_valid_height(height_value):
-                    em.height = height_value
-                else:
-                    if height_value:
-                        logger.warning(f"[电磁检测] 高度值格式无效，已忽略: '{height_value}' (行: {row})")
-                    em.height = ""
-                
-                # 监测时间字段格式校验
-                monitor_at_value = row[3] if len(row) > 3 else ""
-                if monitor_at_value and is_valid_monitor_time(monitor_at_value):
-                    em.monitorAt = monitor_at_value
-                else:
-                    if monitor_at_value:
-                        logger.warning(f"[电磁检测] 监测时间格式无效，已忽略: '{monitor_at_value}' (行: {row})")
-                    em.monitorAt = ""
+                em.height = row[2] if len(row) > 2 else ""
+                em.monitorAt = row[3] if len(row) > 3 else ""
                 
                 # 电场强度
                 if len(row) > 4: em.powerFrequencyEFieldStrength1 = row[4]
