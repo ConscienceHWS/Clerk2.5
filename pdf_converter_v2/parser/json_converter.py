@@ -46,7 +46,7 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                 logger.info("[JSON转换] 检测到'附件 工况及工程信息'格式，使用opStatus格式解析")
                 op_list = parse_operational_conditions_opstatus(markdown_content)
                 serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
-                return {"document_type": forced_document_type, "data": serialized}
+                return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
             
             # 3. 使用旧格式解析（先尝试有标题模式，如果失败则尝试无标题模式）
             logger.info("[JSON转换] 未检测到特殊格式标识，使用旧格式解析")
