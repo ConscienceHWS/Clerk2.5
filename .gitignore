@@ -20,3 +20,5 @@ output/
 *.png
 bak/
 test_output/
+json_results/
+test_report_*

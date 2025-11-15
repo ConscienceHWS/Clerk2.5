@@ -461,3 +461,81 @@ curl http://localhost:4214/health
 - v2 API 文档: 项目根目录 `pdf_converter_v2/README.md`
 - 更新说明: 项目根目录 `CHANGELOG.md`
 
+1  vim .ssh/authorized_keys 
+    1  vim .ssh/authorized_keys 
+    2  ll
+    3  exit
+    4  ls
+    5  cd auto_install/
+    6  ls
+    7  cd 
+    8  ls
+    9  nvidia-smi 
+   10  ls
+   11  df -h
+   12  ls
+   13  mkdir workspace
+   14  ls
+   15  cd workspace/
+   16  ls
+   17  mkdir Clerk2.5
+   18  ls
+   19  cd Clerk2.5/
+   20  ls
+   21  pwd
+   22  cd ..
+   23  ls
+   24  git
+   25  git clone git@github.com:ConscienceHWS/Clerk2.5.git
+   26  git clone https://github.com/ConscienceHWS/Clerk2.5.git
+   27  ls
+   28  cd Clerk2.5/
+   29  ls
+   30  python3.12 -m venv venv
+   31  ls -a
+   32  source venv/bin/activate
+   33  which python
+   34  which pip
+   35  pip install modelscope
+   36  modelscope download --model OpenDataLab/MinerU2.5-2509-1.2B
+   37  clear
+   38  pip install "mineru-vl-utils[all]"
+   39  pip install -U git+https://gitee.com/myhloli/MinerU.git@dev
+   40  python -c "import mineru; print(getattr(mineru, '__version__', 'installed'))"
+   41  which mineru-api
+   42  mineru-api --help
+   43  pip install uvicorn
+   44  mineru-api --help
+   45  pip install fastapi
+   46  mineru-api --help
+   47  pip install python-multipart
+   48  mineru-api --help
+   49  export MINERU_MODEL_SOURCE=local 
+   50  mineru-gradio --server-name 0.0.0.0 --server-port 7860
+   51  pip install gradio
+   52  mineru-gradio --server-name 0.0.0.0 --server-port 7860
+   53  pip install gradio_pdf
+   54  mineru-gradio --server-name 0.0.0.0 --server-port 7860
+   55  mineru-api --host 0.0.0.0 --port 8000
+   56  vim /etc/systemd/system/mineru-api.service
+   57  sudo systemctl daemon-reload
+   58  sudo systemctl start mineru-api && sudo journalctl -u mineru-api -f
+   59  mkdir -p /root/workspace/Clerk2.5/tmp
+   60  ls /root/workspace/Clerk2.5/tmp
+   61  sudo systemctl restart mineru-api
+   62  ls
+   63  pip install fastapi uvicorn python-multipart aiohttp aiofiles
+   64  vim /etc/systemd/system/pdf-converter.service
+   65  mkdir -p /root/workspace/Clerk2.5/logs
+   66  sudo systemctl daemon-reload
+   67  sudo systemctl start pdf-converter-v2 && sudo journalctl -u pdf-converter-v2 -f
+   68  sudo systemctl start pdf-converter && sudo journalctl -u pdf-converter -f
+   69  history 
+   70  sudo journalctl -u pdf-converter -f
+   71  pip install vllm
+   72  sudo journalctl -u pdf-converter -f
+   73  pip list
+   74  pip uninstall mineru -y
+   75  pip install mineru==2.6.3
+   76  sudo journalctl -u pdf-converter -f
+   77  history 
