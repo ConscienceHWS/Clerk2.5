@@ -860,6 +860,48 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                 # 如果OCR天气信息没有日期但有其他字段，且未在第一个分支匹配成功，也添加到记录中
                 record.weather.append(ocr_weather)
                 logger.debug(f"[噪声检测] 添加OCR天气信息到记录（无日期）: {ocr_weather.to_dict()}")
+        
+        # 最终去重和合并：按日期分组，合并相同日期的记录，补齐空白字段
+        if record.weather:
+            logger.debug(f"[噪声检测] 合并前天气记录数: {len(record.weather)}")
+            deduplicated_weather = {}
+            for weather in record.weather:
+                date_key = weather.monitorAt.strip() if weather.monitorAt else ""
+                if not date_key:
+                    # 如果没有日期，跳过（不应该出现，但为了安全）
+                    continue
+                
+                # 处理日期格式不一致的情况（如 205.7.10 vs 2025.7.10）
+                if re.match(r'^205\.', date_key):
+                    date_key = re.sub(r'^205\.', '2025.', date_key)
+                elif re.match(r'^20[0-4]\.', date_key):
+                    date_key = re.sub(r'^20[0-4]\.', '2025.', date_key)
+                
+                if date_key not in deduplicated_weather:
+                    # 创建新的天气记录
+                    merged_weather = WeatherData()
+                    merged_weather.monitorAt = date_key
+                    deduplicated_weather[date_key] = merged_weather
+                else:
+                    merged_weather = deduplicated_weather[date_key]
+                
+                # 合并字段：如果当前记录的字段有值且合并记录的字段为空，则补齐
+                if not merged_weather.weather and weather.weather:
+                    merged_weather.weather = weather.weather
+                if not merged_weather.temp and weather.temp:
+                    merged_weather.temp = weather.temp
+                if not merged_weather.humidity and weather.humidity:
+                    merged_weather.humidity = weather.humidity
+                if not merged_weather.windSpeed and weather.windSpeed:
+                    merged_weather.windSpeed = weather.windSpeed
+                if not merged_weather.windDirection and weather.windDirection:
+                    merged_weather.windDirection = weather.windDirection
+            
+            # 更新record.weather为去重后的列表
+            record.weather = list(deduplicated_weather.values())
+            logger.debug(f"[噪声检测] 合并后天气记录数: {len(record.weather)}")
+            for weather in record.weather:
+                logger.debug(f"[噪声检测] 最终天气记录: {weather.to_dict()}")
 
     for table in tables:
         # 首先识别表头，找到各列的索引
