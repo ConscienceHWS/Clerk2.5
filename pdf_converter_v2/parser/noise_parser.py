@@ -384,10 +384,15 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                 if any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
                     weather.weather = "晴"
             
-            # 如果至少有一个字段不为空，添加到记录
-            if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
+            # 如果至少有一个字段不为空，添加到记录（即使monitorAt为空也先添加，后续会从表格中补充）
+            if any([weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
                 record.weather.append(weather)
                 logger.debug(f"[噪声检测] 从OCR关键词补充提取到天气信息: {weather.to_dict()}")
+    
+    # 保存OCR提取的天气信息（用于后续与表格解析结果合并）
+    ocr_weather_list = record.weather.copy() if record.weather else []
+    # 清空record.weather，让表格解析重新填充
+    record.weather = []
     
     # 使用支持rowspan和colspan的函数提取表格，因为噪声检测表有复杂的表头结构
     tables = extract_table_with_rowspan_colspan(markdown_content)
@@ -772,18 +777,70 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                     if record.weather:
                         weather_extracted = True
                         break
-            
-            # 也检查是否在其他单元格中有气象条件
-            for cell in row:
-                if "气象条件" in cell and "日期" in cell:
-                    # 提取气象条件部分
-                    weather_section = cell.split("气象条件")[-1] if "气象条件" in cell else cell
-                    parse_weather_from_text(weather_section, record)
-                    if record.weather:
-                        weather_extracted = True
+    
+    # 将OCR提取的天气信息与表格解析的天气信息进行合并
+    # 如果OCR提取的天气信息中monitorAt为空，尝试用表格解析的日期来补充
+    if ocr_weather_list:
+        logger.debug(f"[噪声检测] 开始合并OCR和表格解析的天气信息，OCR提取了 {len(ocr_weather_list)} 条，表格解析了 {len(record.weather)} 条")
+        for ocr_weather in ocr_weather_list:
+            # 如果OCR提取的天气信息中monitorAt为空，尝试从表格解析的天气信息中匹配
+            if not ocr_weather.monitorAt or not ocr_weather.monitorAt.strip():
+                # 根据温度、湿度、风速等字段匹配表格解析的天气信息
+                matched = False
+                for table_weather in record.weather:
+                    # 匹配条件：温度、湿度、风速、风向相同或相似
+                    temp_match = (ocr_weather.temp and table_weather.temp and 
+                                 ocr_weather.temp.strip() == table_weather.temp.strip())
+                    humidity_match = (ocr_weather.humidity and table_weather.humidity and 
+                                    ocr_weather.humidity.strip() == table_weather.humidity.strip())
+                    wind_speed_match = (ocr_weather.windSpeed and table_weather.windSpeed and 
+                                       ocr_weather.windSpeed.strip() == table_weather.windSpeed.strip())
+                    wind_dir_match = (ocr_weather.windDirection and table_weather.windDirection and 
+                                     ocr_weather.windDirection.strip() == table_weather.windDirection.strip())
+                    
+                    # 如果至少有两个字段匹配，认为这是同一条天气记录
+                    match_count = sum([temp_match, humidity_match, wind_speed_match, wind_dir_match])
+                    if match_count >= 2 and table_weather.monitorAt:
+                        ocr_weather.monitorAt = table_weather.monitorAt
+                        logger.debug(f"[噪声检测] 从表格解析结果补充OCR天气信息的日期: {ocr_weather.monitorAt}")
+                        matched = True
                         break
-            if weather_extracted:
-                break
+                
+                # 如果没有匹配到，但OCR天气信息有其他字段，也添加到记录中（日期为空）
+                if not matched:
+                    logger.debug(f"[噪声检测] OCR天气信息未匹配到表格解析结果，保留原信息（日期为空）")
+            
+            # 如果OCR天气信息有日期，检查是否与表格解析的天气信息重复
+            if ocr_weather.monitorAt and ocr_weather.monitorAt.strip():
+                # 检查是否已存在相同日期的天气记录
+                exists = False
+                for table_weather in record.weather:
+                    if table_weather.monitorAt and table_weather.monitorAt.strip() == ocr_weather.monitorAt.strip():
+                        exists = True
+                        # 如果表格解析的天气信息不完整，用OCR信息补充
+                        if not table_weather.weather and ocr_weather.weather:
+                            table_weather.weather = ocr_weather.weather
+                        if not table_weather.temp and ocr_weather.temp:
+                            table_weather.temp = ocr_weather.temp
+                        if not table_weather.humidity and ocr_weather.humidity:
+                            table_weather.humidity = ocr_weather.humidity
+                        if not table_weather.windSpeed and ocr_weather.windSpeed:
+                            table_weather.windSpeed = ocr_weather.windSpeed
+                        if not table_weather.windDirection and ocr_weather.windDirection:
+                            table_weather.windDirection = ocr_weather.windDirection
+                        logger.debug(f"[噪声检测] OCR天气信息与表格解析结果合并: {table_weather.to_dict()}")
+                        break
+                
+                # 如果不存在相同日期的记录，且OCR信息完整，添加到记录中
+                if not exists and any([ocr_weather.weather, ocr_weather.temp, ocr_weather.humidity, 
+                                      ocr_weather.windSpeed, ocr_weather.windDirection]):
+                    record.weather.append(ocr_weather)
+                    logger.debug(f"[噪声检测] 添加OCR天气信息到记录: {ocr_weather.to_dict()}")
+            elif any([ocr_weather.weather, ocr_weather.temp, ocr_weather.humidity, 
+                     ocr_weather.windSpeed, ocr_weather.windDirection]):
+                # 如果OCR天气信息没有日期但有其他字段，也添加到记录中
+                record.weather.append(ocr_weather)
+                logger.debug(f"[噪声检测] 添加OCR天气信息到记录（无日期）: {ocr_weather.to_dict()}")
 
     for table in tables:
         # 首先识别表头，找到各列的索引

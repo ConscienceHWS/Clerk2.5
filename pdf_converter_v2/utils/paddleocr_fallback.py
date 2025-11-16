@@ -479,17 +479,22 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
         keywords["soundCalibratorMode"] = calibrator_match.group(1).strip()
         logger.debug(f"[关键词提取] 提取到声校准器型号: {keywords['soundCalibratorMode']}")
     
-    # 提取检测前校准值 - 查找"检测前校准值："附近的"dB（A)"或数值
-    # 优先在同一文本中查找，如果只有字段名，则在相邻文本中查找包含"dB（A)"的文本
+    # 提取校准值 - 按照出现顺序：第一个dB(A)是检测前，第二个是检测后
+    # 首先尝试通过字段名匹配
+    before_cal_found = False
+    after_cal_found = False
+    
+    # 先尝试通过字段名精确匹配
     for i, text in enumerate(ocr_texts):
-        if "检测前校准值" in text:
+        if "检测前校准值" in text and not before_cal_found:
             # 在当前文本中查找（可能格式：检测前校准值：93.8 dB（A））
             before_cal_match = re.search(r'检测前校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', text)
             if before_cal_match:
                 cal_value = before_cal_match.group(1).strip()
                 keywords["calibrationValueBefore"] = f"{cal_value} dB(A)"
                 logger.debug(f"[关键词提取] 提取到检测前校准值: {keywords['calibrationValueBefore']}")
-                break
+                before_cal_found = True
+                continue
             # 如果当前文本只有字段名（如"检测前校准值："），检查相邻文本片段
             elif re.search(r'检测前校准值[:：]\s*$', text) or (text.strip() == "检测前校准值："):
                 # 检查后续3个文本片段，查找包含dB（A）的文本
@@ -501,21 +506,20 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
                         cal_value = db_match.group(1).strip()
                         keywords["calibrationValueBefore"] = f"{cal_value} dB(A)"
                         logger.debug(f"[关键词提取] 从相邻文本提取到检测前校准值: {keywords['calibrationValueBefore']}")
+                        before_cal_found = True
                         break
-                if keywords["calibrationValueBefore"]:
-                    break
-    
-    # 提取检测后校准值 - 查找"检测后校准值："附近的"dB（A)"或数值
-    # 优先在同一文本中查找，如果只有字段名，则在相邻文本中查找包含"dB（A)"的文本
-    for i, text in enumerate(ocr_texts):
-        if "检测后校准值" in text:
+                if before_cal_found:
+                    continue
+        
+        if "检测后校准值" in text and not after_cal_found:
             # 在当前文本中查找（可能格式：检测后校准值：93.8 dB（A）或 93.8dB（A）检测后校准值：_93.8dB（A)）
             after_cal_match = re.search(r'检测后校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', text)
             if after_cal_match:
                 cal_value = after_cal_match.group(1).strip()
                 keywords["calibrationValueAfter"] = f"{cal_value} dB(A)"
                 logger.debug(f"[关键词提取] 提取到检测后校准值: {keywords['calibrationValueAfter']}")
-                break
+                after_cal_found = True
+                continue
             # 如果当前文本包含"检测后校准值"但值在文本前面（如"93.8dB（A）检测后校准值："）
             elif re.search(r'([0-9.]+)\s*dB[（(]?A[）)]?\s*检测后校准值', text):
                 db_match = re.search(r'([0-9.]+)\s*dB[（(]?A[）)]?', text)
@@ -523,7 +527,8 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
                     cal_value = db_match.group(1).strip()
                     keywords["calibrationValueAfter"] = f"{cal_value} dB(A)"
                     logger.debug(f"[关键词提取] 从同一文本提取到检测后校准值: {keywords['calibrationValueAfter']}")
-                    break
+                    after_cal_found = True
+                    continue
             # 如果当前文本只有字段名（如"检测后校准值："），检查相邻文本片段
             elif re.search(r'检测后校准值[:：]\s*$', text) or (text.strip() == "检测后校准值："):
                 # 检查后续3个文本片段，查找包含dB（A）的文本
@@ -535,9 +540,40 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
                         cal_value = db_match.group(1).strip()
                         keywords["calibrationValueAfter"] = f"{cal_value} dB(A)"
                         logger.debug(f"[关键词提取] 从相邻文本提取到检测后校准值: {keywords['calibrationValueAfter']}")
+                        after_cal_found = True
                         break
-                if keywords["calibrationValueAfter"]:
-                    break
+                if after_cal_found:
+                    continue
+    
+    # 如果通过字段名没有找到，按照出现顺序：第一个dB(A)是检测前，第二个是检测后
+    if not before_cal_found or not after_cal_found:
+        db_a_matches = []  # 存储所有找到的dB(A)值及其位置
+        for i, text in enumerate(ocr_texts):
+            # 查找包含dB（A）的文本
+            db_matches = re.finditer(r'([0-9.]+)\s*dB[（(]?A[）)]?', text)
+            for match in db_matches:
+                cal_value = match.group(1).strip()
+                db_a_matches.append((i, cal_value, text))
+        
+        # 如果找到至少一个dB(A)，且还没有检测前校准值，第一个就是检测前
+        if db_a_matches and not before_cal_found:
+            first_cal_value = db_a_matches[0][1]
+            keywords["calibrationValueBefore"] = f"{first_cal_value} dB(A)"
+            logger.debug(f"[关键词提取] 按出现顺序提取到检测前校准值（第一个dB(A)）: {keywords['calibrationValueBefore']}")
+            before_cal_found = True
+        
+        # 如果找到至少两个dB(A)，且还没有检测后校准值，第二个就是检测后
+        if len(db_a_matches) >= 2 and not after_cal_found:
+            second_cal_value = db_a_matches[1][1]
+            keywords["calibrationValueAfter"] = f"{second_cal_value} dB(A)"
+            logger.debug(f"[关键词提取] 按出现顺序提取到检测后校准值（第二个dB(A)）: {keywords['calibrationValueAfter']}")
+            after_cal_found = True
+        # 如果只找到一个dB(A)，且还没有检测后校准值，且检测前已经找到，那么这个就是检测后（可能是同一个值）
+        elif len(db_a_matches) == 1 and not after_cal_found and before_cal_found:
+            # 如果检测前和检测后是同一个值，也设置检测后
+            if keywords["calibrationValueBefore"]:
+                keywords["calibrationValueAfter"] = keywords["calibrationValueBefore"]
+                logger.debug(f"[关键词提取] 检测前和检测后校准值相同: {keywords['calibrationValueAfter']}")
     
     # 提取天气信息（从文本片段中查找包含日期和天气信息的片段）
     # 需要处理文本可能分散在多个片段中的情况
