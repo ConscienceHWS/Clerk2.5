@@ -199,9 +199,16 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
         image_basename = os.path.splitext(os.path.basename(image_path))[0]
         save_path_base = os.path.join(image_dir, image_basename)
         
-        # 构建paddleocr命令，添加save_path参数
+        # 构建paddleocr命令，添加所有参数
         # PaddleOCR会在save_path下创建目录，文件保存在该目录内
-        cmd = ["paddleocr", "doc_parser", "-i", image_path, "--save_path", save_path_base]
+        cmd = [
+            "paddleocr", "doc_parser", "-i", image_path,
+            "--precision", "fp32",
+            "--use_doc_unwarping", "False",
+            "--use_doc_orientation_classify", "True",
+            "--use_chart_recognition", "True",
+            "--save_path", save_path_base
+        ]
         
         # 设置环境变量，限制GPU内存使用
         # env = os.environ.copy()
@@ -209,7 +216,7 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
         # env["FLAGS_fraction_of_gpu_memory_to_use"] = "0.3"  # 只使用30%的GPU内存
         # env["FLAGS_allocator_strategy"] = "auto_growth"  # 使用自动增长策略，避免一次性分配过多内存
         
-        logger.info(f"[PaddleOCR] 执行命令: {' '.join(cmd)} (使用GPU，限制内存使用)")
+        logger.info(f"[PaddleOCR] 执行命令: {' '.join(cmd)}")
         
         # 执行命令
         result = subprocess.run(
