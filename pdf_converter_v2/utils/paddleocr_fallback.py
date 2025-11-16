@@ -271,17 +271,19 @@ def extract_first_page_from_pdf(pdf_path: str, output_dir: str) -> Optional[str]
             # 获取第一页
             page = pdf[0]
             
-            # 渲染为图片（DPI=200，与MinerU默认一致）
-            bitmap = page.render(scale=200/72)  # 200 DPI = 200/72 scale
+            # 渲染为图片（使用较低的DPI以减小文件大小，150 DPI通常足够OCR使用）
+            # 原始200 DPI会导致文件过大（4-5MB），降低到150 DPI可以显著减小文件大小
+            bitmap = page.render(scale=150/72)  # 150 DPI = 150/72 scale
             
             # 转换为PIL Image
             pil_image = bitmap.to_pil()
             
-            # 保存图片
+            # 保存图片，使用压缩优化以减小文件大小
             os.makedirs(output_dir, exist_ok=True)
             image_filename = f"paddleocr_fallback_page0_{int(time.time() * 1000)}_{random.randint(1000, 9999)}.png"
             image_path = os.path.join(output_dir, image_filename)
-            pil_image.save(image_path, "PNG")
+            # 使用optimize=True和compress_level=6来平衡文件大小和质量
+            pil_image.save(image_path, "PNG", optimize=True, compress_level=6)
             
             logger.info(f"[PaddleOCR备用] 从PDF提取第一页图片: {image_path}")
             
