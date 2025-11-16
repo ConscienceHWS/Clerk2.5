@@ -7,6 +7,7 @@ import re
 from PIL import Image
 
 from ..utils.logging_config import get_logger
+from ..utils.paddleocr_fallback import fallback_parse_with_paddleocr
 from .document_type import detect_document_type
 from .noise_parser import parse_noise_detection_record
 from .electromagnetic_parser import parse_electromagnetic_detection_record
@@ -14,22 +15,31 @@ from .table_parser import parse_operational_conditions, parse_operational_condit
 
 logger = get_logger("pdf_converter_v2.parser.json")
 
-def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Image.Image] = None, output_dir: Optional[str] = None, forced_document_type: Optional[str] = None) -> Dict[str, Any]:
+def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Image.Image] = None, output_dir: Optional[str] = None, forced_document_type: Optional[str] = None, enable_paddleocr_fallback: bool = True) -> Dict[str, Any]:
     """将Markdown内容转换为JSON - v2独立版本，不依赖v1和OCR
     如果提供 forced_document_type（正式全称），则优先按指定类型解析。
     支持映射：
       - noiseMonitoringRecord -> 使用噪声解析
       - electromagneticTestRecord -> 使用电磁解析
       - 其他类型：返回空数据占位
+    
+    Args:
+        markdown_content: markdown内容
+        first_page_image: 第一页图片（v2版本不使用）
+        output_dir: 输出目录（用于查找图片进行备用解析）
+        forced_document_type: 强制文档类型
+        enable_paddleocr_fallback: 是否启用PaddleOCR备用解析（默认True）
     """
+    original_markdown = markdown_content
+    
     if forced_document_type:
         if forced_document_type == "noiseMonitoringRecord":
             data = parse_noise_detection_record(markdown_content, first_page_image=None, output_dir=output_dir).to_dict()
-            return {"document_type": forced_document_type, "data": data}
-        if forced_document_type == "electromagneticTestRecord":
+            result = {"document_type": forced_document_type, "data": data}
+        elif forced_document_type == "electromagneticTestRecord":
             data = parse_electromagnetic_detection_record(markdown_content).to_dict()
-            return {"document_type": forced_document_type, "data": data}
-        if forced_document_type == "operatingConditionInfo":
+            result = {"document_type": forced_document_type, "data": data}
+        elif forced_document_type == "operatingConditionInfo":
             # 仅解析工况信息
             # 优先级：表1检测工况格式 > opStatus格式 > 旧格式
             # 1. 检查是否为"表1检测工况"格式（使用正则表达式，允许中间有空格）
@@ -56,19 +66,81 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                 logger.info("[JSON转换] 有标题模式未找到结果，尝试无标题模式解析")
                 op_list = parse_operational_conditions(markdown_content, require_title=False)
             serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
-            return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
-        return {"document_type": forced_document_type, "data": {}}
+            result = {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
+        else:
+            result = {"document_type": forced_document_type, "data": {}}
+        
+        # 对于forced_document_type，也检查数据完整性
+        if enable_paddleocr_fallback and result.get("document_type") in ["noiseMonitoringRecord", "electromagneticTestRecord"]:
+            try:
+                from ..utils.paddleocr_fallback import check_json_data_completeness
+                is_complete = check_json_data_completeness(result, result.get("document_type"))
+                
+                if not is_complete:
+                    logger.warning(f"[JSON转换] 检测到数据缺失，尝试使用PaddleOCR备用解析")
+                    fallback_markdown = fallback_parse_with_paddleocr(
+                        result,
+                        original_markdown,
+                        output_dir=output_dir,
+                        document_type=result.get("document_type")
+                    )
+                    
+                    if fallback_markdown:
+                        logger.info("[JSON转换] PaddleOCR备用解析成功，重新解析JSON")
+                        if result.get("document_type") == "noiseMonitoringRecord":
+                            data = parse_noise_detection_record(fallback_markdown, first_page_image=None, output_dir=output_dir).to_dict()
+                            result = {"document_type": "noiseMonitoringRecord", "data": data}
+                        elif result.get("document_type") == "electromagneticTestRecord":
+                            data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
+                            result = {"document_type": "electromagneticTestRecord", "data": data}
+                        logger.info("[JSON转换] 使用PaddleOCR结果重新解析完成")
+            except Exception as e:
+                logger.exception(f"[JSON转换] PaddleOCR备用解析过程出错: {e}")
+        
+        return result
 
     doc_type = detect_document_type(markdown_content)
     
     if doc_type == "noise_detection":
         # v2版本不依赖OCR，first_page_image参数会被忽略
         data = parse_noise_detection_record(markdown_content, first_page_image=None, output_dir=output_dir).to_dict()
-        return {"document_type": doc_type, "data": data}
-    
-    if doc_type == "electromagnetic_detection":
+        result = {"document_type": doc_type, "data": data}
+    elif doc_type == "electromagnetic_detection":
         data = parse_electromagnetic_detection_record(markdown_content).to_dict()
-        return {"document_type": doc_type, "data": data}
+        result = {"document_type": doc_type, "data": data}
+    else:
+        result = {"document_type": "unknown", "data": {}, "error": "无法识别的文档类型"}
     
-    return {"document_type": "unknown", "data": {}, "error": "无法识别的文档类型"}
+    # 检查数据完整性，如果缺失则使用PaddleOCR备用解析
+    if enable_paddleocr_fallback and result.get("document_type") != "unknown":
+        try:
+            # 检查是否需要备用解析
+            from ..utils.paddleocr_fallback import check_json_data_completeness
+            is_complete = check_json_data_completeness(result, result.get("document_type"))
+            
+            if not is_complete:
+                logger.warning(f"[JSON转换] 检测到数据缺失，尝试使用PaddleOCR备用解析")
+                # 尝试使用PaddleOCR补充
+                fallback_markdown = fallback_parse_with_paddleocr(
+                    result,
+                    original_markdown,
+                    output_dir=output_dir,
+                    document_type=result.get("document_type")
+                )
+                
+                if fallback_markdown:
+                    logger.info("[JSON转换] PaddleOCR备用解析成功，重新解析JSON")
+                    # 使用PaddleOCR的结果重新解析
+                    if result.get("document_type") == "noiseMonitoringRecord" or doc_type == "noise_detection":
+                        data = parse_noise_detection_record(fallback_markdown, first_page_image=None, output_dir=output_dir).to_dict()
+                        result = {"document_type": "noiseMonitoringRecord", "data": data}
+                    elif result.get("document_type") == "electromagneticTestRecord" or doc_type == "electromagnetic_detection":
+                        data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
+                        result = {"document_type": "electromagneticTestRecord", "data": data}
+                    logger.info("[JSON转换] 使用PaddleOCR结果重新解析完成")
+        except Exception as e:
+            logger.exception(f"[JSON转换] PaddleOCR备用解析过程出错: {e}")
+            # 即使备用解析失败，也返回原始结果
+    
+    return result
 

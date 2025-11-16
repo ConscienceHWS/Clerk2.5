@@ -200,11 +200,14 @@ async def convert_to_markdown(
                     # 注意：v2版本不涉及MinerU和PaddleOCR的具体调用，只进行JSON解析
                     # first_page_image设为None，因为v2版本不处理PDF图片
                     from ..parser.json_converter import parse_markdown_to_json
+                    # 构建完整的输出目录路径，包含文件名的子目录
+                    json_output_dir = os.path.join(output_dir, file_name) if file_name else output_dir
                     json_data = parse_markdown_to_json(
                         original_content,
                         first_page_image=None,
-                        output_dir=output_dir,
+                        output_dir=json_output_dir,
                         forced_document_type=forced_document_type,
+                        enable_paddleocr_fallback=True,
                     )
                     json_path = os.path.join(output_dir, f"{file_name}.json")
                     async with aiofiles.open(json_path, 'w', encoding='utf-8') as f:
