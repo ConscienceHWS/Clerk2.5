@@ -49,26 +49,14 @@ def check_json_data_completeness(json_data: Dict[str, Any], document_type: str) 
     
     # 根据文档类型检查关键字段
     if document_type == "noiseMonitoringRecord":
-        # 检查噪声检测记录的关键字段
+        # 检查噪声检测记录的关键字段（不包括noise数组，noise数组由表格解析生成，不依赖OCR）
         required_fields = ["project", "standardReferences", "soundLevelMeterMode", "soundCalibratorMode"]
         missing_count = sum(1 for field in required_fields if not data.get(field))
         
-        # 检查噪声数据
-        noise_list = data.get("noise", [])
-        if len(noise_list) == 0:
-            logger.warning("[数据完整性检查] 噪声数据列表为空")
-            return False
-        
-        # 如果超过一半的关键字段缺失，或者噪声数据为空，认为数据缺失
+        # 如果超过一半的关键字段缺失，认为数据缺失
         if missing_count >= len(required_fields) / 2:
             logger.warning(f"[数据完整性检查] 关键字段缺失过多: {missing_count}/{len(required_fields)}")
             return False
-        
-        # 检查噪声数据是否完整
-        for noise_item in noise_list:
-            if not noise_item.get("code") or not noise_item.get("address"):
-                logger.warning("[数据完整性检查] 噪声数据项不完整")
-                return False
         
         return True
     
