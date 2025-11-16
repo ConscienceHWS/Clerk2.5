@@ -47,7 +47,7 @@ except ImportError:
     DEFAULT_RETURN_MIDDLE_JSON = os.getenv("RETURN_MIDDLE_JSON", "false").lower() == "true"
     DEFAULT_RETURN_MODEL_OUTPUT = os.getenv("RETURN_MODEL_OUTPUT", "true").lower() == "true"
     DEFAULT_RETURN_MD = os.getenv("RETURN_MD", "true").lower() == "true"
-    DEFAULT_RETURN_IMAGES = os.getenv("RETURN_IMAGES", "false").lower() == "true"
+    DEFAULT_RETURN_IMAGES = os.getenv("RETURN_IMAGES", "true").lower() == "true"  # 默认启用，以便PaddleOCR备用解析可以使用
     DEFAULT_RETURN_CONTENT_LIST = os.getenv("RETURN_CONTENT_LIST", "false").lower() == "true"
     DEFAULT_SERVER_URL = os.getenv("SERVER_URL", "string")
 

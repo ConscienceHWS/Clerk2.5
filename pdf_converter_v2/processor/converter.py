@@ -41,7 +41,7 @@ async def convert_to_markdown(
     return_middle_json: bool = False,
     return_model_output: bool = True,
     return_md: bool = True,
-    return_images: bool = False,
+    return_images: bool = True,  # 默认启用，以便PaddleOCR备用解析可以使用
     return_content_list: bool = False,
     forced_document_type: Optional[str] = None
 ):
