@@ -90,7 +90,13 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                     if fallback_markdown:
                         logger.info("[JSON转换] PaddleOCR备用解析成功，重新解析JSON")
                         if result.get("document_type") == "noiseMonitoringRecord":
+                            # 保存原始的noise数组（由MinerU生成的表格解析，不依赖OCR）
+                            original_noise = result.get("data", {}).get("noise", [])
                             data = parse_noise_detection_record(fallback_markdown, first_page_image=None, output_dir=output_dir).to_dict()
+                            # 保留原始的noise数组，只更新头部字段
+                            if original_noise:
+                                data["noise"] = original_noise
+                                logger.info(f"[JSON转换] 保留原始noise数组（{len(original_noise)}条），只更新头部字段")
                             result = {"document_type": "noiseMonitoringRecord", "data": data}
                         elif result.get("document_type") == "electromagneticTestRecord":
                             data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
@@ -134,7 +140,13 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                     logger.info("[JSON转换] PaddleOCR备用解析成功，重新解析JSON")
                     # 使用PaddleOCR的结果重新解析
                     if result.get("document_type") == "noiseMonitoringRecord" or doc_type == "noise_detection":
+                        # 保存原始的noise数组（由MinerU生成的表格解析，不依赖OCR）
+                        original_noise = result.get("data", {}).get("noise", [])
                         data = parse_noise_detection_record(fallback_markdown, first_page_image=None, output_dir=output_dir).to_dict()
+                        # 保留原始的noise数组，只更新头部字段
+                        if original_noise:
+                            data["noise"] = original_noise
+                            logger.info(f"[JSON转换] 保留原始noise数组（{len(original_noise)}条），只更新头部字段")
                         result = {"document_type": "noiseMonitoringRecord", "data": data}
                     elif result.get("document_type") == "electromagneticTestRecord" or doc_type == "electromagnetic_detection":
                         data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
