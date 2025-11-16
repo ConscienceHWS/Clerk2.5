@@ -479,45 +479,102 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
         keywords["soundCalibratorMode"] = calibrator_match.group(1).strip()
         logger.debug(f"[关键词提取] 提取到声校准器型号: {keywords['soundCalibratorMode']}")
     
-    # 提取检测前校准值
-    before_cal_match = re.search(r'检测前校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', full_text)
-    if before_cal_match:
-        cal_value = before_cal_match.group(1).strip()
-        keywords["calibrationValueBefore"] = f"{cal_value} dB(A)"
-        logger.debug(f"[关键词提取] 提取到检测前校准值: {keywords['calibrationValueBefore']}")
+    # 提取检测前校准值 - 查找"检测前校准值："附近的"dB（A)"或数值
+    # 优先在同一文本中查找，如果只有字段名，则在相邻文本中查找包含"dB（A)"的文本
+    for i, text in enumerate(ocr_texts):
+        if "检测前校准值" in text:
+            # 在当前文本中查找（可能格式：检测前校准值：93.8 dB（A））
+            before_cal_match = re.search(r'检测前校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', text)
+            if before_cal_match:
+                cal_value = before_cal_match.group(1).strip()
+                keywords["calibrationValueBefore"] = f"{cal_value} dB(A)"
+                logger.debug(f"[关键词提取] 提取到检测前校准值: {keywords['calibrationValueBefore']}")
+                break
+            # 如果当前文本只有字段名（如"检测前校准值："），检查相邻文本片段
+            elif re.search(r'检测前校准值[:：]\s*$', text) or (text.strip() == "检测前校准值："):
+                # 检查后续3个文本片段，查找包含dB（A）的文本
+                for j in range(i + 1, min(i + 4, len(ocr_texts))):
+                    next_text = ocr_texts[j]
+                    # 查找包含dB（A）的文本（如"93.8dB（A）"）
+                    db_match = re.search(r'([0-9.]+)\s*dB[（(]?A[）)]?', next_text)
+                    if db_match:
+                        cal_value = db_match.group(1).strip()
+                        keywords["calibrationValueBefore"] = f"{cal_value} dB(A)"
+                        logger.debug(f"[关键词提取] 从相邻文本提取到检测前校准值: {keywords['calibrationValueBefore']}")
+                        break
+                if keywords["calibrationValueBefore"]:
+                    break
     
-    # 提取检测后校准值
-    after_cal_match = re.search(r'检测后校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', full_text)
-    if after_cal_match:
-        cal_value = after_cal_match.group(1).strip()
-        keywords["calibrationValueAfter"] = f"{cal_value} dB(A)"
-        logger.debug(f"[关键词提取] 提取到检测后校准值: {keywords['calibrationValueAfter']}")
+    # 提取检测后校准值 - 查找"检测后校准值："附近的"dB（A)"或数值
+    # 优先在同一文本中查找，如果只有字段名，则在相邻文本中查找包含"dB（A)"的文本
+    for i, text in enumerate(ocr_texts):
+        if "检测后校准值" in text:
+            # 在当前文本中查找（可能格式：检测后校准值：93.8 dB（A）或 93.8dB（A）检测后校准值：_93.8dB（A)）
+            after_cal_match = re.search(r'检测后校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', text)
+            if after_cal_match:
+                cal_value = after_cal_match.group(1).strip()
+                keywords["calibrationValueAfter"] = f"{cal_value} dB(A)"
+                logger.debug(f"[关键词提取] 提取到检测后校准值: {keywords['calibrationValueAfter']}")
+                break
+            # 如果当前文本包含"检测后校准值"但值在文本前面（如"93.8dB（A）检测后校准值："）
+            elif re.search(r'([0-9.]+)\s*dB[（(]?A[）)]?\s*检测后校准值', text):
+                db_match = re.search(r'([0-9.]+)\s*dB[（(]?A[）)]?', text)
+                if db_match:
+                    cal_value = db_match.group(1).strip()
+                    keywords["calibrationValueAfter"] = f"{cal_value} dB(A)"
+                    logger.debug(f"[关键词提取] 从同一文本提取到检测后校准值: {keywords['calibrationValueAfter']}")
+                    break
+            # 如果当前文本只有字段名（如"检测后校准值："），检查相邻文本片段
+            elif re.search(r'检测后校准值[:：]\s*$', text) or (text.strip() == "检测后校准值："):
+                # 检查后续3个文本片段，查找包含dB（A）的文本
+                for j in range(i + 1, min(i + 4, len(ocr_texts))):
+                    next_text = ocr_texts[j]
+                    # 查找包含dB（A）的文本（如"93.8dB（A）"）
+                    db_match = re.search(r'([0-9.]+)\s*dB[（(]?A[）)]?', next_text)
+                    if db_match:
+                        cal_value = db_match.group(1).strip()
+                        keywords["calibrationValueAfter"] = f"{cal_value} dB(A)"
+                        logger.debug(f"[关键词提取] 从相邻文本提取到检测后校准值: {keywords['calibrationValueAfter']}")
+                        break
+                if keywords["calibrationValueAfter"]:
+                    break
     
     # 提取天气信息（从文本片段中查找包含日期和天气信息的片段）
     # 需要处理文本可能分散在多个片段中的情况
+    # 只有当"日期："存在且后续有天气相关信息时才提取
     current_weather_info = None
     weather_start_idx = -1  # 记录天气信息开始的索引
     
     for i, text in enumerate(ocr_texts):
-        # 查找包含日期的文本，开始新的天气记录
+        # 查找包含"日期："的文本，开始新的天气记录
+        # 只有当后续文本中有天气相关信息时才创建记录
         date_match = re.search(r'日期[:：]\s*([\d.\-]+)', text)
         if date_match:
-            # 如果之前有未完成的天气记录，先保存
-            if current_weather_info and any([current_weather_info["monitorAt"], current_weather_info["weather"], 
-                                             current_weather_info["temp"], current_weather_info["humidity"], 
-                                             current_weather_info["windSpeed"], current_weather_info["windDirection"]]):
-                keywords["weather_info"].append(current_weather_info)
+            # 检查后续10个文本片段中是否有天气相关信息（天气、温度、湿度、风速、风向等）
+            has_weather_info = False
+            for j in range(i, min(i + 10, len(ocr_texts))):
+                check_text = ocr_texts[j]
+                if any(keyword in check_text for keyword in ["天气", "温度", "湿度", "风速", "风向", "℃", "%RH", "m/s"]):
+                    has_weather_info = True
+                    break
             
-            # 创建新的天气记录
-            current_weather_info = {
-                "monitorAt": date_match.group(1).strip(),
-                "weather": "",
-                "temp": "",
-                "humidity": "",
-                "windSpeed": "",
-                "windDirection": ""
-            }
-            weather_start_idx = i
+            if has_weather_info:
+                # 如果之前有未完成的天气记录，先保存
+                if current_weather_info and any([current_weather_info["monitorAt"], current_weather_info["weather"], 
+                                                 current_weather_info["temp"], current_weather_info["humidity"], 
+                                                 current_weather_info["windSpeed"], current_weather_info["windDirection"]]):
+                    keywords["weather_info"].append(current_weather_info)
+                
+                # 创建新的天气记录
+                current_weather_info = {
+                    "monitorAt": date_match.group(1).strip(),
+                    "weather": "",
+                    "temp": "",
+                    "humidity": "",
+                    "windSpeed": "",
+                    "windDirection": ""
+                }
+                weather_start_idx = i
         
         # 如果当前有天气记录，继续提取信息（从当前文本和后续几个文本中）
         if current_weather_info:
