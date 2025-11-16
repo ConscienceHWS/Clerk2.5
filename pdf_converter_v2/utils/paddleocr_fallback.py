@@ -200,6 +200,7 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
         save_path_base = os.path.join(image_dir, image_basename)
         
         # 构建paddleocr命令，添加save_path参数
+        # PaddleOCR会在save_path下创建目录，文件保存在该目录内
         cmd = ["paddleocr", "doc_parser", "-i", image_path, "--save_path", save_path_base]
         
         # 设置环境变量，限制GPU内存使用
@@ -226,7 +227,8 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
             return None
         
         # 从保存的Markdown文件中读取结果
-        md_file = f"{save_path_base}.md"
+        # PaddleOCR会在save_path下创建目录，文件路径为: {save_path}/{basename}.md
+        md_file = os.path.join(save_path_base, f"{image_basename}.md")
         if os.path.exists(md_file):
             logger.info(f"[PaddleOCR] 从Markdown文件读取结果: {md_file}")
             try:
