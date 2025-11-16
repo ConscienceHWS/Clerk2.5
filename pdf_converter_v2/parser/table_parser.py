@@ -602,11 +602,13 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
             
             # 检查是否是噪声数据行（包含测点编号如N1、N2等，且没有电压/电流/功率列）
             is_noise_row = False
-            if name_value:
-                # 如果名称列包含测点编号格式（N1、N2等）且没有找到电压/电流/功率列，可能是噪声数据行
-                if re.match(r'^N\d+', name_value) and voltage_idx == -1 and current_idx == -1:
+            # 检查名称列或第一列是否是测点编号
+            check_cell = name_value if name_value else (row[0].strip() if len(row) > 0 else "")
+            if check_cell:
+                # 如果名称列或第一列包含测点编号格式（N1、N2等）且没有找到电压/电流/功率列，可能是噪声数据行
+                if re.match(r'^N\d+', check_cell) and voltage_idx == -1 and current_idx == -1:
                     is_noise_row = True
-                    logger.debug(f"[工况信息opStatus] 第{row_idx}行疑似噪声数据行，跳过: name='{name_value}'")
+                    logger.debug(f"[工况信息opStatus] 第{row_idx}行疑似噪声数据行，跳过: 第一列或名称列='{check_cell}'")
             
             # 只有当名称存在且不是噪声数据行时才创建工况信息记录
             if name_value and any(k in name_value for k in ["主变", "#"]) and not is_noise_row:
