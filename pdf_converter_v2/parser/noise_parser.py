@@ -817,8 +817,10 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                 # 处理日期格式不一致的情况（如 205.7.10 vs 2025.7.10）
                 ocr_date = ocr_weather.monitorAt.strip()
                 # 如果日期格式是 205.7.10，尝试修正为 2025.7.10
-                if re.match(r'^20[0-4]\.', ocr_date):  # 匹配 200-204 开头的日期
-                    ocr_date_normalized = ocr_date.replace(ocr_date[:3], "2025", 1) if ocr_date.startswith("205") else ocr_date
+                if re.match(r'^205\.', ocr_date):  # 匹配 205 开头的日期（OCR识别错误）
+                    ocr_date_normalized = re.sub(r'^205\.', '2025.', ocr_date)
+                elif re.match(r'^20[0-4]\.', ocr_date):  # 匹配其他 200-204 开头的日期
+                    ocr_date_normalized = re.sub(r'^20[0-4]\.', '2025.', ocr_date)
                 else:
                     ocr_date_normalized = ocr_date
                 
