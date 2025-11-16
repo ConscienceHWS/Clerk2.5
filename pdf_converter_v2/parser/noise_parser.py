@@ -83,7 +83,7 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
             # 如果提取到的值不是"温度"，则认为是天气值
             if weather_value and weather_value != "温度":
                 weather.weather = weather_value
-                logger.debug(f"[噪声检测] 提取到天气: {weather.weather}")
+            logger.debug(f"[噪声检测] 提取到天气: {weather.weather}")
         
         # 提取温度（格式：温度26.7-27.4℃ 或 温度 26.7-27.4℃）
         t_match = re.search(temp_pattern, section)
@@ -455,7 +455,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                         parse_weather_from_text(weather_section, record)
                         weather_extracted = True
                         logger.info(f"[噪声检测] 从组合单元格解析到天气信息: {len(record.weather)} 条记录")
-        
+                
         # 尝试从不同单元格解析（新格式：字段名和值在不同单元格）
         for col_idx, cell in enumerate(row):
             cell_clean = re.sub(r'<[^>]+>', '', cell).strip()
@@ -498,14 +498,14 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                     header_extracted = True
                     logger.debug(f"[噪声检测] 从不同单元格解析到检测后校准值: {record.calibrationValueAfter}")
         
-        # 如果已经解析到所有需要的字段，可以提前结束
-        if record.project and record.soundLevelMeterMode and record.calibrationValueBefore and record.calibrationValueAfter:
-            logger.info(f"[噪声检测] 从单元格成功解析到所有头部信息: project={record.project}, "
-                      f"soundLevelMeterMode={record.soundLevelMeterMode}, "
-                      f"calibrationValueBefore={record.calibrationValueBefore}, "
-                      f"calibrationValueAfter={record.calibrationValueAfter}")
-            if not weather_extracted:
-                break
+                # 如果已经解析到所有需要的字段，可以提前结束
+                if record.project and record.soundLevelMeterMode and record.calibrationValueBefore and record.calibrationValueAfter:
+                    logger.info(f"[噪声检测] 从单元格成功解析到所有头部信息: project={record.project}, "
+                              f"soundLevelMeterMode={record.soundLevelMeterMode}, "
+                              f"calibrationValueBefore={record.calibrationValueBefore}, "
+                              f"calibrationValueAfter={record.calibrationValueAfter}")
+                    if not weather_extracted:
+                        break
     
     # 如果还没有提取到头部信息，使用原来的方法（假设字段分布在不同的单元格中）
     # 但也要尝试从同一单元格中提取（如果单元格包含字段名和冒号）
@@ -776,8 +776,8 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                     parse_weather_from_text(text, record)
                     if record.weather:
                         weather_extracted = True
-                        break
-    
+                    break
+            
     # 将OCR提取的天气信息与表格解析的天气信息进行合并
     # 如果OCR提取的天气信息中monitorAt为空，尝试用表格解析的日期来补充
     if ocr_weather_list:
@@ -811,7 +811,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                             logger.debug(f"[噪声检测] 从OCR补充表格解析的风向: {table_weather.windDirection}")
                         matched = True
                         matched_in_first_branch = True  # 标记已在第一个分支匹配成功
-                        break
+                        break  # 匹配成功后立即退出循环，避免继续匹配
                 
                 # 如果没有匹配到，但OCR天气信息有其他字段，也添加到记录中（日期为空）
                 if not matched:
@@ -848,16 +848,16 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                         if not table_weather.windDirection and ocr_weather.windDirection:
                             table_weather.windDirection = ocr_weather.windDirection
                         logger.debug(f"[噪声检测] OCR天气信息与表格解析结果合并: {table_weather.to_dict()}")
-                        break
+                        break  # 找到匹配的记录后立即退出
                 
                 # 如果不存在相同日期的记录，且OCR信息完整，添加到记录中
                 if not exists and any([ocr_weather.weather, ocr_weather.temp, ocr_weather.humidity, 
                                       ocr_weather.windSpeed, ocr_weather.windDirection]):
                     record.weather.append(ocr_weather)
                     logger.debug(f"[噪声检测] 添加OCR天气信息到记录: {ocr_weather.to_dict()}")
-            elif any([ocr_weather.weather, ocr_weather.temp, ocr_weather.humidity, 
+            elif not matched_in_first_branch and any([ocr_weather.weather, ocr_weather.temp, ocr_weather.humidity, 
                      ocr_weather.windSpeed, ocr_weather.windDirection]):
-                # 如果OCR天气信息没有日期但有其他字段，也添加到记录中
+                # 如果OCR天气信息没有日期但有其他字段，且未在第一个分支匹配成功，也添加到记录中
                 record.weather.append(ocr_weather)
                 logger.debug(f"[噪声检测] 添加OCR天气信息到记录（无日期）: {ocr_weather.to_dict()}")
 
