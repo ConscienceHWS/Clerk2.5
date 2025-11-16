@@ -225,33 +225,29 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
             logger.error(f"[PaddleOCR] 错误输出: {result.stderr}")
             return None
         
-        # 尝试从保存的JSON文件中读取结果
-        json_file = f"{save_path_base}_res.json"
-        if os.path.exists(json_file):
-            logger.info(f"[PaddleOCR] 从JSON文件读取结果: {json_file}")
+        # 从保存的Markdown文件中读取结果
+        md_file = f"{save_path_base}.md"
+        if os.path.exists(md_file):
+            logger.info(f"[PaddleOCR] 从Markdown文件读取结果: {md_file}")
             try:
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    json_data = json.load(f)
-                    # 转换为标准格式
-                    if isinstance(json_data, dict):
-                        # 如果JSON文件直接包含parsing_res_list，直接返回
-                        if "parsing_res_list" in json_data:
-                            parsed_result = {"parsing_res_list": json_data["parsing_res_list"]}
-                        # 如果包含res键，提取其中的parsing_res_list
-                        elif "res" in json_data and "parsing_res_list" in json_data.get("res", {}):
-                            parsed_result = {"parsing_res_list": json_data["res"]["parsing_res_list"]}
-                        else:
-                            # 尝试解析整个JSON结构
-                            parsed_result = parse_paddleocr_output(json.dumps(json_data))
+                with open(md_file, 'r', encoding='utf-8') as f:
+                    markdown_content = f.read()
+                    if markdown_content.strip():
+                        # 将markdown内容转换为标准格式
+                        # 为了兼容现有代码，我们需要将markdown转换回parsing_res_list格式
+                        # 但实际上，我们可以直接返回markdown内容，让调用方处理
+                        # 这里我们返回一个特殊标记，表示这是markdown格式
+                        logger.info(f"[PaddleOCR] 成功读取Markdown文件，内容长度: {len(markdown_content)} 字符")
+                        # 返回markdown内容，使用特殊键标记
+                        return {"markdown_content": markdown_content}
                     else:
-                        parsed_result = parse_paddleocr_output(json.dumps(json_data))
-                    
-                    logger.info(f"[PaddleOCR] 从JSON文件解析成功，获得 {len(parsed_result.get('parsing_res_list', []))} 个区块")
-                    return parsed_result
+                        logger.warning("[PaddleOCR] Markdown文件内容为空")
             except Exception as e:
-                logger.warning(f"[PaddleOCR] 读取JSON文件失败: {e}，尝试从stdout解析")
+                logger.exception(f"[PaddleOCR] 读取Markdown文件失败: {e}")
+        else:
+            logger.warning(f"[PaddleOCR] Markdown文件不存在: {md_file}")
         
-        # 如果JSON文件不存在或读取失败，尝试从stdout解析
+        # 如果Markdown文件不存在或读取失败，尝试从stdout解析
         output_text = result.stdout.strip()
         if output_text:
             logger.info("[PaddleOCR] 从stdout解析输出")
@@ -259,7 +255,7 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
             logger.info(f"[PaddleOCR] 解析成功，获得 {len(parsed_result.get('parsing_res_list', []))} 个区块")
             return parsed_result
         else:
-            logger.warning("[PaddleOCR] stdout输出为空，且未找到JSON文件")
+            logger.warning("[PaddleOCR] stdout输出为空，且未找到Markdown文件")
             return None
         
     except subprocess.TimeoutExpired:
@@ -477,14 +473,21 @@ def fallback_parse_with_paddleocr(
             logger.error("[PaddleOCR备用] PaddleOCR解析失败")
             return None
         
-        # 转换为markdown
-        paddleocr_markdown = paddleocr_to_markdown(paddleocr_result)
-        
-        if not paddleocr_markdown:
-            logger.warning("[PaddleOCR备用] PaddleOCR未解析出有效内容")
+        # 检查返回结果格式
+        if "markdown_content" in paddleocr_result:
+            # 直接从MD文件读取的内容
+            paddleocr_markdown = paddleocr_result["markdown_content"]
+            logger.info(f"[PaddleOCR备用] 成功从MD文件读取，生成 {len(paddleocr_markdown)} 字符的markdown")
+        elif "parsing_res_list" in paddleocr_result:
+            # 从JSON或stdout解析的结果，需要转换为markdown
+            paddleocr_markdown = paddleocr_to_markdown(paddleocr_result)
+            if not paddleocr_markdown:
+                logger.warning("[PaddleOCR备用] PaddleOCR未解析出有效内容")
+                return None
+            logger.info(f"[PaddleOCR备用] 成功解析，生成 {len(paddleocr_markdown)} 字符的markdown")
+        else:
+            logger.error("[PaddleOCR备用] PaddleOCR返回格式不正确")
             return None
-        
-        logger.info(f"[PaddleOCR备用] 成功解析，生成 {len(paddleocr_markdown)} 字符的markdown")
         
         # 合并原始markdown和paddleocr结果
         # 优先使用paddleocr的结果，因为它更完整
