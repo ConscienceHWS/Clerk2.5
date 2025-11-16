@@ -779,9 +779,28 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                     break
             
     # 将OCR提取的天气信息与表格解析的天气信息进行合并
-    # 如果OCR提取的天气信息中monitorAt为空，尝试用表格解析的日期来补充
+    # 按顺序匹配风向：第一条OCR天气信息对应第一条表格天气信息，以此类推
     if ocr_weather_list:
         logger.debug(f"[噪声检测] 开始合并OCR和表格解析的天气信息，OCR提取了 {len(ocr_weather_list)} 条，表格解析了 {len(record.weather)} 条")
+        
+        # 提取OCR风向数组，按顺序匹配到表格解析的天气记录
+        ocr_wind_directions = []
+        for ocr_weather in ocr_weather_list:
+            if ocr_weather.windDirection and ocr_weather.windDirection.strip():
+                ocr_wind_directions.append(ocr_weather.windDirection.strip())
+            else:
+                ocr_wind_directions.append("")  # 保持顺序，即使为空
+        
+        logger.debug(f"[噪声检测] 从OCR提取的风向数组: {ocr_wind_directions}")
+        
+        # 按顺序将OCR风向填充到表格解析的天气记录中
+        for i, table_weather in enumerate(record.weather):
+            if i < len(ocr_wind_directions) and ocr_wind_directions[i]:
+                if not table_weather.windDirection or not table_weather.windDirection.strip():
+                    table_weather.windDirection = ocr_wind_directions[i]
+                    logger.debug(f"[噪声检测] 按顺序填充第{i}条表格天气记录的风向: {table_weather.windDirection}")
+        
+        # 原有的合并逻辑（用于补充其他字段，如日期、天气、温度等）
         for ocr_weather in ocr_weather_list:
             # 如果OCR提取的天气信息中monitorAt为空，尝试从表格解析的天气信息中匹配
             matched_in_first_branch = False
