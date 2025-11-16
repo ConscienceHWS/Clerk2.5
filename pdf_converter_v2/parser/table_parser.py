@@ -492,8 +492,17 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
         
         logger.info(f"[工况信息opStatus] 找到工况信息表格，行数: {len(table)}")
         
+        # 检测是否有两行表头（第二行包含"U (kV)"、"I (A)"等）
+        has_two_row_header = False
+        if len(table) > 1:
+            second_row_text = " ".join(table[1]).lower()
+            if any(k in second_row_text for k in ["u (kv)", "i (a)", "p (mw)", "q (mvar)"]):
+                has_two_row_header = True
+                logger.debug("[工况信息opStatus] 检测到两行表头格式")
+        
         # 根据表头动态确定列索引
-        header_row = table[0]
+        # 如果有两行表头，从第二行检测；否则从第一行检测
+        header_row = table[1] if has_two_row_header else table[0]
         time_idx = -1
         project_idx = -1
         name_idx = -1
@@ -508,20 +517,31 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
                 time_idx = idx
             elif "项目" in cell:
                 project_idx = idx
-            elif "电压" in cell or "电压(kv)" in cell_lower or "u" in cell_lower:
+            elif "名称" in cell:
+                name_idx = idx
+            elif "电压" in cell or "电压(kv)" in cell_lower or ("u" in cell_lower and "kv" in cell_lower):
                 voltage_idx = idx
-            elif "电流" in cell or "电流(a)" in cell_lower or "i" in cell_lower:
+            elif "电流" in cell or "电流(a)" in cell_lower or ("i" in cell_lower and "a" in cell_lower):
                 current_idx = idx
-            elif "有功功率" in cell or ("有功" in cell and "功率" in cell) or "p" in cell_lower:
+            elif "有功功率" in cell or ("有功" in cell and "功率" in cell) or ("p" in cell_lower and "mw" in cell_lower):
                 active_power_idx = idx
-            elif "无功功率" in cell or ("无功" in cell and "功率" in cell) or "q" in cell_lower:
+            elif "无功功率" in cell or ("无功" in cell and "功率" in cell) or ("q" in cell_lower and "mvar" in cell_lower):
                 reactive_power_idx = idx
         
-        # 如果表头中没有找到名称列，尝试在数据行中查找（第一列是时间，第二列是项目，第三列可能是名称）
+        # 如果第一行表头有"名称"，也检查第一行
+        if has_two_row_header and name_idx == -1:
+            first_row = table[0]
+            for idx, cell in enumerate(first_row):
+                if "名称" in cell:
+                    name_idx = idx
+                    break
+        
+        # 如果表头中没有找到名称列，尝试在数据行中查找
         if name_idx == -1:
-            # 检查第一行数据（如果有），看哪一列包含"主变"或"#"
-            if len(table) > 1:
-                first_data_row = table[1]
+            # 确定第一行数据的位置（如果有两行表头，从第2行开始；否则从第1行开始）
+            first_data_row_idx = 2 if has_two_row_header else 1
+            if len(table) > first_data_row_idx:
+                first_data_row = table[first_data_row_idx]
                 for idx, cell in enumerate(first_data_row):
                     # 跳过已知的列（时间列和项目列）
                     if idx != time_idx and idx != project_idx and cell.strip():
@@ -548,11 +568,12 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
         logger.debug(f"[工况信息opStatus] 列索引: 检测时间={time_idx}, 项目={project_idx}, 名称={name_idx}, "
                     f"电压={voltage_idx}, 电流={current_idx}, 有功功率={active_power_idx}, 无功功率={reactive_power_idx}")
         
-        # 从第二行开始解析数据（第一行是表头）
+        # 确定数据行起始位置（如果有两行表头，从第2行开始；否则从第1行开始）
+        data_start_row = 2 if has_two_row_header else 1
         current_monitor_at = ""
         current_project = ""
         
-        for row_idx in range(1, len(table)):
+        for row_idx in range(data_start_row, len(table)):
             row = table[row_idx]
             logger.debug(f"[工况信息opStatus] 处理第{row_idx}行: 列数={len(row)}, 内容={row}")
             

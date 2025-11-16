@@ -6,7 +6,7 @@ from typing import Optional, List
 import re
 from ..utils.logging_config import get_logger
 from ..models.data_models import NoiseDetectionRecord, WeatherData, NoiseData
-from .table_parser import extract_table_with_rowspan_colspan, parse_operational_conditions
+from .table_parser import extract_table_with_rowspan_colspan, parse_operational_conditions, parse_operational_conditions_opstatus
 
 logger = get_logger("pdf_converter_v2.parser.noise")
 
@@ -683,8 +683,19 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                 logger.warning(f"[噪声检测] 跳过无效数据行: {row}")
     
     # 解析工况信息
-    operational_conditions = parse_operational_conditions(markdown_content)
-    record.operationalConditions = operational_conditions
+    # 优先使用opStatus格式解析（附件 工况及工程信息），如果失败则使用旧格式
+    if "附件" in markdown_content and "工况" in markdown_content:
+        operational_conditions = parse_operational_conditions_opstatus(markdown_content)
+        if operational_conditions:
+            logger.info(f"[噪声检测] 使用opStatus格式解析到 {len(operational_conditions)} 条工况信息")
+            record.operationalConditions = operational_conditions
+        else:
+            # 如果opStatus格式解析失败，尝试旧格式
+            operational_conditions = parse_operational_conditions(markdown_content)
+            record.operationalConditions = operational_conditions
+    else:
+        operational_conditions = parse_operational_conditions(markdown_content)
+        record.operationalConditions = operational_conditions
     
     # v2版本不依赖OCR，只从markdown内容解析
     # 如果某些字段为空，会在日志中记录警告，但不进行OCR补充识别
