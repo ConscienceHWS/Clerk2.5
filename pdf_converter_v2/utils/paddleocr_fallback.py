@@ -6,6 +6,8 @@ import json
 import os
 import subprocess
 import tempfile
+import time
+import random
 from pathlib import Path
 from typing import Dict, Any, Optional
 import ast
@@ -14,6 +16,20 @@ import re
 from ..utils.logging_config import get_logger
 
 logger = get_logger("pdf_converter_v2.utils.paddleocr")
+
+try:
+    import pypdfium2 as pdfium
+    PDFIUM_AVAILABLE = True
+except ImportError:
+    PDFIUM_AVAILABLE = False
+    logger.warning("[PaddleOCR备用] pypdfium2未安装，无法从PDF提取图片")
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    logger.warning("[PaddleOCR备用] PIL未安装，无法处理图片")
 
 
 def check_json_data_completeness(json_data: Dict[str, Any], document_type: str) -> bool:
@@ -218,6 +234,82 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def extract_first_page_from_pdf(pdf_path: str, output_dir: str) -> Optional[str]:
+    """从PDF文件中提取第一页作为图片
+    
+    Args:
+        pdf_path: PDF文件路径
+        output_dir: 输出目录，用于保存提取的图片
+        
+    Returns:
+        提取的图片路径，如果失败返回None
+    """
+    if not PDFIUM_AVAILABLE or not PIL_AVAILABLE:
+        logger.error("[PaddleOCR备用] 缺少必要的库（pypdfium2或PIL），无法从PDF提取图片")
+        return None
+    
+    try:
+        if not os.path.exists(pdf_path):
+            logger.error(f"[PaddleOCR备用] PDF文件不存在: {pdf_path}")
+            return None
+        
+        # 打开PDF文件
+        pdf = pdfium.PdfDocument(pdf_path)
+        try:
+            if len(pdf) == 0:
+                logger.error("[PaddleOCR备用] PDF文件为空")
+                return None
+            
+            # 获取第一页
+            page = pdf[0]
+            
+            # 渲染为图片（DPI=200，与MinerU默认一致）
+            bitmap = page.render(scale=200/72)  # 200 DPI = 200/72 scale
+            
+            # 转换为PIL Image
+            pil_image = bitmap.to_pil()
+            
+            # 保存图片
+            os.makedirs(output_dir, exist_ok=True)
+            image_filename = f"paddleocr_fallback_page0_{int(time.time() * 1000)}_{random.randint(1000, 9999)}.png"
+            image_path = os.path.join(output_dir, image_filename)
+            pil_image.save(image_path, "PNG")
+            
+            logger.info(f"[PaddleOCR备用] 从PDF提取第一页图片: {image_path}")
+            
+            # 清理资源
+            bitmap.close()
+            return image_path
+            
+        finally:
+            pdf.close()
+            
+    except Exception as e:
+        logger.exception(f"[PaddleOCR备用] 从PDF提取图片失败: {e}")
+        return None
+
+
+def find_pdf_file(output_dir: str) -> Optional[str]:
+    """在输出目录中查找PDF文件
+    
+    Args:
+        output_dir: 输出目录
+        
+    Returns:
+        PDF文件路径，如果未找到返回None
+    """
+    if not os.path.exists(output_dir):
+        return None
+    
+    # 查找PDF文件
+    pdf_files = list(Path(output_dir).rglob("*.pdf"))
+    if pdf_files:
+        # 返回第一个找到的PDF文件
+        return str(pdf_files[0])
+    
+    return None
+
+
 def extract_image_from_markdown(markdown_content: str, output_dir: str) -> Optional[str]:
     """从markdown内容中提取第一张图片路径
     
@@ -261,7 +353,8 @@ def fallback_parse_with_paddleocr(
     json_data: Dict[str, Any],
     markdown_content: str,
     output_dir: Optional[str] = None,
-    document_type: Optional[str] = None
+    document_type: Optional[str] = None,
+    input_file: Optional[str] = None
 ) -> Optional[str]:
     """当JSON数据缺失时，使用paddleocr进行备用解析
     
@@ -270,6 +363,7 @@ def fallback_parse_with_paddleocr(
         markdown_content: 原始markdown内容
         output_dir: 输出目录（用于查找图片）
         document_type: 文档类型
+        input_file: 原始输入文件路径（PDF或图片），如果未找到图片则从PDF提取第一页
         
     Returns:
         补充后的markdown内容，如果失败返回None
@@ -310,8 +404,33 @@ def fallback_parse_with_paddleocr(
                         image_path = str(png_files[0])
                         logger.info(f"[PaddleOCR备用] 使用找到的图片: {image_path}")
         
+        # 如果仍未找到图片，尝试从PDF提取第一页
         if not image_path:
-            logger.error("[PaddleOCR备用] 未找到可用的图片文件")
+            logger.warning("[PaddleOCR备用] 未找到可用的图片文件，尝试从PDF提取第一页")
+            
+            # 首先尝试使用提供的input_file
+            pdf_path = None
+            if input_file and os.path.exists(input_file) and input_file.lower().endswith('.pdf'):
+                pdf_path = input_file
+                logger.info(f"[PaddleOCR备用] 使用提供的PDF文件: {pdf_path}")
+            elif output_dir:
+                # 在output_dir中查找PDF文件
+                pdf_path = find_pdf_file(output_dir)
+                if pdf_path:
+                    logger.info(f"[PaddleOCR备用] 在输出目录中找到PDF文件: {pdf_path}")
+            
+            if pdf_path:
+                # 从PDF提取第一页
+                image_path = extract_first_page_from_pdf(pdf_path, output_dir)
+                if image_path:
+                    logger.info(f"[PaddleOCR备用] 成功从PDF提取第一页图片: {image_path}")
+                else:
+                    logger.error("[PaddleOCR备用] 从PDF提取图片失败")
+            else:
+                logger.error("[PaddleOCR备用] 未找到PDF文件，无法提取图片")
+        
+        if not image_path:
+            logger.error("[PaddleOCR备用] 未找到可用的图片文件，备用解析失败")
             return None
         
         # 调用paddleocr

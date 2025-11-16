@@ -15,7 +15,7 @@ from .table_parser import parse_operational_conditions, parse_operational_condit
 
 logger = get_logger("pdf_converter_v2.parser.json")
 
-def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Image.Image] = None, output_dir: Optional[str] = None, forced_document_type: Optional[str] = None, enable_paddleocr_fallback: bool = True) -> Dict[str, Any]:
+def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Image.Image] = None, output_dir: Optional[str] = None, forced_document_type: Optional[str] = None, enable_paddleocr_fallback: bool = True, input_file: Optional[str] = None) -> Dict[str, Any]:
     """将Markdown内容转换为JSON - v2独立版本，不依赖v1和OCR
     如果提供 forced_document_type（正式全称），则优先按指定类型解析。
     支持映射：
@@ -29,6 +29,7 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
         output_dir: 输出目录（用于查找图片进行备用解析）
         forced_document_type: 强制文档类型
         enable_paddleocr_fallback: 是否启用PaddleOCR备用解析（默认True）
+        input_file: 原始输入文件路径（PDF或图片），用于从PDF提取第一页
     """
     original_markdown = markdown_content
     
@@ -82,7 +83,8 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                         result,
                         original_markdown,
                         output_dir=output_dir,
-                        document_type=result.get("document_type")
+                        document_type=result.get("document_type"),
+                        input_file=input_file
                     )
                     
                     if fallback_markdown:
