@@ -814,9 +814,19 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             # 如果OCR天气信息有日期，检查是否与表格解析的天气信息重复
             if ocr_weather.monitorAt and ocr_weather.monitorAt.strip():
                 # 检查是否已存在相同日期的天气记录
+                # 处理日期格式不一致的情况（如 205.7.10 vs 2025.7.10）
+                ocr_date = ocr_weather.monitorAt.strip()
+                # 如果日期格式是 205.7.10，尝试修正为 2025.7.10
+                if re.match(r'^20[0-4]\.', ocr_date):  # 匹配 200-204 开头的日期
+                    ocr_date_normalized = ocr_date.replace(ocr_date[:3], "2025", 1) if ocr_date.startswith("205") else ocr_date
+                else:
+                    ocr_date_normalized = ocr_date
+                
                 exists = False
                 for table_weather in record.weather:
-                    if table_weather.monitorAt and table_weather.monitorAt.strip() == ocr_weather.monitorAt.strip():
+                    table_date = table_weather.monitorAt.strip() if table_weather.monitorAt else ""
+                    # 直接比较或比较归一化后的日期
+                    if table_date and (table_date == ocr_date or table_date == ocr_date_normalized):
                         exists = True
                         # 如果表格解析的天气信息不完整，用OCR信息补充
                         if not table_weather.weather and ocr_weather.weather:
