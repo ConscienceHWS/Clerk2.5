@@ -784,6 +784,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
         logger.debug(f"[噪声检测] 开始合并OCR和表格解析的天气信息，OCR提取了 {len(ocr_weather_list)} 条，表格解析了 {len(record.weather)} 条")
         for ocr_weather in ocr_weather_list:
             # 如果OCR提取的天气信息中monitorAt为空，尝试从表格解析的天气信息中匹配
+            matched_in_first_branch = False
             if not ocr_weather.monitorAt or not ocr_weather.monitorAt.strip():
                 # 根据温度、湿度、风速等字段匹配表格解析的天气信息
                 matched = False
@@ -809,14 +810,15 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                             table_weather.windDirection = ocr_weather.windDirection
                             logger.debug(f"[噪声检测] 从OCR补充表格解析的风向: {table_weather.windDirection}")
                         matched = True
+                        matched_in_first_branch = True  # 标记已在第一个分支匹配成功
                         break
                 
                 # 如果没有匹配到，但OCR天气信息有其他字段，也添加到记录中（日期为空）
                 if not matched:
                     logger.debug(f"[噪声检测] OCR天气信息未匹配到表格解析结果，保留原信息（日期为空）")
             
-            # 如果OCR天气信息有日期，检查是否与表格解析的天气信息重复
-            if ocr_weather.monitorAt and ocr_weather.monitorAt.strip():
+            # 如果OCR天气信息有日期，且未在第一个分支匹配成功，检查是否与表格解析的天气信息重复
+            if ocr_weather.monitorAt and ocr_weather.monitorAt.strip() and not matched_in_first_branch:
                 # 检查是否已存在相同日期的天气记录
                 # 处理日期格式不一致的情况（如 205.7.10 vs 2025.7.10）
                 ocr_date = ocr_weather.monitorAt.strip()
