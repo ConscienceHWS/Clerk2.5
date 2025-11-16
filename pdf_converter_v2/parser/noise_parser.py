@@ -307,6 +307,88 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
 def parse_noise_detection_record(markdown_content: str, first_page_image: Optional = None, output_dir: Optional[str] = None) -> NoiseDetectionRecord:
     """解析噪声检测记录 - v2版本不依赖OCR，只从markdown内容解析"""
     record = NoiseDetectionRecord()
+    
+    # 首先提取OCR关键词补充（如果存在）
+    ocr_keywords_comment_match = re.search(r'<!--\s*OCR关键词补充:(.*?)-->', markdown_content, re.DOTALL)
+    if ocr_keywords_comment_match:
+        keywords_text = ocr_keywords_comment_match.group(1)
+        logger.info("[噪声检测] 发现OCR关键词补充，开始提取")
+        
+        # 提取项目名称
+        project_match = re.search(r'项目名称[:：]([^\n]+)', keywords_text)
+        if project_match:
+            record.project = clean_project_field(project_match.group(1).strip())
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到项目名称: {record.project}")
+        
+        # 提取检测依据
+        standard_match = re.search(r'检测依据[:：]([^\n]+)', keywords_text)
+        if standard_match:
+            record.standardReferences = standard_match.group(1).strip()
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测依据: {record.standardReferences}")
+        
+        # 提取声级计型号/编号
+        sound_meter_match = re.search(r'声级计型号/编号[:：]([^\n]+)', keywords_text)
+        if sound_meter_match:
+            record.soundLevelMeterMode = sound_meter_match.group(1).strip()
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到声级计型号: {record.soundLevelMeterMode}")
+        
+        # 提取声校准器型号/编号
+        calibrator_match = re.search(r'声校准器型号/编号[:：]([^\n]+)', keywords_text)
+        if calibrator_match:
+            record.soundCalibratorMode = calibrator_match.group(1).strip()
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到声校准器型号: {record.soundCalibratorMode}")
+        
+        # 提取检测前校准值
+        before_cal_match = re.search(r'检测前校准值[:：]([^\n]+)', keywords_text)
+        if before_cal_match:
+            record.calibrationValueBefore = before_cal_match.group(1).strip()
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测前校准值: {record.calibrationValueBefore}")
+        
+        # 提取检测后校准值
+        after_cal_match = re.search(r'检测后校准值[:：]([^\n]+)', keywords_text)
+        if after_cal_match:
+            record.calibrationValueAfter = after_cal_match.group(1).strip()
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测后校准值: {record.calibrationValueAfter}")
+        
+        # 提取天气信息
+        weather_lines = re.findall(r'日期[:：]([^\n]+)', keywords_text)
+        for weather_line in weather_lines:
+            weather = WeatherData()
+            # 解析天气行：日期：xxx 天气：xxx 温度：xxx 湿度：xxx 风速：xxx 风向：xxx
+            date_match = re.search(r'日期[:：]\s*([\d.\-]+)', weather_line)
+            if date_match:
+                weather.monitorAt = date_match.group(1).strip()
+            
+            weather_match = re.search(r'天气[:：]\s*([^\s温度]+)', weather_line)
+            if weather_match:
+                weather.weather = weather_match.group(1).strip()
+            
+            temp_match = re.search(r'温度[:：]\s*([0-9.\-]+)', weather_line)
+            if temp_match:
+                weather.temp = temp_match.group(1).strip()
+            
+            humidity_match = re.search(r'湿度[:：]\s*([0-9.\-]+)', weather_line)
+            if humidity_match:
+                weather.humidity = humidity_match.group(1).strip()
+            
+            wind_speed_match = re.search(r'风速[:：]\s*([0-9.\-]+)', weather_line)
+            if wind_speed_match:
+                weather.windSpeed = wind_speed_match.group(1).strip()
+            
+            wind_dir_match = re.search(r'风向[:：]\s*([^\s]+)', weather_line)
+            if wind_dir_match:
+                weather.windDirection = wind_dir_match.group(1).strip()
+            
+            # 如果天气为空但其他字段有值，默认为"晴"
+            if not weather.weather or not weather.weather.strip():
+                if any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
+                    weather.weather = "晴"
+            
+            # 如果至少有一个字段不为空，添加到记录
+            if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
+                record.weather.append(weather)
+                logger.debug(f"[噪声检测] 从OCR关键词补充提取到天气信息: {weather.to_dict()}")
+    
     # 使用支持rowspan和colspan的函数提取表格，因为噪声检测表有复杂的表头结构
     tables = extract_table_with_rowspan_colspan(markdown_content)
     

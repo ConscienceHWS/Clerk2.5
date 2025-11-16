@@ -9,7 +9,7 @@ import tempfile
 import time
 import random
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import ast
 import re
 
@@ -352,6 +352,236 @@ def find_pdf_file(output_dir: str) -> Optional[str]:
     return None
 
 
+def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
+    """调用paddleocr ocr命令提取关键词
+    
+    Args:
+        image_path: 图片路径
+        save_path: 保存路径（目录）
+        
+    Returns:
+        OCR识别的文本列表，如果失败返回None
+    """
+    try:
+        if not os.path.exists(image_path):
+            logger.error(f"[PaddleOCR OCR] 图片文件不存在: {image_path}")
+            return None
+        
+        # 构建paddleocr ocr命令
+        cmd = ["paddleocr", "ocr", "-i", image_path, "--save_path", save_path]
+        
+        logger.info(f"[PaddleOCR OCR] 执行命令: {' '.join(cmd)}")
+        
+        # 执行命令
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5分钟超时
+            check=False,
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"[PaddleOCR OCR] 命令执行失败，返回码: {result.returncode}")
+            logger.error(f"[PaddleOCR OCR] 错误输出: {result.stderr}")
+            return None
+        
+        # 查找保存的JSON文件
+        # OCR命令会在save_path下生成 {basename}_res.json
+        image_basename = os.path.splitext(os.path.basename(image_path))[0]
+        json_file = os.path.join(save_path, f"{image_basename}_res.json")
+        
+        if not os.path.exists(json_file):
+            logger.warning(f"[PaddleOCR OCR] JSON文件不存在: {json_file}")
+            return None
+        
+        # 读取JSON文件
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                ocr_data = json.load(f)
+            
+            # 提取rec_texts字段
+            if "rec_texts" in ocr_data and isinstance(ocr_data["rec_texts"], list):
+                texts = ocr_data["rec_texts"]
+                logger.info(f"[PaddleOCR OCR] 成功提取 {len(texts)} 个文本片段")
+                return texts
+            else:
+                logger.warning("[PaddleOCR OCR] JSON文件中未找到rec_texts字段")
+                return None
+                
+        except Exception as e:
+            logger.exception(f"[PaddleOCR OCR] 读取JSON文件失败: {e}")
+            return None
+            
+    except subprocess.TimeoutExpired:
+        logger.error("[PaddleOCR OCR] 命令执行超时")
+        return None
+    except Exception as e:
+        logger.exception(f"[PaddleOCR OCR] 调用失败: {e}")
+        return None
+
+
+def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
+    """从OCR文本列表中提取关键信息
+    
+    Args:
+        ocr_texts: OCR识别的文本列表
+        
+    Returns:
+        包含提取的关键信息的字典
+    """
+    keywords = {
+        "project": "",
+        "standardReferences": "",
+        "soundLevelMeterMode": "",
+        "soundCalibratorMode": "",
+        "calibrationValueBefore": "",
+        "calibrationValueAfter": "",
+        "weather_info": []  # 存储天气相关信息
+    }
+    
+    if not ocr_texts:
+        return keywords
+    
+    # 将所有文本合并，用于匹配
+    full_text = " ".join(ocr_texts)
+    
+    # 提取项目名称
+    project_match = re.search(r'项目名称[:：]([^检测依据声级计声校准器检测前检测后气象条件日期]+)', full_text)
+    if project_match:
+        project = project_match.group(1).strip()
+        # 清理可能的后续内容
+        project = re.sub(r'检测依据.*$', '', project).strip()
+        keywords["project"] = project
+        logger.debug(f"[关键词提取] 提取到项目名称: {project}")
+    
+    # 提取检测依据
+    standard_match = re.search(r'检测依据[:：]([^声级计声校准器检测前检测后气象条件日期]+)', full_text)
+    if standard_match:
+        standard = standard_match.group(1).strip()
+        # 提取GB标准
+        gb_standards = re.findall(r'GB\s*\d+[-\.]?\d*[-\.]?\d*', standard)
+        if gb_standards:
+            keywords["standardReferences"] = " ".join(gb_standards)
+        else:
+            keywords["standardReferences"] = standard.replace("□其他：", "").strip()
+        logger.debug(f"[关键词提取] 提取到检测依据: {keywords['standardReferences']}")
+    
+    # 提取声级计型号/编号
+    sound_meter_match = re.search(r'声级计型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9+/]+)', full_text)
+    if sound_meter_match:
+        keywords["soundLevelMeterMode"] = sound_meter_match.group(1).strip()
+        logger.debug(f"[关键词提取] 提取到声级计型号: {keywords['soundLevelMeterMode']}")
+    
+    # 提取声校准器型号/编号
+    calibrator_match = re.search(r'声校准器型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9+/]+)', full_text)
+    if calibrator_match:
+        keywords["soundCalibratorMode"] = calibrator_match.group(1).strip()
+        logger.debug(f"[关键词提取] 提取到声校准器型号: {keywords['soundCalibratorMode']}")
+    
+    # 提取检测前校准值
+    before_cal_match = re.search(r'检测前校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', full_text)
+    if before_cal_match:
+        cal_value = before_cal_match.group(1).strip()
+        keywords["calibrationValueBefore"] = f"{cal_value} dB(A)"
+        logger.debug(f"[关键词提取] 提取到检测前校准值: {keywords['calibrationValueBefore']}")
+    
+    # 提取检测后校准值
+    after_cal_match = re.search(r'检测后校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', full_text)
+    if after_cal_match:
+        cal_value = after_cal_match.group(1).strip()
+        keywords["calibrationValueAfter"] = f"{cal_value} dB(A)"
+        logger.debug(f"[关键词提取] 提取到检测后校准值: {keywords['calibrationValueAfter']}")
+    
+    # 提取天气信息（从文本片段中查找包含日期和天气信息的片段）
+    # 需要处理文本可能分散在多个片段中的情况
+    current_weather_info = None
+    weather_start_idx = -1  # 记录天气信息开始的索引
+    
+    for i, text in enumerate(ocr_texts):
+        # 查找包含日期的文本，开始新的天气记录
+        date_match = re.search(r'日期[:：]\s*([\d.\-]+)', text)
+        if date_match:
+            # 如果之前有未完成的天气记录，先保存
+            if current_weather_info and any([current_weather_info["monitorAt"], current_weather_info["weather"], 
+                                             current_weather_info["temp"], current_weather_info["humidity"], 
+                                             current_weather_info["windSpeed"], current_weather_info["windDirection"]]):
+                keywords["weather_info"].append(current_weather_info)
+            
+            # 创建新的天气记录
+            current_weather_info = {
+                "monitorAt": date_match.group(1).strip(),
+                "weather": "",
+                "temp": "",
+                "humidity": "",
+                "windSpeed": "",
+                "windDirection": ""
+            }
+            weather_start_idx = i
+        
+        # 如果当前有天气记录，继续提取信息（从当前文本和后续几个文本中）
+        if current_weather_info:
+            # 只在天气记录开始后的10个文本片段内查找（避免跨太远）
+            if weather_start_idx >= 0 and i <= weather_start_idx + 10:
+                # 查找天气（在同一文本或后续文本中）
+                if not current_weather_info["weather"]:
+                    weather_match = re.search(r'天气\s*([^\s温度湿度风速风向]+)', text)
+                    if weather_match:
+                        weather_value = weather_match.group(1).strip()
+                        if weather_value and weather_value != "_" and not re.match(r'^[\d.\-]+$', weather_value):
+                            current_weather_info["weather"] = weather_value
+                
+                # 查找温度（可能格式：温度29.5-35.0 或 温度 29.5-35.0）
+                if not current_weather_info["temp"]:
+                    temp_match = re.search(r'温度\s*([0-9.\-]+)', text)
+                    if temp_match:
+                        current_weather_info["temp"] = temp_match.group(1).strip()
+                
+                # 查找湿度（可能格式：湿度74.0-74.1 或 在"℃ 湿度"之后的文本中）
+                if not current_weather_info["humidity"]:
+                    # 先检查当前文本是否包含湿度值
+                    humidity_match = re.search(r'湿度\s*([0-9.\-]+)', text)
+                    if humidity_match:
+                        current_weather_info["humidity"] = humidity_match.group(1).strip()
+                    # 如果当前文本是"℃ 湿度"或类似格式，湿度值可能在下一行
+                    elif "湿度" in text and i + 1 < len(ocr_texts):
+                        next_text = ocr_texts[i + 1]
+                        if re.match(r'^[0-9.\-]+', next_text):
+                            current_weather_info["humidity"] = next_text.strip()
+                
+                # 查找风速（可能格式：风速0.4-0.5 或 在"%RH 风速"之后的文本中）
+                if not current_weather_info["windSpeed"]:
+                    # 先检查当前文本是否包含风速值
+                    wind_speed_match = re.search(r'风速\s*([0-9.\-]+)', text)
+                    if wind_speed_match:
+                        current_weather_info["windSpeed"] = wind_speed_match.group(1).strip()
+                    # 如果当前文本是"%RH 风速"或类似格式，风速值可能在下一行
+                    elif "风速" in text and i + 1 < len(ocr_texts):
+                        next_text = ocr_texts[i + 1]
+                        if re.match(r'^[0-9.\-]+', next_text):
+                            current_weather_info["windSpeed"] = next_text.strip()
+                
+                # 查找风向（可能格式：风向南风 或 在"m/s风向"之后的文本中）
+                if not current_weather_info["windDirection"]:
+                    # 先检查当前文本是否包含风向值
+                    wind_dir_match = re.search(r'风向\s*([^\s]+)', text)
+                    if wind_dir_match:
+                        current_weather_info["windDirection"] = wind_dir_match.group(1).strip()
+                    # 如果当前文本是"m/s风向"或类似格式，风向值可能在下一行
+                    elif "风向" in text and i + 1 < len(ocr_texts):
+                        next_text = ocr_texts[i + 1]
+                        if next_text and not re.match(r'^[0-9.\-]+', next_text):
+                            current_weather_info["windDirection"] = next_text.strip()
+    
+    # 保存最后一个天气记录
+    if current_weather_info and any([current_weather_info["monitorAt"], current_weather_info["weather"], 
+                                     current_weather_info["temp"], current_weather_info["humidity"], 
+                                     current_weather_info["windSpeed"], current_weather_info["windDirection"]]):
+        keywords["weather_info"].append(current_weather_info)
+    
+    return keywords
+
+
 def extract_image_from_markdown(markdown_content: str, output_dir: str) -> Optional[str]:
     """从markdown内容中提取第一张图片路径
     
@@ -475,7 +705,7 @@ def fallback_parse_with_paddleocr(
             logger.error("[PaddleOCR备用] 未找到可用的图片文件，备用解析失败")
             return None
         
-        # 调用paddleocr
+        # 调用paddleocr doc_parser
         paddleocr_result = call_paddleocr(image_path)
         if not paddleocr_result:
             logger.error("[PaddleOCR备用] PaddleOCR解析失败")
@@ -496,6 +726,38 @@ def fallback_parse_with_paddleocr(
         else:
             logger.error("[PaddleOCR备用] PaddleOCR返回格式不正确")
             return None
+        
+        # 调用paddleocr ocr提取关键词来补充数据
+        logger.info("[PaddleOCR备用] 调用OCR提取关键词补充数据")
+        ocr_save_path = os.path.dirname(image_path)  # 使用图片所在目录作为保存路径
+        ocr_texts = call_paddleocr_ocr(image_path, ocr_save_path)
+        
+        if ocr_texts:
+            # 从OCR文本中提取关键词
+            keywords = extract_keywords_from_ocr_texts(ocr_texts)
+            
+            # 将关键词信息添加到markdown中（作为注释，供后续解析使用）
+            keywords_comment = "\n\n<!-- OCR关键词补充:\n"
+            if keywords["project"]:
+                keywords_comment += f"项目名称：{keywords['project']}\n"
+            if keywords["standardReferences"]:
+                keywords_comment += f"检测依据：{keywords['standardReferences']}\n"
+            if keywords["soundLevelMeterMode"]:
+                keywords_comment += f"声级计型号/编号：{keywords['soundLevelMeterMode']}\n"
+            if keywords["soundCalibratorMode"]:
+                keywords_comment += f"声校准器型号/编号：{keywords['soundCalibratorMode']}\n"
+            if keywords["calibrationValueBefore"]:
+                keywords_comment += f"检测前校准值：{keywords['calibrationValueBefore']}\n"
+            if keywords["calibrationValueAfter"]:
+                keywords_comment += f"检测后校准值：{keywords['calibrationValueAfter']}\n"
+            if keywords["weather_info"]:
+                for weather in keywords["weather_info"]:
+                    keywords_comment += f"日期：{weather['monitorAt']} 天气：{weather['weather']} 温度：{weather['temp']} 湿度：{weather['humidity']} 风速：{weather['windSpeed']} 风向：{weather['windDirection']}\n"
+            keywords_comment += "-->\n"
+            
+            # 将关键词信息合并到markdown中
+            paddleocr_markdown = paddleocr_markdown + keywords_comment
+            logger.info(f"[PaddleOCR备用] OCR关键词提取完成，补充了 {len(keywords)} 个字段")
         
         # 合并原始markdown和paddleocr结果
         # 优先使用paddleocr的结果，因为它更完整
