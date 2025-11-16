@@ -530,28 +530,46 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                         weather.monitorAt = date_match.group(1).strip()
                         
                         # 提取天气（在日期列之后查找）
-                        # 如果天气列存在，从天气列获取；否则从日期列之后的第一列获取
-                        if weather_col_idx >= 0 and len(check_row) > weather_col_idx:
-                            weather_value = check_row[weather_col_idx].strip()
-                            # 如果天气值不是"天气"标签本身，且不是"温度"，则认为是天气值
-                            if weather_value and weather_value != "天气" and weather_value != "温度":
+                        # 天气值在"天气"标签的下一列（如果下一列不是"温度"）
+                        if weather_col_idx >= 0 and len(check_row) > weather_col_idx + 1:
+                            weather_value = check_row[weather_col_idx + 1].strip()
+                            # 如果下一列是天气值（不是"天气"标签，不是"温度"标签，且不是数字），则使用
+                            if weather_value and weather_value != "天气" and weather_value != "温度" and not re.match(r'^[\d.\-]+$', weather_value):
                                 weather.weather = weather_value
-                        elif len(check_row) > date_col_idx + 1:
-                            # 日期列之后的第一列可能是天气
-                            next_cell = check_row[date_col_idx + 1].strip()
-                            if next_cell and next_cell != "天气" and next_cell != "温度":
-                                weather.weather = next_cell
-                        
-                        # 提取温度
-                        if temp_col_idx >= 0 and len(check_row) > temp_col_idx:
-                            temp_value = check_row[temp_col_idx].strip()
-                            if temp_value and temp_value != "温度":
-                                weather.temp = temp_value
                         else:
-                            # 尝试从日期列之后查找温度
+                            # 尝试从日期列之后查找"天气"标签，然后取下一列
                             for col_idx in range(date_col_idx + 1, min(date_col_idx + 5, len(check_row))):
                                 cell = check_row[col_idx].strip()
-                                if "℃" in cell or re.match(r'[\d.\-]+', cell):
+                                if cell == "天气" and col_idx + 1 < len(check_row):
+                                    # 找到"天气"标签，取下一列的值
+                                    next_cell = check_row[col_idx + 1].strip()
+                                    if next_cell and next_cell != "天气" and next_cell != "温度" and not re.match(r'^[\d.\-]+$', next_cell):
+                                        weather.weather = next_cell
+                                        break
+                                elif cell and cell != "天气" and cell != "温度" and not re.match(r'^[\d.\-]+$', cell) and col_idx == date_col_idx + 1:
+                                    # 日期列之后的第一列可能是天气值（如果格式正确）
+                                    weather.weather = cell
+                                    break
+                        
+                        # 提取温度
+                        # 温度值在"温度"标签的下一列
+                        if temp_col_idx >= 0 and len(check_row) > temp_col_idx + 1:
+                            temp_value = check_row[temp_col_idx + 1].strip()
+                            # 如果下一列是温度值（包含数字和-），则使用
+                            if temp_value and re.match(r'[\d.\-]+', temp_value):
+                                weather.temp = temp_value
+                        else:
+                            # 尝试从日期列之后查找"温度"标签，然后取下一列
+                            for col_idx in range(date_col_idx + 1, min(date_col_idx + 6, len(check_row))):
+                                cell = check_row[col_idx].strip()
+                                if cell == "温度" and col_idx + 1 < len(check_row):
+                                    # 找到"温度"标签，取下一列的值
+                                    temp_value = check_row[col_idx + 1].strip()
+                                    if temp_value and re.match(r'[\d.\-]+', temp_value):
+                                        weather.temp = temp_value
+                                        break
+                                elif "℃" in cell or (re.match(r'[\d.\-]+', cell) and "温度" not in cell):
+                                    # 如果直接找到温度值（包含℃或数字），也使用
                                     weather.temp = cell.replace("℃", "").strip()
                                     break
                         
