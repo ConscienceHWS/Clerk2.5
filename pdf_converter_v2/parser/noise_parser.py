@@ -529,10 +529,19 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                         weather = WeatherData()
                         weather.monitorAt = date_match.group(1).strip()
                         
+                        # 在当前行中重新查找列索引（因为不同行的列结构可能不同）
+                        current_weather_col_idx = -1
+                        current_temp_col_idx = -1
+                        for col_idx, cell in enumerate(check_row):
+                            if cell.strip() == "天气" or "天气" in cell:
+                                current_weather_col_idx = col_idx
+                            elif cell.strip() == "温度" or "温度" in cell:
+                                current_temp_col_idx = col_idx
+                        
                         # 提取天气（在日期列之后查找）
                         # 天气值在"天气"标签的下一列（如果下一列不是"温度"）
-                        if weather_col_idx >= 0 and len(check_row) > weather_col_idx + 1:
-                            weather_value = check_row[weather_col_idx + 1].strip()
+                        if current_weather_col_idx >= 0 and len(check_row) > current_weather_col_idx + 1:
+                            weather_value = check_row[current_weather_col_idx + 1].strip()
                             # 如果下一列是天气值（不是"天气"标签，不是"温度"标签，且不是数字），则使用
                             if weather_value and weather_value != "天气" and weather_value != "温度" and not re.match(r'^[\d.\-]+$', weather_value):
                                 weather.weather = weather_value
@@ -553,8 +562,8 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                         
                         # 提取温度
                         # 温度值在"温度"标签的下一列
-                        if temp_col_idx >= 0 and len(check_row) > temp_col_idx + 1:
-                            temp_value = check_row[temp_col_idx + 1].strip()
+                        if current_temp_col_idx >= 0 and len(check_row) > current_temp_col_idx + 1:
+                            temp_value = check_row[current_temp_col_idx + 1].strip()
                             # 如果下一列是温度值（包含数字和-），则使用
                             if temp_value and re.match(r'[\d.\-]+', temp_value):
                                 weather.temp = temp_value
