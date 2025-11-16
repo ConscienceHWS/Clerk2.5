@@ -218,7 +218,6 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
             text=True,
             timeout=300,  # 5分钟超时
             check=False,
-            env=env  # 使用修改后的环境变量
         )
         
         if result.returncode != 0:
