@@ -24,7 +24,8 @@ def parse_table_cell(cell_content: str) -> str:
 def extract_table_data(markdown_content: str) -> List[List[List[str]]]:
     """从Markdown内容中提取表格数据"""
     tables: List[List[List[str]]] = []
-    table_matches = re.findall(r'<table>(.*?)</table>', markdown_content, re.DOTALL)
+    # 匹配带属性的table标签，如 <table border=1 style='...'>
+    table_matches = re.findall(r'<table[^>]*>(.*?)</table>', markdown_content, re.DOTALL)
     logger.debug(f"[extract_table_data] 共找到 {len(table_matches)} 个表格")
     
     for table_idx, table_content in enumerate(table_matches):
@@ -48,7 +49,8 @@ def extract_table_data(markdown_content: str) -> List[List[List[str]]]:
 def extract_table_with_rowspan_colspan(markdown_content: str) -> List[List[List[str]]]:
     """提取表格数据，处理rowspan和colspan属性"""
     tables: List[List[List[str]]] = []
-    table_matches = re.findall(r'<table>(.*?)</table>', markdown_content, re.DOTALL)
+    # 匹配带属性的table标签，如 <table border=1 style='...'>
+    table_matches = re.findall(r'<table[^>]*>(.*?)</table>', markdown_content, re.DOTALL)
     logger.debug(f"[extract_table_with_rowspan_colspan] 共找到 {len(table_matches)} 个表格")
     
     for table_idx, table_content in enumerate(table_matches):
