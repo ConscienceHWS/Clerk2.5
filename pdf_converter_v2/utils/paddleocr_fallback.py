@@ -204,10 +204,10 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
         cmd = ["paddleocr", "doc_parser", "-i", image_path, "--save_path", save_path_base]
         
         # 设置环境变量，限制GPU内存使用
-        env = os.environ.copy()
+        # env = os.environ.copy()
         # 设置PaddlePaddle的GPU内存分配策略，使用更保守的内存分配
-        env["FLAGS_fraction_of_gpu_memory_to_use"] = "0.3"  # 只使用30%的GPU内存
-        env["FLAGS_allocator_strategy"] = "auto_growth"  # 使用自动增长策略，避免一次性分配过多内存
+        # env["FLAGS_fraction_of_gpu_memory_to_use"] = "0.3"  # 只使用30%的GPU内存
+        # env["FLAGS_allocator_strategy"] = "auto_growth"  # 使用自动增长策略，避免一次性分配过多内存
         
         logger.info(f"[PaddleOCR] 执行命令: {' '.join(cmd)} (使用GPU，限制内存使用)")
         
