@@ -789,14 +789,15 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                 matched = False
                 for table_weather in record.weather:
                     # 匹配条件：温度、湿度、风速、风向相同或相似
-                    temp_match = (ocr_weather.temp and table_weather.temp and 
-                                 ocr_weather.temp.strip() == table_weather.temp.strip())
-                    humidity_match = (ocr_weather.humidity and table_weather.humidity and 
-                                    ocr_weather.humidity.strip() == table_weather.humidity.strip())
-                    wind_speed_match = (ocr_weather.windSpeed and table_weather.windSpeed and 
-                                       ocr_weather.windSpeed.strip() == table_weather.windSpeed.strip())
-                    wind_dir_match = (ocr_weather.windDirection and table_weather.windDirection and 
-                                     ocr_weather.windDirection.strip() == table_weather.windDirection.strip())
+                    # 确保返回布尔值，避免空字符串导致类型错误
+                    temp_match = bool(ocr_weather.temp and table_weather.temp and 
+                                     ocr_weather.temp.strip() == table_weather.temp.strip())
+                    humidity_match = bool(ocr_weather.humidity and table_weather.humidity and 
+                                        ocr_weather.humidity.strip() == table_weather.humidity.strip())
+                    wind_speed_match = bool(ocr_weather.windSpeed and table_weather.windSpeed and 
+                                           ocr_weather.windSpeed.strip() == table_weather.windSpeed.strip())
+                    wind_dir_match = bool(ocr_weather.windDirection and table_weather.windDirection and 
+                                         ocr_weather.windDirection.strip() == table_weather.windDirection.strip())
                     
                     # 如果至少有两个字段匹配，认为这是同一条天气记录
                     match_count = sum([temp_match, humidity_match, wind_speed_match, wind_dir_match])
