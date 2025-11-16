@@ -11,6 +11,27 @@ from .table_parser import extract_table_with_rowspan_colspan, parse_operational_
 logger = get_logger("pdf_converter_v2.parser.noise")
 
 
+def clean_project_field(project: str) -> str:
+    """清理project字段：如果包含"检测依据"，删除"检测依据"及其后面的所有字符
+    
+    Args:
+        project: 原始project字段值
+        
+    Returns:
+        清理后的project字段值
+    """
+    if not project:
+        return project
+    
+    # 查找"检测依据"的位置
+    if "检测依据" in project:
+        idx = project.find("检测依据")
+        project = project[:idx].strip()
+        logger.debug(f"[噪声检测] 清理project字段，删除'检测依据'及之后内容: {project}")
+    
+    return project
+
+
 def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> None:
     """从文本中解析天气数据，支持多条记录
     
@@ -216,6 +237,8 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
             project_match2 = re.search(r'项目名称[:：]([^<]+?)(?:</td>|</tr>|$)', cell_text)
             if project_match2:
                 result["project"] = project_match2.group(1).strip()
+        # 清理project字段，删除"检测依据"及之后的内容（防止正则表达式没有完全匹配到的情况）
+        result["project"] = clean_project_field(result["project"])
     
     # 解析检测依据：检测依据:GB 12348-2008 □GB3096-2008 □其他:声级计...
     # 也可能格式为：检测依据:xxx或监测依据:xxx
@@ -299,7 +322,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                 
                 # 更新字段（如果解析到值）
                 if parsed_header["project"] and not record.project:
-                    record.project = parsed_header["project"]
+                    record.project = clean_project_field(parsed_header["project"])
                     header_extracted = True
                     logger.debug(f"[噪声检测] 从单元格解析到项目名称: {record.project}")
                 if parsed_header["standardReferences"] and not record.standardReferences:
@@ -349,7 +372,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                     # 使用 parse_header_from_combined_cell 解析
                     parsed = parse_header_from_combined_cell(cell)
                     if parsed["project"]:
-                        record.project = parsed["project"]
+                        record.project = clean_project_field(parsed["project"])
                         header_extracted = True
                         logger.debug(f"[噪声检测] 从单元格 {i} 解析到项目名称: {record.project}")
                         break
@@ -358,7 +381,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                 if "项目名称" in cell and i + 1 < len(row) and not record.project:
                     # 检查下一个单元格是否有内容
                     if row[i + 1].strip():
-                        record.project = row[i + 1].strip()
+                        record.project = clean_project_field(row[i + 1].strip())
                         if not record.project.strip():
                             logger.error(f"[噪声检测] 项目名称 为空，行数据: {row}")
                         else:
