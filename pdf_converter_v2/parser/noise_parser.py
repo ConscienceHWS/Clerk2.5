@@ -804,6 +804,10 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                     if match_count >= 2 and table_weather.monitorAt:
                         ocr_weather.monitorAt = table_weather.monitorAt
                         logger.debug(f"[噪声检测] 从表格解析结果补充OCR天气信息的日期: {ocr_weather.monitorAt}")
+                        # 将OCR提取的风向值赋给表格解析的天气信息
+                        if not table_weather.windDirection and ocr_weather.windDirection:
+                            table_weather.windDirection = ocr_weather.windDirection
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的风向: {table_weather.windDirection}")
                         matched = True
                         break
                 
