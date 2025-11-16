@@ -317,9 +317,11 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
     first_table = tables[0]
     
     # 首先尝试从组合单元格中解析头部信息（这种情况是多个字段都在一个单元格中，或者单个字段也在同一单元格中）
+    # 同时也支持字段名和值在不同单元格的情况（新格式）
     header_extracted = False
     weather_extracted = False
-    for row in first_table:
+    for row_idx, row in enumerate(first_table):
+        # 先尝试从同一单元格解析（旧格式）
         for cell in row:
             # 检查单元格是否包含头部字段的关键词（放宽条件，支持单个字段的情况）
             # 如果单元格包含字段名和冒号，说明值就在同一单元格中
@@ -366,15 +368,57 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                         parse_weather_from_text(weather_section, record)
                         weather_extracted = True
                         logger.info(f"[噪声检测] 从组合单元格解析到天气信息: {len(record.weather)} 条记录")
-                
-                # 如果已经解析到所有需要的字段，可以提前结束
-                if record.project and record.soundLevelMeterMode and record.calibrationValueBefore and record.calibrationValueAfter:
-                    logger.info(f"[噪声检测] 从单元格成功解析到所有头部信息: project={record.project}, "
-                              f"soundLevelMeterMode={record.soundLevelMeterMode}, "
-                              f"calibrationValueBefore={record.calibrationValueBefore}, "
-                              f"calibrationValueAfter={record.calibrationValueAfter}")
-                    if not weather_extracted:
-                        break
+        
+        # 尝试从不同单元格解析（新格式：字段名和值在不同单元格）
+        for col_idx, cell in enumerate(row):
+            cell_clean = re.sub(r'<[^>]+>', '', cell).strip()
+            
+            # 声级计型号/编号：在单元格中，值在下一列
+            if "声级计型号" in cell_clean and (":" in cell_clean or "：" in cell_clean) and not record.soundLevelMeterMode:
+                if col_idx + 1 < len(row) and row[col_idx + 1].strip():
+                    record.soundLevelMeterMode = row[col_idx + 1].strip()
+                    header_extracted = True
+                    logger.debug(f"[噪声检测] 从不同单元格解析到声级计型号: {record.soundLevelMeterMode}")
+            
+            # 声校准器型号/编号：在单元格中，值在下一列
+            if "声校准器型号" in cell_clean and (":" in cell_clean or "：" in cell_clean) and not record.soundCalibratorMode:
+                if col_idx + 1 < len(row) and row[col_idx + 1].strip():
+                    record.soundCalibratorMode = row[col_idx + 1].strip()
+                    header_extracted = True
+                    logger.debug(f"[噪声检测] 从不同单元格解析到声校准器型号: {record.soundCalibratorMode}")
+            
+            # 检测前校准值：在单元格中，值在下一列
+            if "检测前校准值" in cell_clean and (":" in cell_clean or "：" in cell_clean) and not record.calibrationValueBefore:
+                if col_idx + 1 < len(row) and row[col_idx + 1].strip():
+                    cal_value = row[col_idx + 1].strip()
+                    # 如果包含单位，保留；否则添加单位
+                    if "dB" in cal_value or "dB（A）" in cal_value or "dB(A)" in cal_value:
+                        record.calibrationValueBefore = cal_value
+                    else:
+                        record.calibrationValueBefore = f"{cal_value} dB(A)"
+                    header_extracted = True
+                    logger.debug(f"[噪声检测] 从不同单元格解析到检测前校准值: {record.calibrationValueBefore}")
+            
+            # 检测后校准值：在单元格中，值在下一列
+            if "检测后校准值" in cell_clean and (":" in cell_clean or "：" in cell_clean) and not record.calibrationValueAfter:
+                if col_idx + 1 < len(row) and row[col_idx + 1].strip():
+                    cal_value = row[col_idx + 1].strip()
+                    # 如果包含单位，保留；否则添加单位
+                    if "dB" in cal_value or "dB（A）" in cal_value or "dB(A)" in cal_value:
+                        record.calibrationValueAfter = cal_value
+                    else:
+                        record.calibrationValueAfter = f"{cal_value} dB(A)"
+                    header_extracted = True
+                    logger.debug(f"[噪声检测] 从不同单元格解析到检测后校准值: {record.calibrationValueAfter}")
+        
+        # 如果已经解析到所有需要的字段，可以提前结束
+        if record.project and record.soundLevelMeterMode and record.calibrationValueBefore and record.calibrationValueAfter:
+            logger.info(f"[噪声检测] 从单元格成功解析到所有头部信息: project={record.project}, "
+                      f"soundLevelMeterMode={record.soundLevelMeterMode}, "
+                      f"calibrationValueBefore={record.calibrationValueBefore}, "
+                      f"calibrationValueAfter={record.calibrationValueAfter}")
+            if not weather_extracted:
+                break
     
     # 如果还没有提取到头部信息，使用原来的方法（假设字段分布在不同的单元格中）
     # 但也要尝试从同一单元格中提取（如果单元格包含字段名和冒号）
@@ -583,20 +627,38 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                                     break
                         
                         # 提取湿度
+                        # 注意：新格式中"℃ 湿度"可能在同一个单元格中
                         for col_idx, cell in enumerate(check_row):
-                            if "湿度" in cell and col_idx + 1 < len(check_row):
-                                humidity_value = check_row[col_idx + 1].strip()
-                                if humidity_value and humidity_value != "湿度":
-                                    weather.humidity = humidity_value.replace("%RH", "").strip()
-                                    break
+                            if "湿度" in cell:
+                                # 如果单元格包含"℃ 湿度"，湿度值在下一列
+                                if "℃ 湿度" in cell or ("℃" in cell and "湿度" in cell):
+                                    if col_idx + 1 < len(check_row):
+                                        humidity_value = check_row[col_idx + 1].strip()
+                                        if humidity_value and humidity_value != "湿度":
+                                            weather.humidity = humidity_value.replace("%RH", "").strip()
+                                            break
+                                elif col_idx + 1 < len(check_row):
+                                    humidity_value = check_row[col_idx + 1].strip()
+                                    if humidity_value and humidity_value != "湿度":
+                                        weather.humidity = humidity_value.replace("%RH", "").strip()
+                                        break
                         
                         # 提取风速
+                        # 注意：新格式中"%RH 风速"可能在同一个单元格中
                         for col_idx, cell in enumerate(check_row):
-                            if "风速" in cell and col_idx + 1 < len(check_row):
-                                wind_speed_value = check_row[col_idx + 1].strip()
-                                if wind_speed_value and wind_speed_value != "风速":
-                                    weather.windSpeed = wind_speed_value.replace("m/s", "").strip()
-                                    break
+                            if "风速" in cell:
+                                # 如果单元格包含"%RH 风速"，风速值在下一列
+                                if "%RH 风速" in cell or ("%RH" in cell and "风速" in cell):
+                                    if col_idx + 1 < len(check_row):
+                                        wind_speed_value = check_row[col_idx + 1].strip()
+                                        if wind_speed_value and wind_speed_value != "风速":
+                                            weather.windSpeed = wind_speed_value.replace("m/s", "").strip()
+                                            break
+                                elif col_idx + 1 < len(check_row):
+                                    wind_speed_value = check_row[col_idx + 1].strip()
+                                    if wind_speed_value and wind_speed_value != "风速":
+                                        weather.windSpeed = wind_speed_value.replace("m/s", "").strip()
+                                        break
                         
                         # 提取风向
                         for col_idx, cell in enumerate(check_row):
