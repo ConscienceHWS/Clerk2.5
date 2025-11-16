@@ -79,8 +79,11 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
         # 提取天气（格式：天气 多云 或 天气多云）
         w_match = re.search(weather_pattern_simple, section)
         if w_match:
-            weather.weather = w_match.group(1).strip()
-            logger.debug(f"[噪声检测] 提取到天气: {weather.weather}")
+            weather_value = w_match.group(1).strip()
+            # 如果提取到的值不是"温度"，则认为是天气值
+            if weather_value and weather_value != "温度":
+                weather.weather = weather_value
+                logger.debug(f"[噪声检测] 提取到天气: {weather.weather}")
         
         # 提取温度（格式：温度26.7-27.4℃ 或 温度 26.7-27.4℃）
         t_match = re.search(temp_pattern, section)
@@ -222,13 +225,21 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
         "calibrationValueAfter": ""
     }
     
-    if not cell_text or "项目名称" not in cell_text:
+    if not cell_text:
+        return result
+    
+    # 检查是否包含任何需要解析的字段
+    has_any_field = any(keyword in cell_text for keyword in [
+        "项目名称", "检测依据", "监测依据", "声级计型号", "声校准器型号", 
+        "检测前校准值", "检测后校准值", "声纹计型号", "声级计校准器型号"
+    ])
+    if not has_any_field:
         return result
     
     # 解析项目名称：项目名称:xxx（后面跟着检测依据或其他字段，可能没有分隔符）
     # 匹配模式：项目名称:xxx（直到检测依据、监测依据、声级计、声校准器、检测前、检测后或气象条件，或到字符串末尾）
     # 注意：项目名称后面可能直接跟着"检测依据"没有分隔符，也可能后面没有其他字段
-    project_match = re.search(r'项目名称[:：](.+?)(?:检测依据|监测依据|声级计|声校准器|检测前|检测后|气象条件|$)', cell_text)
+    project_match = re.search(r'项目名称[:：](.+?)(?:检测依据|监测依据|声级计|声校准器|检测前|检测后|气象条件|</td>|</tr>|$)', cell_text)
     if project_match:
         result["project"] = project_match.group(1).strip()
         # 如果提取到的项目名称为空，可能是正则表达式匹配到了但内容为空
@@ -256,13 +267,15 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
             # 如果没有找到GB标准，保留原文本（去掉可能的□标记）
             result["standardReferences"] = re.sub(r'□\s*', '', standard_text).strip()
     
-    # 解析声级计型号/编号：声级计型号/编号:AY2201 或 声级计型号:AY2201
-    sound_meter_match = re.search(r'声级计型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9]+)', cell_text)
+    # 解析声级计型号/编号：声级计型号/编号:AY2201 或 声级计型号:AY2201 或 声级计型号/编号：AWA628+/AY2249
+    # 支持包含+号和斜杠的型号，如 AWA628+/AY2249
+    sound_meter_match = re.search(r'声级计型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9+/]+)', cell_text)
     if sound_meter_match:
         result["soundLevelMeterMode"] = sound_meter_match.group(1).strip()
     
     # 解析声校准器型号/编号：声校准器型号/编号:AY2204 或 声校准器型号:AY2204
-    calibrator_match = re.search(r'声校准器型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9]+)', cell_text)
+    # 支持包含+号和斜杠的型号
+    calibrator_match = re.search(r'声校准器型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9+/]+)', cell_text)
     if calibrator_match:
         result["soundCalibratorMode"] = calibrator_match.group(1).strip()
     
@@ -318,7 +331,9 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             
             if has_header_field and has_colon:
                 logger.debug(f"[噪声检测] 发现包含字段信息的单元格，尝试解析: {cell[:100]}...")
-                parsed_header = parse_header_from_combined_cell(cell)
+                # 清理HTML标签，只保留文本内容
+                cell_clean = re.sub(r'<[^>]+>', '', cell).strip()
+                parsed_header = parse_header_from_combined_cell(cell_clean)
                 
                 # 更新字段（如果解析到值）
                 if parsed_header["project"] and not record.project:
@@ -473,11 +488,119 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
 
     # 解析气象条件 - 支持多条记录（如果还没有从组合单元格中提取到天气数据）
     if not weather_extracted:
-        for row in first_table:
-            if len(row) >= 2 and "气象条件" in row[0]:
-                text = " ".join(row[1:])
-                parse_weather_from_text(text, record)
-                break
+        # 首先尝试从表格结构中解析（气象条件在第一列，日期在第二列，天气在第三列等）
+        for row_idx, row in enumerate(first_table):
+            if len(row) < 2:
+                continue
+            
+            # 检查是否是气象条件行（第一列包含"气象条件"）
+            if "气象条件" in row[0]:
+                # 尝试从表格单元格中解析天气信息
+                # 格式：气象条件 | 日期：xxx | 天气 | 温度 | xxx | ...
+                # 或者：气象条件 | 日期：xxx | 天气 | 多云 | 温度 | xxx | ...
+                
+                # 找到日期列（包含"日期"的列）
+                date_col_idx = -1
+                weather_col_idx = -1
+                temp_col_idx = -1
+                
+                for col_idx, cell in enumerate(row):
+                    if "日期" in cell and "：" in cell:
+                        date_col_idx = col_idx
+                    elif cell.strip() == "天气" or "天气" in cell:
+                        weather_col_idx = col_idx
+                    elif cell.strip() == "温度" or "温度" in cell:
+                        temp_col_idx = col_idx
+                
+                # 如果找到日期列，尝试解析多行天气数据
+                if date_col_idx >= 0:
+                    # 从当前行开始，查找所有包含日期的行
+                    for check_row_idx in range(row_idx, min(row_idx + 5, len(first_table))):  # 最多检查5行
+                        check_row = first_table[check_row_idx]
+                        if len(check_row) <= date_col_idx:
+                            continue
+                        
+                        date_cell = check_row[date_col_idx]
+                        # 检查是否包含日期
+                        date_match = re.search(r'日期[:：]\s*([\d.\-]+)', date_cell)
+                        if not date_match:
+                            continue
+                        
+                        weather = WeatherData()
+                        weather.monitorAt = date_match.group(1).strip()
+                        
+                        # 提取天气（在日期列之后查找）
+                        # 如果天气列存在，从天气列获取；否则从日期列之后的第一列获取
+                        if weather_col_idx >= 0 and len(check_row) > weather_col_idx:
+                            weather_value = check_row[weather_col_idx].strip()
+                            # 如果天气值不是"天气"标签本身，且不是"温度"，则认为是天气值
+                            if weather_value and weather_value != "天气" and weather_value != "温度":
+                                weather.weather = weather_value
+                        elif len(check_row) > date_col_idx + 1:
+                            # 日期列之后的第一列可能是天气
+                            next_cell = check_row[date_col_idx + 1].strip()
+                            if next_cell and next_cell != "天气" and next_cell != "温度":
+                                weather.weather = next_cell
+                        
+                        # 提取温度
+                        if temp_col_idx >= 0 and len(check_row) > temp_col_idx:
+                            temp_value = check_row[temp_col_idx].strip()
+                            if temp_value and temp_value != "温度":
+                                weather.temp = temp_value
+                        else:
+                            # 尝试从日期列之后查找温度
+                            for col_idx in range(date_col_idx + 1, min(date_col_idx + 5, len(check_row))):
+                                cell = check_row[col_idx].strip()
+                                if "℃" in cell or re.match(r'[\d.\-]+', cell):
+                                    weather.temp = cell.replace("℃", "").strip()
+                                    break
+                        
+                        # 提取湿度
+                        for col_idx, cell in enumerate(check_row):
+                            if "湿度" in cell and col_idx + 1 < len(check_row):
+                                humidity_value = check_row[col_idx + 1].strip()
+                                if humidity_value and humidity_value != "湿度":
+                                    weather.humidity = humidity_value.replace("%RH", "").strip()
+                                    break
+                        
+                        # 提取风速
+                        for col_idx, cell in enumerate(check_row):
+                            if "风速" in cell and col_idx + 1 < len(check_row):
+                                wind_speed_value = check_row[col_idx + 1].strip()
+                                if wind_speed_value and wind_speed_value != "风速":
+                                    weather.windSpeed = wind_speed_value.replace("m/s", "").strip()
+                                    break
+                        
+                        # 提取风向
+                        for col_idx, cell in enumerate(check_row):
+                            if "风向" in cell and col_idx + 1 < len(check_row):
+                                wind_dir_value = check_row[col_idx + 1].strip()
+                                if wind_dir_value and wind_dir_value != "风向":
+                                    weather.windDirection = wind_dir_value
+                                    break
+                        
+                        # 如果天气为空但其他字段有值，默认为"晴"
+                        if not weather.weather or not weather.weather.strip():
+                            if any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
+                                weather.weather = "晴"
+                                logger.debug(f"[噪声检测] 天气字段为空，但其他字段有值，默认为'晴': {weather.monitorAt}")
+                        
+                        # 如果至少有一个字段不为空，则添加这条记录
+                        if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
+                            record.weather.append(weather)
+                            weather_extracted = True
+                            logger.info(f"[噪声检测] 从表格解析到天气记录: {weather.to_dict()}")
+                    
+                    if weather_extracted:
+                        break
+                
+                # 如果表格解析失败，尝试文本解析
+                if not weather_extracted:
+                    text = " ".join(row[1:])
+                    parse_weather_from_text(text, record)
+                    if record.weather:
+                        weather_extracted = True
+                        break
             
             # 也检查是否在其他单元格中有气象条件
             for cell in row:
@@ -485,8 +608,9 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                     # 提取气象条件部分
                     weather_section = cell.split("气象条件")[-1] if "气象条件" in cell else cell
                     parse_weather_from_text(weather_section, record)
-                    weather_extracted = True
-                    break
+                    if record.weather:
+                        weather_extracted = True
+                        break
             if weather_extracted:
                 break
 
