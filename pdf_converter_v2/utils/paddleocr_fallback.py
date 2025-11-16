@@ -194,9 +194,13 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
             logger.error(f"[PaddleOCR] 图片文件不存在: {image_path}")
             return None
         
-        # 构建paddleocr命令
-        # 添加参数限制GPU内存使用，避免与MinerU冲突
-        cmd = ["paddleocr", "doc_parser", "-i", image_path]
+        # 生成输出目录和基础文件名
+        image_dir = os.path.dirname(image_path)
+        image_basename = os.path.splitext(os.path.basename(image_path))[0]
+        save_path_base = os.path.join(image_dir, image_basename)
+        
+        # 构建paddleocr命令，添加save_path参数
+        cmd = ["paddleocr", "doc_parser", "-i", image_path, "--save_path", save_path_base]
         
         # 设置环境变量，限制GPU内存使用
         env = os.environ.copy()
@@ -221,18 +225,42 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
             logger.error(f"[PaddleOCR] 错误输出: {result.stderr}")
             return None
         
-        # 解析输出
+        # 尝试从保存的JSON文件中读取结果
+        json_file = f"{save_path_base}_res.json"
+        if os.path.exists(json_file):
+            logger.info(f"[PaddleOCR] 从JSON文件读取结果: {json_file}")
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    json_data = json.load(f)
+                    # 转换为标准格式
+                    if isinstance(json_data, dict):
+                        # 如果JSON文件直接包含parsing_res_list，直接返回
+                        if "parsing_res_list" in json_data:
+                            parsed_result = {"parsing_res_list": json_data["parsing_res_list"]}
+                        # 如果包含res键，提取其中的parsing_res_list
+                        elif "res" in json_data and "parsing_res_list" in json_data.get("res", {}):
+                            parsed_result = {"parsing_res_list": json_data["res"]["parsing_res_list"]}
+                        else:
+                            # 尝试解析整个JSON结构
+                            parsed_result = parse_paddleocr_output(json.dumps(json_data))
+                    else:
+                        parsed_result = parse_paddleocr_output(json.dumps(json_data))
+                    
+                    logger.info(f"[PaddleOCR] 从JSON文件解析成功，获得 {len(parsed_result.get('parsing_res_list', []))} 个区块")
+                    return parsed_result
+            except Exception as e:
+                logger.warning(f"[PaddleOCR] 读取JSON文件失败: {e}，尝试从stdout解析")
+        
+        # 如果JSON文件不存在或读取失败，尝试从stdout解析
         output_text = result.stdout.strip()
-        if not output_text:
-            logger.warning("[PaddleOCR] 输出为空")
+        if output_text:
+            logger.info("[PaddleOCR] 从stdout解析输出")
+            parsed_result = parse_paddleocr_output(output_text)
+            logger.info(f"[PaddleOCR] 解析成功，获得 {len(parsed_result.get('parsing_res_list', []))} 个区块")
+            return parsed_result
+        else:
+            logger.warning("[PaddleOCR] stdout输出为空，且未找到JSON文件")
             return None
-        
-        # 解析paddleocr输出
-        parsed_result = parse_paddleocr_output(output_text)
-        
-        logger.info(f"[PaddleOCR] 解析成功，获得 {len(parsed_result.get('parsing_res_list', []))} 个区块")
-        
-        return parsed_result
         
     except subprocess.TimeoutExpired:
         logger.error("[PaddleOCR] 命令执行超时")
