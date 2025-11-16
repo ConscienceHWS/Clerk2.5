@@ -492,71 +492,120 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
         
         logger.info(f"[工况信息opStatus] 找到工况信息表格，行数: {len(table)}")
         
-        # 确定列索引
-        # 列0: 名称
-        # 列1: 时间
-        # 列2: U (kV) - 电压范围
-        # 列3: I (A) - 电流范围
-        # 列4: P (MW) - 有功功率范围
-        # 列5: Q (Mvar) - 无功功率范围
+        # 根据表头动态确定列索引
+        header_row = table[0]
+        time_idx = -1
+        project_idx = -1
+        name_idx = -1
+        voltage_idx = -1
+        current_idx = -1
+        active_power_idx = -1
+        reactive_power_idx = -1
         
-        name_idx = 0
-        time_idx = 1
-        voltage_idx = 2
-        current_idx = 3
-        active_power_idx = 4
-        reactive_power_idx = 5
+        for idx, cell in enumerate(header_row):
+            cell_lower = cell.lower()
+            if "检测时间" in cell or "监测时间" in cell or "时间" in cell:
+                time_idx = idx
+            elif "项目" in cell:
+                project_idx = idx
+            elif "电压" in cell or "电压(kv)" in cell_lower or "u" in cell_lower:
+                voltage_idx = idx
+            elif "电流" in cell or "电流(a)" in cell_lower or "i" in cell_lower:
+                current_idx = idx
+            elif "有功功率" in cell or ("有功" in cell and "功率" in cell) or "p" in cell_lower:
+                active_power_idx = idx
+            elif "无功功率" in cell or ("无功" in cell and "功率" in cell) or "q" in cell_lower:
+                reactive_power_idx = idx
         
-        # 从第三行开始解析数据（前两行是表头）
+        # 如果表头中没有找到名称列，尝试在数据行中查找（第一列是时间，第二列是项目，第三列可能是名称）
+        if name_idx == -1:
+            # 检查第一行数据（如果有），看哪一列包含"主变"或"#"
+            if len(table) > 1:
+                first_data_row = table[1]
+                for idx, cell in enumerate(first_data_row):
+                    # 跳过已知的列（时间列和项目列）
+                    if idx != time_idx and idx != project_idx and cell.strip():
+                        if any(k in cell for k in ["主变", "#"]):
+                            name_idx = idx
+                            logger.debug(f"[工况信息opStatus] 从数据行推断名称列索引: {name_idx}")
+                            break
+        
+        # 如果仍然没有找到名称列，但找到了项目列，则名称列通常在项目列之后
+        # 如果项目列有colspan，名称列可能在空列之后
+        if name_idx == -1 and project_idx >= 0:
+            # 检查项目列之后是否有空列，如果有，名称列在空列位置（因为colspan会创建空列）
+            if project_idx + 1 < len(header_row):
+                if not header_row[project_idx + 1].strip():
+                    # 项目列有colspan，名称列在空列位置（project_idx + 1）
+                    name_idx = project_idx + 1
+                else:
+                    # 名称列紧跟在项目列之后
+                    name_idx = project_idx + 1
+            else:
+                # 如果项目列是最后一列，名称列可能在项目列之后
+                name_idx = project_idx + 1 if project_idx + 1 < len(header_row) else -1
+        
+        logger.debug(f"[工况信息opStatus] 列索引: 检测时间={time_idx}, 项目={project_idx}, 名称={name_idx}, "
+                    f"电压={voltage_idx}, 电流={current_idx}, 有功功率={active_power_idx}, 无功功率={reactive_power_idx}")
+        
+        # 从第二行开始解析数据（第一行是表头）
         current_monitor_at = ""
+        current_project = ""
         
-        for row_idx in range(2, len(table)):
+        for row_idx in range(1, len(table)):
             row = table[row_idx]
             logger.debug(f"[工况信息opStatus] 处理第{row_idx}行: 列数={len(row)}, 内容={row}")
             
-            # 至少需要6列（名称、时间、U、I、P、Q）
-            if len(row) < 6:
-                logger.warning(f"[工况信息opStatus] 第{row_idx}行列数不足6列，跳过: {len(row)}列")
+            # 至少需要3列
+            if len(row) < 3:
+                logger.warning(f"[工况信息opStatus] 第{row_idx}行列数不足，跳过: {len(row)}列")
                 continue
             
-            # 检查是否是数据行（第一列应该有名称，且不是"名称"等表头关键词）
-            name_value = row[name_idx].strip() if name_idx < len(row) else ""
-            if not name_value or name_value in ["名称", "时间", "运行工况"]:
-                logger.debug(f"[工况信息opStatus] 第{row_idx}行第一列为表头关键词或为空，跳过: '{name_value}'")
-                continue
-            
-            # 更新时间（如果有值）
-            if time_idx < len(row) and row[time_idx].strip():
+            # 更新检测时间（如果有值且列索引有效）
+            if time_idx >= 0 and time_idx < len(row) and row[time_idx].strip():
                 current_monitor_at = row[time_idx].strip()
             
-            # 创建工况信息记录
-            oc = OperationalCondition()
-            oc.monitorAt = current_monitor_at
-            oc.project = project_number  # 使用提取的项目编号
-            oc.name = name_value
+            # 更新项目/位置（如果有值且列索引有效）
+            if project_idx >= 0 and project_idx < len(row) and row[project_idx].strip():
+                current_project = row[project_idx].strip()
             
-            # 电压范围（U (kV)）
-            if voltage_idx < len(row):
-                oc.voltage = row[voltage_idx].strip()
+            # 获取名称（变压器名称，如"1#主变"）
+            name_value = ""
+            if name_idx >= 0 and name_idx < len(row):
+                name_value = row[name_idx].strip()
+            elif project_idx >= 0 and project_idx + 1 < len(row):
+                # 如果名称列索引未找到，尝试项目列之后的第一列
+                name_value = row[project_idx + 1].strip()
             
-            # 电流范围（I (A)）
-            if current_idx < len(row):
-                oc.current = row[current_idx].strip()
-            
-            # 有功功率范围（P (MW)）
-            if active_power_idx < len(row):
-                oc.activePower = row[active_power_idx].strip()
-            
-            # 无功功率范围（Q (Mvar)）
-            if reactive_power_idx < len(row):
-                oc.reactivePower = row[reactive_power_idx].strip()
-            
-            # 添加记录（只要名称不为空）
-            if oc.name:
+            # 只有当名称存在时才创建工况信息记录（因为有rowspan的情况）
+            if name_value and any(k in name_value for k in ["主变", "#"]):
+                # 创建工况信息记录
+                oc = OperationalCondition()
+                oc.monitorAt = current_monitor_at
+                oc.project = current_project  # project字段使用表格中"项目"列的值
+                oc.name = name_value
+                
+                # 电压范围
+                if voltage_idx >= 0 and voltage_idx < len(row):
+                    oc.voltage = row[voltage_idx].strip()
+                
+                # 电流范围
+                if current_idx >= 0 and current_idx < len(row):
+                    oc.current = row[current_idx].strip()
+                
+                # 有功功率范围
+                if active_power_idx >= 0 and active_power_idx < len(row):
+                    oc.activePower = row[active_power_idx].strip()
+                
+                # 无功功率范围
+                if reactive_power_idx >= 0 and reactive_power_idx < len(row):
+                    oc.reactivePower = row[reactive_power_idx].strip()
+                
+                # 添加记录
                 conditions.append(oc)
-                logger.info(f"[工况信息opStatus] 解析到第{len(conditions)}条记录: name='{oc.name}', 时间='{oc.monitorAt}'")
+                logger.info(f"[工况信息opStatus] 解析到第{len(conditions)}条记录: name='{oc.name}', 时间='{oc.monitorAt}', 项目='{oc.project}'")
             else:
-                logger.warning(f"[工况信息opStatus] 第{row_idx}行名称为空，跳过该行: {row[:3]}")
+                logger.debug(f"[工况信息opStatus] 第{row_idx}行名称无效或为空，跳过: name='{name_value}'")
         
         # 只处理第一个匹配的表格
         if conditions:
