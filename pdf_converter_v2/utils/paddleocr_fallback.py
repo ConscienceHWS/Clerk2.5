@@ -195,9 +195,16 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
             return None
         
         # 构建paddleocr命令
+        # 添加参数限制GPU内存使用，避免与MinerU冲突
         cmd = ["paddleocr", "doc_parser", "-i", image_path]
         
-        logger.info(f"[PaddleOCR] 执行命令: {' '.join(cmd)}")
+        # 设置环境变量，限制GPU内存使用
+        env = os.environ.copy()
+        # 设置PaddlePaddle的GPU内存分配策略，使用更保守的内存分配
+        env["FLAGS_fraction_of_gpu_memory_to_use"] = "0.3"  # 只使用30%的GPU内存
+        env["FLAGS_allocator_strategy"] = "auto_growth"  # 使用自动增长策略，避免一次性分配过多内存
+        
+        logger.info(f"[PaddleOCR] 执行命令: {' '.join(cmd)} (使用GPU，限制内存使用)")
         
         # 执行命令
         result = subprocess.run(
@@ -205,7 +212,8 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
             capture_output=True,
             text=True,
             timeout=300,  # 5分钟超时
-            check=False
+            check=False,
+            env=env  # 使用修改后的环境变量
         )
         
         if result.returncode != 0:
