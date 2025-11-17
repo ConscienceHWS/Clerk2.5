@@ -14,11 +14,9 @@ logger = get_logger("pdf_converter_v2.main")
 
 # 支持在包内和包外两种运行方式
 try:
-    # 尝试相对导入（包内运行）
-    from .processor.converter import convert_to_markdown
+    from .processor.paddle_converter import convert_to_markdown
 except ImportError:
-    # 如果相对导入失败，使用绝对导入（包外运行）
-    from pdf_converter_v2.processor.converter import convert_to_markdown
+    from pdf_converter_v2.processor.paddle_converter import convert_to_markdown
 
 def main():
     """命令行主函数"""

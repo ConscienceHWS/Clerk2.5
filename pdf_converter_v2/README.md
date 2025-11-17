@@ -1,6 +1,6 @@
-# PDF Converter v2
+# PDF Converter v3 (PaddleOCR)
 
-PDF转换工具 v2版本 - 使用新的API接口进行PDF转换
+v3 版本已切换为直接调用 PaddleOCR `doc_parser` 解析 PDF，后续解析和 API 结构保持 v2 风格。
 
 ## 主要特性
 

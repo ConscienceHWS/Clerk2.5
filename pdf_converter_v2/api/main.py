@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing_extensions import Annotated, Literal
 
-from ..processor.converter import convert_to_markdown
+from ..processor.paddle_converter import convert_to_markdown
 from ..utils.logging_config import get_logger
 
 # 尝试导入配置，如果不存在则使用默认值

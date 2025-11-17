@@ -14,7 +14,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from pdf_converter_v2.processor.converter import convert_to_markdown
+from pdf_converter_v2.processor.paddle_converter import convert_to_markdown
 from pdf_converter_v2.parser.json_converter import parse_markdown_to_json
 from pdf_converter_v2.utils.logging_config import get_logger
 
