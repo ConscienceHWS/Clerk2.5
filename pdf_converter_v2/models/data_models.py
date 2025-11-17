@@ -145,13 +145,15 @@ class ElectromagneticWeatherData:
         self.temp: str = ""
         self.humidity: str = ""
         self.windSpeed: str = ""
+        self.windDirection: str = ""
     
     def to_dict(self):
         return {
             "weather": self.weather,
             "temp": self.temp,
             "humidity": self.humidity,
-            "windSpeed": self.windSpeed
+            "windSpeed": self.windSpeed,
+            "windDirection": self.windDirection
         }
 
 
