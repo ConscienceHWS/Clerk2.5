@@ -32,6 +32,46 @@ except ImportError:
     logger.warning("[PaddleOCR备用] PIL未安装，无法处理图片")
 
 
+def detect_file_type(file_path: str) -> Optional[str]:
+    """通过文件内容（魔数）检测文件类型，不依赖扩展名
+    
+    Args:
+        file_path: 文件路径
+        
+    Returns:
+        文件类型：'pdf', 'png', 'jpeg', 'jpg' 或 None
+    """
+    if not file_path or not os.path.exists(file_path):
+        return None
+    
+    try:
+        with open(file_path, 'rb') as f:
+            # 读取文件头部（前16字节足够识别常见格式）
+            header = f.read(16)
+            
+            if not header:
+                return None
+            
+            # PDF文件：以 %PDF 开头
+            if header.startswith(b'%PDF'):
+                return 'pdf'
+            
+            # PNG图片：以 \x89PNG\r\n\x1a\n 开头
+            if header.startswith(b'\x89PNG\r\n\x1a\n'):
+                return 'png'
+            
+            # JPEG图片：以 \xff\xd8\xff 开头
+            if header.startswith(b'\xff\xd8\xff'):
+                return 'jpeg'
+            
+            # 其他格式可以继续扩展
+            return None
+            
+    except Exception as e:
+        logger.debug(f"[PaddleOCR备用] 检测文件类型失败: {e}")
+        return None
+
+
 def check_json_data_completeness(json_data: Dict[str, Any], document_type: str) -> bool:
     """检查JSON数据是否大面积缺失
     
@@ -782,42 +822,62 @@ def fallback_parse_with_paddleocr(
                         image_path = str(png_files[0])
                         logger.info(f"[PaddleOCR备用] 使用找到的图片: {image_path}")
         
-        # 如果仍未找到图片，尝试从PDF提取第一页
+        # 如果仍未找到图片，尝试从input_file处理
         if not image_path:
-            logger.warning("[PaddleOCR备用] 未找到可用的图片文件，尝试从PDF提取第一页")
+            logger.warning("[PaddleOCR备用] 未找到可用的图片文件，尝试从input_file处理")
             
-            # 首先尝试使用提供的input_file
-            pdf_path = None
-            if input_file and os.path.exists(input_file) and input_file.lower().endswith('.pdf'):
-                pdf_path = input_file
-                logger.info(f"[PaddleOCR备用] 使用提供的PDF文件: {pdf_path}")
-            elif input_file and os.path.exists(input_file):
-                # input_file存在但不是PDF，记录信息
-                logger.debug(f"[PaddleOCR备用] input_file存在但不是PDF: {input_file}")
+            if input_file and os.path.exists(input_file):
+                # 检测文件实际类型（不依赖扩展名）
+                file_type = detect_file_type(input_file)
+                
+                if file_type == 'pdf':
+                    # 文件是PDF，尝试提取第一页
+                    pdf_path = input_file
+                    logger.info(f"[PaddleOCR备用] 检测到PDF文件（通过内容）: {pdf_path}")
+                    image_path = extract_first_page_from_pdf(pdf_path, output_dir)
+                    if image_path:
+                        logger.info(f"[PaddleOCR备用] 成功从PDF提取第一页图片: {image_path}")
+                    else:
+                        logger.warning("[PaddleOCR备用] 从PDF提取图片失败（可能是PDF文件损坏或缺少必要的库）")
+                elif file_type in ['png', 'jpeg', 'jpg']:
+                    # 文件是图片，直接使用
+                    image_path = input_file
+                    logger.info(f"[PaddleOCR备用] 检测到图片文件（{file_type}）: {image_path}")
+                else:
+                    # 文件类型未知，尝试按PDF处理（可能是PDF但没有正确识别）
+                    logger.debug(f"[PaddleOCR备用] input_file类型未知（{file_type}），尝试按PDF处理: {input_file}")
+                    if PDFIUM_AVAILABLE:
+                        try:
+                            # 尝试打开为PDF
+                            pdf_path = input_file
+                            image_path = extract_first_page_from_pdf(pdf_path, output_dir)
+                            if image_path:
+                                logger.info(f"[PaddleOCR备用] 成功将文件作为PDF处理并提取第一页: {image_path}")
+                        except Exception as e:
+                            logger.debug(f"[PaddleOCR备用] 无法将文件作为PDF处理: {e}")
             
-            # 如果input_file不是PDF或不存在，尝试在output_dir中查找PDF文件
-            if not pdf_path and output_dir:
+            # 如果input_file处理失败，尝试在output_dir中查找PDF文件
+            if not image_path and output_dir:
                 pdf_path = find_pdf_file(output_dir)
                 if pdf_path:
                     logger.info(f"[PaddleOCR备用] 在输出目录中找到PDF文件: {pdf_path}")
+                    image_path = extract_first_page_from_pdf(pdf_path, output_dir)
+                    if image_path:
+                        logger.info(f"[PaddleOCR备用] 成功从PDF提取第一页图片: {image_path}")
             
             # 如果仍未找到，尝试在input_file的父目录中查找
-            if not pdf_path and input_file:
+            if not image_path and input_file:
                 parent_dir = os.path.dirname(input_file)
                 if parent_dir and os.path.exists(parent_dir):
                     pdf_path = find_pdf_file(parent_dir)
                     if pdf_path:
                         logger.info(f"[PaddleOCR备用] 在input_file父目录中找到PDF文件: {pdf_path}")
+                        image_path = extract_first_page_from_pdf(pdf_path, output_dir)
+                        if image_path:
+                            logger.info(f"[PaddleOCR备用] 成功从PDF提取第一页图片: {image_path}")
             
-            if pdf_path:
-                # 从PDF提取第一页
-                image_path = extract_first_page_from_pdf(pdf_path, output_dir)
-                if image_path:
-                    logger.info(f"[PaddleOCR备用] 成功从PDF提取第一页图片: {image_path}")
-                else:
-                    logger.warning("[PaddleOCR备用] 从PDF提取图片失败（可能是PDF文件损坏或缺少必要的库）")
-            else:
-                logger.warning(f"[PaddleOCR备用] 未找到PDF文件（input_file={input_file}, output_dir={output_dir}），无法进行备用解析")
+            if not image_path:
+                logger.warning(f"[PaddleOCR备用] 未找到可用的图片或PDF文件（input_file={input_file}, output_dir={output_dir}），无法进行备用解析")
                 logger.info("[PaddleOCR备用] 备用解析需要图片文件或PDF文件，如果都没有，将返回原始markdown内容")
         
         if not image_path:
