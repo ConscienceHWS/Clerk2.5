@@ -220,13 +220,9 @@ async def process_conversion_task(
         task_status[task_id]["message"] = f"处理出错: {str(e)}"
         task_status[task_id]["error"] = str(e)
         logger.exception(f"[任务 {task_id}] 处理失败: {e}")
-    finally:
-        # 清理临时文件（上传的文件）
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except Exception as e:
-            logger.warning(f"[任务 {task_id}] 清理临时文件失败: {e}")
+    # 注意：不再在转换完成后立即删除上传的文件
+    # 文件将保留在临时目录中，直到用户调用 DELETE /task/{task_id} 接口时才清理
+    # 这样可以方便用户查看上传的文件内容
 
 
 @app.post("/convert", response_model=ConversionResponse)
@@ -309,7 +305,8 @@ async def convert_file(
         "document_type": None,
         "error": None,
         "temp_dir": temp_dir,
-        "output_dir": output_dir
+        "output_dir": output_dir,
+        "file_path": file_path  # 保存上传文件的路径，方便查看
     }
     
     # 处理类型参数映射

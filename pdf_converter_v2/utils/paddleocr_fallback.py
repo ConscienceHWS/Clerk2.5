@@ -62,8 +62,16 @@ def check_json_data_completeness(json_data: Dict[str, Any], document_type: str) 
     
     elif document_type == "electromagneticTestRecord":
         # 检查电磁检测记录的关键字段
-        required_fields = ["project", "standardReferences", "deviceName", "deviceMode"]
-        missing_count = sum(1 for field in required_fields if not data.get(field))
+        # 区分必需字段和可选字段：
+        # - deviceName 和 deviceMode 是必需字段（仪器信息）
+        # - project 和 standardReferences 可能为空（某些文档可能没有填写）
+        required_fields = ["deviceName", "deviceMode"]  # 必需字段
+        optional_fields = ["project", "standardReferences"]  # 可选字段
+        
+        # 检查必需字段
+        missing_required = sum(1 for field in required_fields if not data.get(field) or not str(data.get(field)).strip())
+        # 检查可选字段（如果所有可选字段都为空，也算缺失）
+        missing_optional = sum(1 for field in optional_fields if not data.get(field) or not str(data.get(field)).strip())
         
         # 检查电磁数据
         em_list = data.get("electricMagnetic", [])
@@ -71,8 +79,14 @@ def check_json_data_completeness(json_data: Dict[str, Any], document_type: str) 
             logger.warning("[数据完整性检查] 电磁数据列表为空")
             return False
         
-        if missing_count >= len(required_fields) / 2:
-            logger.warning(f"[数据完整性检查] 关键字段缺失过多: {missing_count}/{len(required_fields)}")
+        # 如果必需字段缺失，认为数据不完整
+        if missing_required > 0:
+            logger.warning(f"[数据完整性检查] 必需字段缺失: {missing_required}/{len(required_fields)} (deviceName, deviceMode)")
+            return False
+        
+        # 如果所有字段（必需+可选）都缺失，也认为数据不完整
+        if missing_required + missing_optional >= len(required_fields) + len(optional_fields):
+            logger.warning(f"[数据完整性检查] 所有关键字段都缺失: {missing_required + missing_optional}/{len(required_fields) + len(optional_fields)}")
             return False
         
         return True
@@ -777,11 +791,23 @@ def fallback_parse_with_paddleocr(
             if input_file and os.path.exists(input_file) and input_file.lower().endswith('.pdf'):
                 pdf_path = input_file
                 logger.info(f"[PaddleOCR备用] 使用提供的PDF文件: {pdf_path}")
-            elif output_dir:
-                # 在output_dir中查找PDF文件
+            elif input_file and os.path.exists(input_file):
+                # input_file存在但不是PDF，记录信息
+                logger.debug(f"[PaddleOCR备用] input_file存在但不是PDF: {input_file}")
+            
+            # 如果input_file不是PDF或不存在，尝试在output_dir中查找PDF文件
+            if not pdf_path and output_dir:
                 pdf_path = find_pdf_file(output_dir)
                 if pdf_path:
                     logger.info(f"[PaddleOCR备用] 在输出目录中找到PDF文件: {pdf_path}")
+            
+            # 如果仍未找到，尝试在input_file的父目录中查找
+            if not pdf_path and input_file:
+                parent_dir = os.path.dirname(input_file)
+                if parent_dir and os.path.exists(parent_dir):
+                    pdf_path = find_pdf_file(parent_dir)
+                    if pdf_path:
+                        logger.info(f"[PaddleOCR备用] 在input_file父目录中找到PDF文件: {pdf_path}")
             
             if pdf_path:
                 # 从PDF提取第一页
@@ -789,12 +815,13 @@ def fallback_parse_with_paddleocr(
                 if image_path:
                     logger.info(f"[PaddleOCR备用] 成功从PDF提取第一页图片: {image_path}")
                 else:
-                    logger.error("[PaddleOCR备用] 从PDF提取图片失败")
+                    logger.warning("[PaddleOCR备用] 从PDF提取图片失败（可能是PDF文件损坏或缺少必要的库）")
             else:
-                logger.error("[PaddleOCR备用] 未找到PDF文件，无法提取图片")
+                logger.warning(f"[PaddleOCR备用] 未找到PDF文件（input_file={input_file}, output_dir={output_dir}），无法进行备用解析")
+                logger.info("[PaddleOCR备用] 备用解析需要图片文件或PDF文件，如果都没有，将返回原始markdown内容")
         
         if not image_path:
-            logger.error("[PaddleOCR备用] 未找到可用的图片文件，备用解析失败")
+            logger.warning("[PaddleOCR备用] 未找到可用的图片文件，备用解析无法进行，返回None（将使用原始解析结果）")
             return None
         
         # 调用paddleocr doc_parser
