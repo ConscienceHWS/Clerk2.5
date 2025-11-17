@@ -255,12 +255,47 @@ async def convert_file(
     os.makedirs(output_dir, exist_ok=True)
     
     # 保存上传的文件
-    file_path = os.path.join(temp_dir, file.filename or "uploaded_file")
+    # 获取原始文件名，如果没有则使用默认名称
+    original_filename = file.filename or "uploaded_file"
+    
+    # 如果文件名没有扩展名，尝试从Content-Type推断
+    file_path = os.path.join(temp_dir, original_filename)
+    if not Path(original_filename).suffix:
+        # 尝试从Content-Type获取扩展名
+        content_type = file.content_type or ""
+        extension_map = {
+            "application/pdf": ".pdf",
+            "image/png": ".png",
+            "image/jpeg": ".jpg",
+            "image/jpg": ".jpg",
+        }
+        ext = extension_map.get(content_type)
+        if ext:
+            file_path = os.path.join(temp_dir, f"{original_filename}{ext}")
+            logger.info(f"[任务 {task_id}] 从Content-Type推断扩展名: {ext}")
+    
     try:
         with open(file_path, "wb") as f:
             content = await file.read()
             f.write(content)
         logger.info(f"[任务 {task_id}] 文件已保存: {file_path} ({len(content)} bytes)")
+        
+        # 如果保存后文件名仍然没有扩展名，尝试通过文件内容检测并重命名
+        if not Path(file_path).suffix:
+            from ..utils.paddleocr_fallback import detect_file_type
+            detected_type = detect_file_type(file_path)
+            if detected_type:
+                ext_map = {
+                    "pdf": ".pdf",
+                    "png": ".png",
+                    "jpeg": ".jpg",
+                }
+                ext = ext_map.get(detected_type)
+                if ext:
+                    new_file_path = file_path + ext
+                    os.rename(file_path, new_file_path)
+                    file_path = new_file_path
+                    logger.info(f"[任务 {task_id}] 通过文件内容检测到类型 {detected_type}，重命名为: {file_path}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
     
