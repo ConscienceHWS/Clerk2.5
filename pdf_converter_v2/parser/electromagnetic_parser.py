@@ -122,15 +122,12 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 if m: record.weather.humidity = m.group(1)
                 m = re.search(r'([0-9.\-]+)\s*m/s', text)
                 if m: record.weather.windSpeed = m.group(1)
-                m = re.search(r'天气[：:]*\s*([^\s温度湿度风速风向]+)', text)
+                m = re.search(r'天气[：:]*\s*([^\s温度湿度风速]+)', text)
                 if m: record.weather.weather = m.group(1).strip()
-                # 解析风向
-                m = re.search(r'风向[：:]*\s*([^\s温度湿度风速天气]+)', text)
-                if m: record.weather.windDirection = m.group(1).strip()
                 # 天气为空、":"或只有冒号时，如果其它气象字段有任意一个不为空，默认填入"晴"
                 weather_value = record.weather.weather.strip() if record.weather.weather else ""
                 if (not weather_value or weather_value == ":") and any([
-                    record.weather.temp, record.weather.humidity, record.weather.windSpeed, record.weather.windDirection
+                    record.weather.temp, record.weather.humidity, record.weather.windSpeed
                 ]):
                     record.weather.weather = "晴"
                 i += 2
