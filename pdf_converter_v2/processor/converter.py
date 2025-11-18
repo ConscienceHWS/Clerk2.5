@@ -10,7 +10,7 @@ import zipfile
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import aiohttp
 import aiofiles
@@ -20,6 +20,132 @@ from ..utils.logging_config import get_logger
 from ..utils.file_utils import safe_stem
 
 logger = get_logger("pdf_converter_v2.processor")
+PADDLE_CMD = os.getenv("PADDLE_DOC_PARSER_CMD", "paddleocr")
+
+
+async def _run_paddle_doc_parser(cmd: Sequence[str]) -> tuple[int, str, str]:
+    """异步执行 paddleocr doc_parser 命令"""
+    logger.info(f"[Paddle] 执行命令: {' '.join(cmd)}")
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout_bytes, stderr_bytes = await process.communicate()
+    stdout = stdout_bytes.decode("utf-8", errors="ignore")
+    stderr = stderr_bytes.decode("utf-8", errors="ignore")
+    if stdout:
+        logger.debug(f"[Paddle] stdout: {stdout[:2000]}")
+    if stderr:
+        logger.debug(f"[Paddle] stderr: {stderr[:2000]}")
+    return process.returncode, stdout, stderr
+
+
+async def _convert_with_paddle(
+    input_file: str,
+    output_dir: str,
+    embed_images: bool,
+    output_json: bool,
+    forced_document_type: Optional[str],
+):
+    """针对工况附件使用 PaddleOCR doc_parser 直接转换"""
+    if not os.path.exists(input_file):
+        logger.error(f"[Paddle] 输入文件不存在: {input_file}")
+        return None
+    
+    file_name = f'{safe_stem(Path(input_file).stem)}_{time.strftime("%y%m%d_%H%M%S")}'
+    os.makedirs(output_dir, exist_ok=True)
+    
+    temp_dir = tempfile.mkdtemp(prefix=f"pdf_converter_paddle_{file_name}_")
+    logger.info(f"[Paddle] 创建临时目录: {temp_dir}")
+    save_path_base = os.path.join(temp_dir, Path(input_file).stem)
+    os.makedirs(save_path_base, exist_ok=True)
+    
+    cmd = [
+        PADDLE_CMD,
+        "doc_parser",
+        "-i",
+        input_file,
+        "--precision",
+        "fp32",
+        "--use_doc_unwarping",
+        "False",
+        "--use_doc_orientation_classify",
+        "True",
+        "--use_chart_recognition",
+        "True",
+        "--save_path",
+        save_path_base,
+    ]
+    
+    try:
+        return_code, _, stderr = await _run_paddle_doc_parser(cmd)
+        if return_code != 0:
+            logger.error(f"[Paddle] doc_parser 执行失败 code={return_code}")
+            if stderr:
+                logger.error(stderr)
+            return None
+        
+        md_files = sorted(Path(save_path_base).rglob("*.md"))
+        if not md_files:
+            logger.error("[Paddle] 未找到Markdown文件")
+            return None
+        
+        markdown_parts = []
+        for md_file in md_files:
+            async with aiofiles.open(md_file, "r", encoding="utf-8") as f:
+                markdown_parts.append(await f.read())
+        final_content = "\n\n".join(markdown_parts)
+        logger.info(f"[Paddle] 合并后的markdown长度: {len(final_content)}")
+        
+        local_md_dir = os.path.join(output_dir, file_name, "markdown")
+        os.makedirs(local_md_dir, exist_ok=True)
+        md_path = os.path.join(local_md_dir, f"{file_name}.md")
+        async with aiofiles.open(md_path, "w", encoding="utf-8") as f:
+            await f.write(final_content)
+        
+        output_md_path = os.path.join(output_dir, f"{file_name}.md")
+        async with aiofiles.open(output_md_path, "w", encoding="utf-8") as f:
+            await f.write(final_content)
+        
+        if embed_images:
+            local_image_dir = os.path.join(output_dir, file_name, "images")
+            os.makedirs(local_image_dir, exist_ok=True)
+            for asset in Path(save_path_base).rglob("*"):
+                if asset.is_file() and asset.suffix.lower() in {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}:
+                    shutil.copy2(asset, os.path.join(local_image_dir, asset.name))
+        
+        json_data = None
+        json_path = None
+        if output_json:
+            try:
+                from ..parser.json_converter import parse_markdown_to_json
+                json_output_dir = os.path.join(output_dir, file_name)
+                json_data = parse_markdown_to_json(
+                    final_content,
+                    first_page_image=None,
+                    output_dir=json_output_dir,
+                    forced_document_type=forced_document_type,
+                    enable_paddleocr_fallback=False,
+                    input_file=input_file,
+                )
+                json_path = os.path.join(output_dir, f"{file_name}.json")
+                async with aiofiles.open(json_path, "w", encoding="utf-8") as f:
+                    await f.write(json.dumps(json_data, ensure_ascii=False, indent=2))
+            except Exception as exc:
+                logger.exception(f"[Paddle] JSON转换失败: {exc}")
+        
+        return {
+            "markdown_file": output_md_path,
+            "json_file": json_path,
+            "json_data": json_data,
+            "content": final_content,
+        }
+    finally:
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception as exc:
+            logger.warning(f"[Paddle] 清理临时目录失败: {exc}")
 
 async def convert_to_markdown(
     input_file: str,
@@ -50,6 +176,16 @@ async def convert_to_markdown(
     if not os.path.exists(input_file):
         logger.error(f"输入文件不存在: {input_file}")
         return None
+
+    if forced_document_type == "operatingConditionInfo":
+        logger.info("[convert_to_markdown] opStatus 文档使用 PaddleOCR 解析流程")
+        return await _convert_with_paddle(
+            input_file=input_file,
+            output_dir=output_dir,
+            embed_images=embed_images,
+            output_json=output_json,
+            forced_document_type=forced_document_type,
+        )
 
     # 生成文件名
     file_name = f'{safe_stem(Path(input_file).stem)}_{time.strftime("%y%m%d_%H%M%S")}'

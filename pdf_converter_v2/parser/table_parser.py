@@ -12,6 +12,27 @@ from ..models.data_models import OperationalCondition, OperationalConditionV2
 logger = get_logger("pdf_converter_v2.parser.table")
 
 
+def normalize_text(text: str) -> str:
+    """将常见全角符号、大小写等统一，便于关键词匹配"""
+    if not text:
+        return ""
+    text = text.lower()
+    replacements = {
+        "（": "(",
+        "）": ")",
+        "：": ":",
+        "－": "-",
+        "—": "-",
+        "〜": "~",
+        "～": "~",
+        "／": "/",
+        "　": " ",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
+
+
 def parse_table_cell(cell_content: str) -> str:
     """解析表格单元格内容"""
     if not cell_content:
@@ -482,11 +503,11 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
         # 检查表头是否包含工况信息的关键词
         first_row = table[0]
         second_row = table[1] if len(table) > 1 else []
-        header_text = " ".join(first_row + second_row).lower()
+        header_text = normalize_text(" ".join(first_row + second_row))
         
         has_keywords = any(
             keyword in header_text 
-            for keyword in ["名称", "时间", "u", "i", "p", "q", "运行工况"]
+            for keyword in ["名称", "时间", "运行工况", "u", "i", "p", "q", "kv", "mw", "mvar"]
         )
         
         if not has_keywords:
@@ -497,8 +518,8 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
         # 检测是否有两行表头（第二行包含"U (kV)"、"I (A)"等）
         has_two_row_header = False
         if len(table) > 1:
-            second_row_text = " ".join(table[1]).lower()
-            if any(k in second_row_text for k in ["u (kv)", "i (a)", "p (mw)", "q (mvar)"]):
+            second_row_text = normalize_text(" ".join(table[1]))
+            if any(k in second_row_text for k in ["u(kv)", "i(a)", "p(mw)", "q(mvar)"]):
                 has_two_row_header = True
                 logger.debug("[工况信息opStatus] 检测到两行表头格式")
         
@@ -515,19 +536,20 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
         
         for idx, cell in enumerate(header_row):
             cell_lower = cell.lower()
+            cell_normalized = normalize_text(cell)
             if "检测时间" in cell or "监测时间" in cell or "时间" in cell:
                 time_idx = idx
             elif "项目" in cell:
                 project_idx = idx
             elif "名称" in cell:
                 name_idx = idx
-            elif "电压" in cell or "电压(kv)" in cell_lower or ("u" in cell_lower and "kv" in cell_lower):
+            elif "电压" in cell or ("u" in cell_normalized and "kv" in cell_normalized):
                 voltage_idx = idx
-            elif "电流" in cell or "电流(a)" in cell_lower or ("i" in cell_lower and "a" in cell_lower):
+            elif "电流" in cell or ("i" in cell_normalized and "a" in cell_normalized):
                 current_idx = idx
-            elif "有功功率" in cell or ("有功" in cell and "功率" in cell) or ("p" in cell_lower and "mw" in cell_lower):
+            elif "有功功率" in cell or ("有功" in cell and "功率" in cell) or ("p" in cell_normalized and "mw" in cell_normalized):
                 active_power_idx = idx
-            elif "无功功率" in cell or ("无功" in cell and "功率" in cell) or ("q" in cell_lower and "mvar" in cell_lower):
+            elif "无功功率" in cell or ("无功" in cell and "功率" in cell) or ("q" in cell_normalized and "mvar" in cell_normalized):
                 reactive_power_idx = idx
         
         # 如果第一行表头有"名称"，也检查第一行
