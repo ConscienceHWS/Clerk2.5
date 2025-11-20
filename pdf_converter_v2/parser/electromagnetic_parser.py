@@ -134,17 +134,15 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 continue
             i += 1
 
-    # 数据行代码匹配模式：以EB或ZB开头（不区分大小写）
-    CODE_PATTERN = re.compile(r'^(EB|ZB)', re.IGNORECASE)
+    # 移除了EB/ZB开头的模式匹配
     EXCLUDED_HEADERS = {"编号", "备注"}  # 使用集合提高查找效率
-    
+
     def is_valid_data_row(row: List[str]) -> bool:
         """判断是否为有效的数据行"""
         if len(row) < 8 or not row[0]:
             return False
         first_cell = row[0].strip()
-        return (first_cell not in EXCLUDED_HEADERS 
-                and CODE_PATTERN.match(first_cell) is not None)
+        return first_cell not in EXCLUDED_HEADERS
     
     for table in tables:
         for row in table:
