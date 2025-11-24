@@ -627,45 +627,9 @@ async def ocr_image(request: OCRRequest):
         if not texts:
             texts = []
         
-        # 直接使用合并后的文本列表生成完整文本
+        # 直接使用texts数组，按行用\n连接生成完整文本
         # texts已经是按Y坐标排序并合并的，顺序正确
         full_text = "\n".join(texts) if texts else ""
-        
-        # 尝试从JSON文件中提取更详细的段落信息（如果存在）
-        try:
-            # 查找OCR生成的JSON文件
-            image_basename = os.path.splitext(os.path.basename(image_path))[0]
-            json_file = os.path.join(ocr_save_path, f"{image_basename}_res.json")
-            
-            if os.path.exists(json_file):
-                # 检查JSON格式，如果是新格式（包含merged_texts），直接使用
-                try:
-                    with open(json_file, 'r', encoding='utf-8') as f:
-                        json_data = json.load(f)
-                    
-                    # 如果是新格式，直接使用merged_texts（已经按正确顺序合并）
-                    if "merged_texts" in json_data and isinstance(json_data["merged_texts"], list):
-                        merged_texts = json_data["merged_texts"]
-                        if merged_texts:
-                            full_text = "\n".join(merged_texts)
-                            logger.info(f"[OCR] 从JSON使用合并后的文本，共 {len(merged_texts)} 行")
-                    # 如果是旧格式，尝试使用extract_text_with_paragraphs_from_ocr_json
-                    elif "rec_texts" in json_data and "dt_polys" in json_data:
-                        from ..utils.paddleocr_fallback import extract_text_with_paragraphs_from_ocr_json
-                        extracted_text = extract_text_with_paragraphs_from_ocr_json(json_file)
-                        if extracted_text and extracted_text.strip():
-                            full_text = extracted_text
-                            logger.info(f"[OCR] 成功提取完整段落文本，长度: {len(full_text)} 字符")
-                except Exception as e:
-                    logger.debug(f"[OCR] 读取JSON文件失败: {e}，使用文本片段拼接")
-            else:
-                logger.debug(f"[OCR] JSON文件不存在，使用文本片段拼接")
-        except Exception as e:
-            logger.warning(f"[OCR] 提取完整段落文本失败: {e}，使用文本片段拼接")
-        
-        # 确保full_text不为None或空（至少是空字符串）
-        if not full_text:
-            full_text = "\n".join(texts) if texts else ""
         
         logger.info(f"[OCR] 识别成功，共识别出 {len(texts)} 个文本片段，完整文本长度: {len(full_text)} 字符")
         return OCRResponse(
