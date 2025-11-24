@@ -132,6 +132,7 @@ class OCRResponse(BaseModel):
     """OCR识别响应模型"""
     success: bool
     texts: Optional[List[str]] = None  # 识别出的文本列表
+    full_text: Optional[str] = None  # 完整的段落文本（带段落分割）
     message: Optional[str] = None
     error: Optional[str] = None
 
@@ -622,10 +623,38 @@ async def ocr_image(request: OCRRequest):
                 message="PaddleOCR未能识别出文本内容"
             )
         
+        # 返回所有文本（包括空文本，保持原始顺序）
+        if not texts:
+            texts = []
+        
+        # 尝试提取完整的段落文本
+        full_text = None
+        try:
+            # 查找OCR生成的JSON文件
+            image_basename = os.path.splitext(os.path.basename(image_path))[0]
+            json_file = os.path.join(ocr_save_path, f"{image_basename}_res.json")
+            
+            if os.path.exists(json_file):
+                from ..utils.paddleocr_fallback import extract_text_with_paragraphs_from_ocr_json
+                full_text = extract_text_with_paragraphs_from_ocr_json(json_file)
+                if full_text:
+                    logger.info(f"[OCR] 成功提取完整段落文本，长度: {len(full_text)} 字符")
+                else:
+                    # 如果提取失败，使用所有文本片段拼接
+                    full_text = "\n".join(texts) if texts else ""
+            else:
+                # 如果没有JSON文件，使用所有文本片段拼接
+                full_text = "\n".join(texts) if texts else ""
+        except Exception as e:
+            logger.warning(f"[OCR] 提取完整段落文本失败: {e}")
+            # 如果提取失败，使用所有文本片段拼接
+            full_text = "\n".join(texts) if texts else ""
+        
         logger.info(f"[OCR] 识别成功，共识别出 {len(texts)} 个文本片段")
         return OCRResponse(
             success=True,
             texts=texts,
+            full_text=full_text,
             message=f"成功识别出 {len(texts)} 个文本片段"
         )
         
