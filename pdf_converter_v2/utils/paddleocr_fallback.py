@@ -539,7 +539,7 @@ def extract_table_text(table_html: str) -> List[str]:
     return table_lines
 
 
-def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
+def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[str]], Optional[str]]:
     """调用paddleocr doc_parser命令，将markdown转换为纯文本
     
     Args:
@@ -547,12 +547,12 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
         save_path: 保存路径（目录）
         
     Returns:
-        纯文本列表（按行分割），如果失败返回None
+        (纯文本列表（按行分割）, markdown文件路径)，如果失败返回(None, None)
     """
     try:
         if not os.path.exists(image_path):
             logger.error(f"[PaddleOCR OCR] 图片文件不存在: {image_path}")
-            return None
+            return None, None
         
         # 生成输出目录和基础文件名
         image_dir = os.path.dirname(image_path)
@@ -584,7 +584,7 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
         if result.returncode != 0:
             logger.error(f"[PaddleOCR OCR] 命令执行失败，返回码: {result.returncode}")
             logger.error(f"[PaddleOCR OCR] 错误输出: {result.stderr}")
-            return None
+            return None, None
         
         # 查找保存的Markdown文件
         # PaddleOCR会在save_path下创建目录，文件路径为: {save_path}/{basename}.md
@@ -599,7 +599,7 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
         
         if not os.path.exists(md_file):
             logger.warning(f"[PaddleOCR OCR] Markdown文件不存在: {md_file}")
-            return None
+            return None, None
         
         # 读取Markdown文件并转换为纯文本
         try:
@@ -608,23 +608,23 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
             
             if not markdown_content.strip():
                 logger.warning("[PaddleOCR OCR] Markdown文件内容为空")
-                return []
+                return [], md_file
             
             # 将Markdown转换为纯文本列表
             plain_text_lines = markdown_to_plain_text(markdown_content)
-            logger.info(f"[PaddleOCR OCR] 成功提取 {len(plain_text_lines)} 行纯文本")
-            return plain_text_lines
+            logger.info(f"[PaddleOCR OCR] 成功提取 {len(plain_text_lines)} 行纯文本，Markdown文件: {md_file}")
+            return plain_text_lines, md_file
                 
         except Exception as e:
             logger.exception(f"[PaddleOCR OCR] 读取Markdown文件失败: {e}")
-            return None
+            return None, md_file
             
     except subprocess.TimeoutExpired:
         logger.error("[PaddleOCR OCR] 命令执行超时")
-        return None
+        return None, None
     except Exception as e:
         logger.exception(f"[PaddleOCR OCR] 调用失败: {e}")
-        return None
+        return None, None
 
 
 def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:

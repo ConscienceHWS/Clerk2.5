@@ -613,7 +613,7 @@ async def ocr_image(request: OCRRequest):
         os.makedirs(ocr_save_path, exist_ok=True)
         
         logger.info(f"[OCR] 开始调用PaddleOCR识别: {image_path}")
-        texts = call_paddleocr_ocr(image_path, ocr_save_path)
+        texts, md_file_path = call_paddleocr_ocr(image_path, ocr_save_path)
         
         if texts is None:
             logger.warning("[OCR] PaddleOCR识别失败或未返回结果")
@@ -631,7 +631,13 @@ async def ocr_image(request: OCRRequest):
         # texts已经是按Y坐标排序并合并的，顺序正确
         full_text = "\n".join(texts) if texts else ""
         
+        # 记录文件位置
         logger.info(f"[OCR] 识别成功，共识别出 {len(texts)} 个文本片段，完整文本长度: {len(full_text)} 字符")
+        logger.info(f"[OCR] 上传的图片已保存: {image_path}")
+        if md_file_path:
+            logger.info(f"[OCR] 生成的Markdown文件已保存: {md_file_path}")
+        logger.info(f"[OCR] 所有文件保存在目录: {temp_dir}")
+        
         return OCRResponse(
             success=True,
             texts=texts,
@@ -646,14 +652,7 @@ async def ocr_image(request: OCRRequest):
             error=str(e),
             message="OCR处理过程中发生错误"
         )
-    finally:
-        # 清理临时文件
-        if temp_dir and os.path.exists(temp_dir):
-            try:
-                shutil.rmtree(temp_dir)
-                logger.debug(f"[OCR] 临时目录已清理: {temp_dir}")
-            except Exception as e:
-                logger.warning(f"[OCR] 清理临时目录失败: {e}")
+    # 注意：不再删除临时文件，保留上传的图片和生成的markdown文件
 
 
 # 启动时的初始化
