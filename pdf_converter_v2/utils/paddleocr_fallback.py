@@ -394,23 +394,135 @@ def find_pdf_file(output_dir: str) -> Optional[str]:
     return None
 
 
+def markdown_to_plain_text(markdown_content: str) -> List[str]:
+    """将Markdown内容转换为纯文本列表（按行分割）
+    
+    Args:
+        markdown_content: Markdown格式的文本
+        
+    Returns:
+        纯文本列表，每行一个元素
+    """
+    if not markdown_content:
+        return []
+    
+    lines = []
+    in_code_block = False
+    in_table = False
+    
+    for line in markdown_content.split('\n'):
+        original_line = line
+        line = line.rstrip()  # 只移除右侧空格，保留左侧缩进信息
+        
+        # 检测代码块
+        if line.strip().startswith('```'):
+            in_code_block = not in_code_block
+            continue
+        
+        if in_code_block:
+            # 代码块内的内容保留原样
+            if line.strip():
+                lines.append(line)
+            continue
+        
+        # 检测表格（Markdown表格以 | 开头）
+        if '|' in line and line.strip().startswith('|'):
+            in_table = True
+            # 处理表格行：移除首尾的 |，分割单元格
+            cells = [cell.strip() for cell in line.split('|') if cell.strip()]
+            # 移除表格分隔行（只包含 - 和 |）
+            if all(c in ['-', ':', ' '] for c in ''.join(cells)):
+                continue
+            # 合并单元格内容，用空格分隔
+            table_line = ' '.join(cells)
+            if table_line.strip():
+                lines.append(table_line)
+            continue
+        else:
+            if in_table:
+                in_table = False
+        
+        # 移除Markdown语法标记
+        # 移除标题标记 (# ## ### 等)
+        line = re.sub(r'^#+\s*', '', line)
+        # 移除列表标记 (- * + 等)
+        line = re.sub(r'^[-*+]\s+', '', line)
+        # 移除数字列表标记
+        line = re.sub(r'^\d+\.\s+', '', line)
+        # 移除粗体和斜体标记
+        line = re.sub(r'\*\*([^*]+)\*\*', r'\1', line)  # **bold**
+        line = re.sub(r'\*([^*]+)\*', r'\1', line)  # *italic*
+        line = re.sub(r'__([^_]+)__', r'\1', line)  # __bold__
+        line = re.sub(r'_([^_]+)_', r'\1', line)  # _italic_
+        # 移除链接格式 [text](url) -> text
+        line = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', line)
+        # 移除图片格式 ![alt](url) -> alt
+        line = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'\1', line)
+        # 移除行内代码标记
+        line = re.sub(r'`([^`]+)`', r'\1', line)
+        
+        # 处理HTML表格（如果存在）
+        if '<table>' in line or '</table>' in line:
+            continue
+        if '<tr>' in line or '</tr>' in line:
+            continue
+        if '<td' in line or '</td>' in line:
+            # 提取td标签内的文本
+            td_texts = re.findall(r'<td[^>]*>(.*?)</td>', line, re.DOTALL)
+            if td_texts:
+                # 清理HTML实体和标签
+                cleaned_cells = []
+                for td_text in td_texts:
+                    cleaned = re.sub(r'<[^>]+>', '', td_text)  # 移除嵌套标签
+                    cleaned = cleaned.strip()
+                    if cleaned:
+                        cleaned_cells.append(cleaned)
+                if cleaned_cells:
+                    lines.append(' '.join(cleaned_cells))
+            continue
+        
+        # 移除其他HTML标签
+        line = re.sub(r'<[^>]+>', '', line)
+        
+        # 清理多余空格
+        line = line.strip()
+        
+        if line:  # 只保留非空行
+            lines.append(line)
+    
+    return lines
+
+
 def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
-    """调用paddleocr ocr命令提取关键词
+    """调用paddleocr doc_parser命令，将markdown转换为纯文本
     
     Args:
         image_path: 图片路径
         save_path: 保存路径（目录）
         
     Returns:
-        OCR识别的文本列表，如果失败返回None
+        纯文本列表（按行分割），如果失败返回None
     """
     try:
         if not os.path.exists(image_path):
             logger.error(f"[PaddleOCR OCR] 图片文件不存在: {image_path}")
             return None
         
-        # 构建paddleocr ocr命令
-        cmd = ["paddleocr", "ocr", "-i", image_path, "--save_path", save_path]
+        # 生成输出目录和基础文件名
+        image_dir = os.path.dirname(image_path)
+        image_basename = os.path.splitext(os.path.basename(image_path))[0]
+        save_path_base = os.path.join(save_path, image_basename)
+        os.makedirs(save_path_base, exist_ok=True)
+        
+        # 构建paddleocr doc_parser命令
+        cmd = [
+            "paddleocr", "doc_parser", "-i", image_path,
+            "--precision", "fp32",
+            "--use_doc_unwarping", "False",
+            "--use_doc_orientation_classify", "True",
+            "--use_chart_recognition", "True",
+            "--save_path", save_path_base
+        ]
         
         logger.info(f"[PaddleOCR OCR] 执行命令: {' '.join(cmd)}")
         
@@ -428,98 +540,37 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
             logger.error(f"[PaddleOCR OCR] 错误输出: {result.stderr}")
             return None
         
-        # 查找保存的JSON文件
-        # OCR命令会在save_path下生成 {basename}_res.json
-        image_basename = os.path.splitext(os.path.basename(image_path))[0]
-        json_file = os.path.join(save_path, f"{image_basename}_res.json")
+        # 查找保存的Markdown文件
+        # PaddleOCR会在save_path下创建目录，文件路径为: {save_path}/{basename}.md
+        md_file = os.path.join(save_path_base, f"{image_basename}.md")
         
-        if not os.path.exists(json_file):
-            logger.warning(f"[PaddleOCR OCR] JSON文件不存在: {json_file}")
+        # 也可能在子目录中
+        if not os.path.exists(md_file):
+            md_files = sorted(Path(save_path_base).rglob("*.md"))
+            if md_files:
+                md_file = str(md_files[0])
+                logger.info(f"[PaddleOCR OCR] 在子目录中找到Markdown文件: {md_file}")
+        
+        if not os.path.exists(md_file):
+            logger.warning(f"[PaddleOCR OCR] Markdown文件不存在: {md_file}")
             return None
         
-        # 读取JSON文件
+        # 读取Markdown文件并转换为纯文本
         try:
-            with open(json_file, 'r', encoding='utf-8') as f:
-                ocr_data = json.load(f)
+            with open(md_file, 'r', encoding='utf-8') as f:
+                markdown_content = f.read()
             
-            # 提取rec_texts字段和坐标信息
-            if "rec_texts" in ocr_data and isinstance(ocr_data["rec_texts"], list):
-                text_list = ocr_data["rec_texts"]
-                
-                # 尝试获取坐标信息（优先使用rec_boxes，其次使用dt_polys）
-                bbox_list = None
-                bbox_format = None  # 'rec_boxes' 或 'dt_polys'
-                
-                if "rec_boxes" in ocr_data and isinstance(ocr_data["rec_boxes"], list):
-                    bbox_list = ocr_data["rec_boxes"]
-                    bbox_format = 'rec_boxes'
-                elif "dt_polys" in ocr_data and isinstance(ocr_data["dt_polys"], list):
-                    bbox_list = ocr_data["dt_polys"]
-                    bbox_format = 'dt_polys'
-                
-                # 如果有坐标信息，进行排序和合并
-                if bbox_list and len(bbox_list) == len(text_list):
-                    # 合并文本（按 y 坐标合并相邻行）
-                    y_threshold = 20.0  # Y坐标阈值，小于此值的文本块视为同一行
-                    merged_text = []
-                    current_line = ""
-                    last_y = None
-                    
-                    # 提取Y坐标并排序
-                    # rec_boxes格式: [x_min, y_min, x_max, y_max]
-                    # dt_polys格式: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-                    items_with_y = []
-                    for i, (bbox, txt) in enumerate(zip(bbox_list, text_list)):
-                        if not txt or not txt.strip():
-                            continue
-                        
-                        # 根据格式提取Y坐标
-                        if bbox_format == 'rec_boxes':
-                            # rec_boxes格式: [x_min, y_min, x_max, y_max]
-                            if isinstance(bbox, list) and len(bbox) >= 2:
-                                y_min = bbox[1]  # y_min是第二个元素
-                                items_with_y.append((y_min, txt, i))
-                        elif bbox_format == 'dt_polys':
-                            # dt_polys格式: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-                            if isinstance(bbox, list) and len(bbox) >= 4:
-                                # 计算所有点的Y坐标，取最小值作为y_min
-                                ys = [point[1] if isinstance(point, list) and len(point) >= 2 else point for point in bbox]
-                                y_min = min(ys)
-                                items_with_y.append((y_min, txt, i))
-                    
-                    # 按 y 坐标排序
-                    sorted_result = sorted(items_with_y, key=lambda x: x[0])  # 按 y_min 排序
-                    
-                    for y_min, txt, idx in sorted_result:
-                        if last_y is None or abs(y_min - last_y) < y_threshold:
-                            # 同一行，追加文本（添加空格分隔）
-                            if current_line:
-                                current_line += " " + txt
-                            else:
-                                current_line = txt
-                        else:
-                            # 新行开始，保存当前行
-                            if current_line:
-                                merged_text.append(current_line)
-                            current_line = txt
-                        last_y = y_min
-                    
-                    # 添加最后一行
-                    if current_line:
-                        merged_text.append(current_line)
-                    
-                    logger.info(f"[PaddleOCR OCR] 成功提取 {len(text_list)} 个文本片段，合并后共 {len(merged_text)} 行")
-                    return merged_text
-                else:
-                    # 没有坐标信息，直接返回原始文本列表
-                    logger.info(f"[PaddleOCR OCR] 成功提取 {len(text_list)} 个文本片段（包括空文本）")
-                    return text_list
-            else:
-                logger.warning("[PaddleOCR OCR] JSON文件中未找到rec_texts字段")
-                return None
+            if not markdown_content.strip():
+                logger.warning("[PaddleOCR OCR] Markdown文件内容为空")
+                return []
+            
+            # 将Markdown转换为纯文本列表
+            plain_text_lines = markdown_to_plain_text(markdown_content)
+            logger.info(f"[PaddleOCR OCR] 成功提取 {len(plain_text_lines)} 行纯文本")
+            return plain_text_lines
                 
         except Exception as e:
-            logger.exception(f"[PaddleOCR OCR] 读取JSON文件失败: {e}")
+            logger.exception(f"[PaddleOCR OCR] 读取Markdown文件失败: {e}")
             return None
             
     except subprocess.TimeoutExpired:
