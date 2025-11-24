@@ -448,19 +448,14 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
                 
                 # 尝试获取坐标信息（优先使用rec_boxes，其次使用dt_polys）
                 bbox_list = None
+                bbox_format = None  # 'rec_boxes' 或 'dt_polys'
+                
                 if "rec_boxes" in ocr_data and isinstance(ocr_data["rec_boxes"], list):
                     bbox_list = ocr_data["rec_boxes"]
+                    bbox_format = 'rec_boxes'
                 elif "dt_polys" in ocr_data and isinstance(ocr_data["dt_polys"], list):
-                    # 将多边形转换为边界框
-                    bbox_list = []
-                    for poly in ocr_data["dt_polys"]:
-                        if len(poly) >= 4:
-                            xs = [point[0] for point in poly]
-                            ys = [point[1] for point in poly]
-                            x_min, x_max = min(xs), max(xs)
-                            y_min, y_max = min(ys), max(ys)
-                            # 转换为 [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] 格式
-                            bbox_list.append([[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]])
+                    bbox_list = ocr_data["dt_polys"]
+                    bbox_format = 'dt_polys'
                 
                 # 如果有坐标信息，进行排序和合并
                 if bbox_list and len(bbox_list) == len(text_list):
@@ -470,14 +465,33 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
                     current_line = ""
                     last_y = None
                     
-                    # 按 y 坐标排序结果（bbox 格式为 [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]）
-                    sorted_result = sorted(zip(bbox_list, text_list), key=lambda x: x[0][0][1])  # 按左上角 y 坐标排序
-                    
-                    for bbox, txt in sorted_result:
+                    # 提取Y坐标并排序
+                    # rec_boxes格式: [x_min, y_min, x_max, y_max]
+                    # dt_polys格式: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+                    items_with_y = []
+                    for i, (bbox, txt) in enumerate(zip(bbox_list, text_list)):
                         if not txt or not txt.strip():
                             continue
-                        current_y = bbox[0][1]  # 左上角 y 坐标
-                        if last_y is None or abs(current_y - last_y) < y_threshold:
+                        
+                        # 根据格式提取Y坐标
+                        if bbox_format == 'rec_boxes':
+                            # rec_boxes格式: [x_min, y_min, x_max, y_max]
+                            if isinstance(bbox, list) and len(bbox) >= 2:
+                                y_min = bbox[1]  # y_min是第二个元素
+                                items_with_y.append((y_min, txt, i))
+                        elif bbox_format == 'dt_polys':
+                            # dt_polys格式: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+                            if isinstance(bbox, list) and len(bbox) >= 4:
+                                # 计算所有点的Y坐标，取最小值作为y_min
+                                ys = [point[1] if isinstance(point, list) and len(point) >= 2 else point for point in bbox]
+                                y_min = min(ys)
+                                items_with_y.append((y_min, txt, i))
+                    
+                    # 按 y 坐标排序
+                    sorted_result = sorted(items_with_y, key=lambda x: x[0])  # 按 y_min 排序
+                    
+                    for y_min, txt, idx in sorted_result:
+                        if last_y is None or abs(y_min - last_y) < y_threshold:
                             # 同一行，追加文本（添加空格分隔）
                             if current_line:
                                 current_line += " " + txt
@@ -488,7 +502,7 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
                             if current_line:
                                 merged_text.append(current_line)
                             current_line = txt
-                        last_y = current_y
+                        last_y = y_min
                     
                     # 添加最后一行
                     if current_line:
