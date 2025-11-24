@@ -445,7 +445,8 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
             # 提取rec_texts字段
             if "rec_texts" in ocr_data and isinstance(ocr_data["rec_texts"], list):
                 texts = ocr_data["rec_texts"]
-                logger.info(f"[PaddleOCR OCR] 成功提取 {len(texts)} 个文本片段")
+                # 返回所有文本，包括空文本，保持原始顺序
+                logger.info(f"[PaddleOCR OCR] 成功提取 {len(texts)} 个文本片段（包括空文本）")
                 return texts
             else:
                 logger.warning("[PaddleOCR OCR] JSON文件中未找到rec_texts字段")

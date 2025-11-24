@@ -627,8 +627,10 @@ async def ocr_image(request: OCRRequest):
         if not texts:
             texts = []
         
-        # 尝试提取完整的段落文本
-        full_text = None
+        # 默认使用所有文本片段拼接作为完整文本
+        full_text = "\n".join(texts) if texts else ""
+        
+        # 尝试提取带段落分割的完整文本
         try:
             # 查找OCR生成的JSON文件
             image_basename = os.path.splitext(os.path.basename(image_path))[0]
@@ -636,21 +638,22 @@ async def ocr_image(request: OCRRequest):
             
             if os.path.exists(json_file):
                 from ..utils.paddleocr_fallback import extract_text_with_paragraphs_from_ocr_json
-                full_text = extract_text_with_paragraphs_from_ocr_json(json_file)
-                if full_text:
+                extracted_text = extract_text_with_paragraphs_from_ocr_json(json_file)
+                if extracted_text and extracted_text.strip():
+                    full_text = extracted_text
                     logger.info(f"[OCR] 成功提取完整段落文本，长度: {len(full_text)} 字符")
                 else:
-                    # 如果提取失败，使用所有文本片段拼接
-                    full_text = "\n".join(texts) if texts else ""
+                    logger.debug(f"[OCR] 段落文本提取结果为空，使用文本片段拼接")
             else:
-                # 如果没有JSON文件，使用所有文本片段拼接
-                full_text = "\n".join(texts) if texts else ""
+                logger.debug(f"[OCR] JSON文件不存在，使用文本片段拼接")
         except Exception as e:
-            logger.warning(f"[OCR] 提取完整段落文本失败: {e}")
-            # 如果提取失败，使用所有文本片段拼接
+            logger.warning(f"[OCR] 提取完整段落文本失败: {e}，使用文本片段拼接")
+        
+        # 确保full_text不为None或空（至少是空字符串）
+        if not full_text:
             full_text = "\n".join(texts) if texts else ""
         
-        logger.info(f"[OCR] 识别成功，共识别出 {len(texts)} 个文本片段")
+        logger.info(f"[OCR] 识别成功，共识别出 {len(texts)} 个文本片段，完整文本长度: {len(full_text)} 字符")
         return OCRResponse(
             success=True,
             texts=texts,
