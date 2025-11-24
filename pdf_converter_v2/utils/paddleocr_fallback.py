@@ -394,110 +394,71 @@ def find_pdf_file(output_dir: str) -> Optional[str]:
     return None
 
 
-def call_paddleocr_ocr(image_path: str, save_path: str, y_threshold: float = 20.0) -> Optional[List[str]]:
-    """使用PaddleOCR Python API进行OCR识别，并按Y坐标合并相邻行
+def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
+    """调用paddleocr ocr命令提取关键词
     
     Args:
         image_path: 图片路径
-        save_path: 保存路径（目录，用于保存JSON结果，可选）
-        y_threshold: Y坐标阈值，小于此值的文本块视为同一行（默认20像素）
+        save_path: 保存路径（目录）
         
     Returns:
-        合并后的文本列表，如果失败返回None
+        OCR识别的文本列表，如果失败返回None
     """
     try:
         if not os.path.exists(image_path):
             logger.error(f"[PaddleOCR OCR] 图片文件不存在: {image_path}")
             return None
         
-        # 尝试导入PaddleOCR
-        try:
-            from paddleocr import PaddleOCR
-        except ImportError:
-            logger.error("[PaddleOCR OCR] PaddleOCR未安装，请安装: pip install paddleocr")
+        # 构建paddleocr ocr命令
+        cmd = ["paddleocr", "ocr", "-i", image_path, "--save_path", save_path]
+        
+        logger.info(f"[PaddleOCR OCR] 执行命令: {' '.join(cmd)}")
+        
+        # 执行命令
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5分钟超时
+            check=False,
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"[PaddleOCR OCR] 命令执行失败，返回码: {result.returncode}")
+            logger.error(f"[PaddleOCR OCR] 错误输出: {result.stderr}")
             return None
         
-        logger.info(f"[PaddleOCR OCR] 使用Python API识别图片: {image_path}")
+        # 查找保存的JSON文件
+        # OCR命令会在save_path下生成 {basename}_res.json
+        image_basename = os.path.splitext(os.path.basename(image_path))[0]
+        json_file = os.path.join(save_path, f"{image_basename}_res.json")
         
-        # 初始化PaddleOCR（使用中文模型）
-        ocr = PaddleOCR(use_angle_cls=True, lang='ch', use_gpu=False)
+        if not os.path.exists(json_file):
+            logger.warning(f"[PaddleOCR OCR] JSON文件不存在: {json_file}")
+            return None
         
-        # 执行OCR识别
-        result = ocr.ocr(image_path, cls=True)
-        
-        if not result or not result[0]:
-            logger.warning("[PaddleOCR OCR] 未识别到任何文本")
-            return []
-        
-        # PaddleOCR 返回的 result 是一个列表，格式为 [[bbox, (text, prob)], ...]
-        # 提取文本和边界框
-        text_list = []
-        bbox_list = []
-        for line in result[0]:  # result[0] 是第一个（也是唯一）图片的结果
-            if not line or len(line) < 2:
-                continue
-            bbox, (txt, prob) = line
-            text_list.append(txt)
-            bbox_list.append(bbox)
-        
-        if not text_list:
-            logger.warning("[PaddleOCR OCR] 未提取到任何文本")
-            return []
-        
-        logger.debug(f"[PaddleOCR OCR] 识别到 {len(text_list)} 个文本块")
-        
-        # 合并文本（按 y 坐标合并相邻行）
-        merged_text = []
-        current_line = ""
-        last_y = None
-        
-        # 按 y 坐标排序结果（PaddleOCR 的 bbox 格式为 [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]）
-        sorted_result = sorted(zip(bbox_list, text_list), key=lambda x: x[0][0][1])  # 按左上角 y 坐标排序
-        
-        for bbox, txt in sorted_result:
-            current_y = bbox[0][1]  # 左上角 y 坐标
-            if last_y is None or abs(current_y - last_y) < y_threshold:
-                # 同一行，追加文本（添加空格分隔）
-                if current_line:
-                    current_line += " " + txt
-                else:
-                    current_line = txt
-            else:
-                # 新行开始，保存当前行
-                if current_line:
-                    merged_text.append(current_line)
-                current_line = txt
-            last_y = current_y
-        
-        # 添加最后一行
-        if current_line:
-            merged_text.append(current_line)
-        
-        logger.info(f"[PaddleOCR OCR] 合并后共 {len(merged_text)} 行文本")
-        
-        # 可选：保存JSON结果到文件
-        if save_path:
-            try:
-                os.makedirs(save_path, exist_ok=True)
-                image_basename = os.path.splitext(os.path.basename(image_path))[0]
-                json_file = os.path.join(save_path, f"{image_basename}_res.json")
-                
-                # 保存原始OCR结果和合并后的文本
-                json_data = {
-                    "rec_texts": text_list,  # 原始文本列表
-                    "merged_texts": merged_text,  # 合并后的文本列表
-                    "bbox_list": bbox_list,  # 边界框列表
-                    "y_threshold": y_threshold
-                }
-                
-                with open(json_file, 'w', encoding='utf-8') as f:
-                    json.dump(json_data, f, ensure_ascii=False, indent=2)
-                logger.debug(f"[PaddleOCR OCR] 结果已保存到: {json_file}")
-            except Exception as e:
-                logger.warning(f"[PaddleOCR OCR] 保存JSON文件失败: {e}")
-        
-        return merged_text
+        # 读取JSON文件
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                ocr_data = json.load(f)
             
+            # 提取rec_texts字段
+            if "rec_texts" in ocr_data and isinstance(ocr_data["rec_texts"], list):
+                texts = ocr_data["rec_texts"]
+                # 返回所有文本，包括空文本，保持原始顺序
+                logger.info(f"[PaddleOCR OCR] 成功提取 {len(texts)} 个文本片段（包括空文本）")
+                return texts
+            else:
+                logger.warning("[PaddleOCR OCR] JSON文件中未找到rec_texts字段")
+                return None
+                
+        except Exception as e:
+            logger.exception(f"[PaddleOCR OCR] 读取JSON文件失败: {e}")
+            return None
+            
+    except subprocess.TimeoutExpired:
+        logger.error("[PaddleOCR OCR] 命令执行超时")
+        return None
     except Exception as e:
         logger.exception(f"[PaddleOCR OCR] 调用失败: {e}")
         return None
