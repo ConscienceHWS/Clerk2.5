@@ -442,12 +442,64 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
             with open(json_file, 'r', encoding='utf-8') as f:
                 ocr_data = json.load(f)
             
-            # 提取rec_texts字段
+            # 提取rec_texts字段和坐标信息
             if "rec_texts" in ocr_data and isinstance(ocr_data["rec_texts"], list):
-                texts = ocr_data["rec_texts"]
-                # 返回所有文本，包括空文本，保持原始顺序
-                logger.info(f"[PaddleOCR OCR] 成功提取 {len(texts)} 个文本片段（包括空文本）")
-                return texts
+                text_list = ocr_data["rec_texts"]
+                
+                # 尝试获取坐标信息（优先使用rec_boxes，其次使用dt_polys）
+                bbox_list = None
+                if "rec_boxes" in ocr_data and isinstance(ocr_data["rec_boxes"], list):
+                    bbox_list = ocr_data["rec_boxes"]
+                elif "dt_polys" in ocr_data and isinstance(ocr_data["dt_polys"], list):
+                    # 将多边形转换为边界框
+                    bbox_list = []
+                    for poly in ocr_data["dt_polys"]:
+                        if len(poly) >= 4:
+                            xs = [point[0] for point in poly]
+                            ys = [point[1] for point in poly]
+                            x_min, x_max = min(xs), max(xs)
+                            y_min, y_max = min(ys), max(ys)
+                            # 转换为 [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] 格式
+                            bbox_list.append([[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]])
+                
+                # 如果有坐标信息，进行排序和合并
+                if bbox_list and len(bbox_list) == len(text_list):
+                    # 合并文本（按 y 坐标合并相邻行）
+                    y_threshold = 20.0  # Y坐标阈值，小于此值的文本块视为同一行
+                    merged_text = []
+                    current_line = ""
+                    last_y = None
+                    
+                    # 按 y 坐标排序结果（bbox 格式为 [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]）
+                    sorted_result = sorted(zip(bbox_list, text_list), key=lambda x: x[0][0][1])  # 按左上角 y 坐标排序
+                    
+                    for bbox, txt in sorted_result:
+                        if not txt or not txt.strip():
+                            continue
+                        current_y = bbox[0][1]  # 左上角 y 坐标
+                        if last_y is None or abs(current_y - last_y) < y_threshold:
+                            # 同一行，追加文本（添加空格分隔）
+                            if current_line:
+                                current_line += " " + txt
+                            else:
+                                current_line = txt
+                        else:
+                            # 新行开始，保存当前行
+                            if current_line:
+                                merged_text.append(current_line)
+                            current_line = txt
+                        last_y = current_y
+                    
+                    # 添加最后一行
+                    if current_line:
+                        merged_text.append(current_line)
+                    
+                    logger.info(f"[PaddleOCR OCR] 成功提取 {len(text_list)} 个文本片段，合并后共 {len(merged_text)} 行")
+                    return merged_text
+                else:
+                    # 没有坐标信息，直接返回原始文本列表
+                    logger.info(f"[PaddleOCR OCR] 成功提取 {len(text_list)} 个文本片段（包括空文本）")
+                    return text_list
             else:
                 logger.warning("[PaddleOCR OCR] JSON文件中未找到rec_texts字段")
                 return None
