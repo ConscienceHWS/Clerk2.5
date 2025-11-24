@@ -9,7 +9,7 @@ import tempfile
 import time
 import random
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 import ast
 import re
 
@@ -947,4 +947,170 @@ def fallback_parse_with_paddleocr(
     except Exception as e:
         logger.exception(f"[PaddleOCR备用] 备用解析过程出错: {e}")
         return None
+
+
+def extract_text_with_paragraphs_from_ocr_json(json_path: str, line_height_threshold: float = 1.5, paragraph_gap_threshold: float = 2.0) -> str:
+    """
+    从PaddleOCR的JSON输出中提取带段落分割的纯文本
+    
+    Args:
+        json_path: OCR输出的JSON文件路径
+        line_height_threshold: 行高倍数阈值，用于判断是否在同一行（默认1.5）
+        paragraph_gap_threshold: 段落间距倍数阈值，用于判断是否需要分段（默认2.0）
+    
+    Returns:
+        带段落分割的纯文本字符串
+    """
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            ocr_data = json.load(f)
+        
+        # 提取文本和坐标信息
+        rec_texts = ocr_data.get("rec_texts", [])
+        dt_polys = ocr_data.get("dt_polys", [])
+        
+        if not rec_texts or not dt_polys:
+            logger.warning("[OCR文本提取] JSON中缺少rec_texts或dt_polys字段")
+            return ""
+        
+        if len(rec_texts) != len(dt_polys):
+            logger.warning(f"[OCR文本提取] rec_texts长度({len(rec_texts)})与dt_polys长度({len(dt_polys)})不匹配")
+            # 取较小的长度
+            min_len = min(len(rec_texts), len(dt_polys))
+            rec_texts = rec_texts[:min_len]
+            dt_polys = dt_polys[:min_len]
+        
+        # 计算每个文本块的边界框和中心点
+        text_blocks = []
+        for i, (text, poly) in enumerate(zip(rec_texts, dt_polys)):
+            if not text or not text.strip():
+                continue
+            
+            # 从多边形坐标计算边界框
+            # poly格式: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
+            if len(poly) >= 4:
+                xs = [point[0] for point in poly]
+                ys = [point[1] for point in poly]
+                x_min, x_max = min(xs), max(xs)
+                y_min, y_max = min(ys), max(ys)
+                
+                # 计算中心点和高度
+                center_x = (x_min + x_max) / 2
+                center_y = (y_min + y_max) / 2
+                height = y_max - y_min
+                width = x_max - x_min
+                
+                text_blocks.append({
+                    'text': text.strip(),
+                    'x_min': x_min,
+                    'x_max': x_max,
+                    'y_min': y_min,
+                    'y_max': y_max,
+                    'center_x': center_x,
+                    'center_y': center_y,
+                    'height': height,
+                    'width': width,
+                    'index': i
+                })
+        
+        if not text_blocks:
+            logger.warning("[OCR文本提取] 没有有效的文本块")
+            return ""
+        
+        # 按Y坐标（从上到下）排序
+        text_blocks.sort(key=lambda b: (b['y_min'], b['x_min']))
+        
+        # 计算平均行高（用于判断行间距）
+        heights = [b['height'] for b in text_blocks]
+        avg_height = sum(heights) / len(heights) if heights else 20
+        
+        # 将文本块按行分组
+        lines = []
+        current_line = [text_blocks[0]]
+        
+        for i in range(1, len(text_blocks)):
+            prev_block = text_blocks[i - 1]
+            curr_block = text_blocks[i]
+            
+            # 计算Y坐标重叠度
+            y_overlap = min(prev_block['y_max'], curr_block['y_max']) - max(prev_block['y_min'], curr_block['y_min'])
+            overlap_ratio = y_overlap / min(prev_block['height'], curr_block['height']) if min(prev_block['height'], curr_block['height']) > 0 else 0
+            
+            # 计算Y坐标间距
+            y_gap = curr_block['y_min'] - prev_block['y_max']
+            gap_ratio = y_gap / avg_height if avg_height > 0 else 0
+            
+            # 判断是否在同一行：有重叠或间距小于行高阈值
+            if overlap_ratio > 0.3 or (y_gap >= 0 and gap_ratio < line_height_threshold):
+                current_line.append(curr_block)
+            else:
+                # 新行开始，保存当前行
+                lines.append(current_line)
+                current_line = [curr_block]
+        
+        # 添加最后一行
+        if current_line:
+            lines.append(current_line)
+        
+        # 对每行内的文本块按X坐标排序（从左到右）
+        for line in lines:
+            line.sort(key=lambda b: b['x_min'])
+        
+        # 生成文本，根据行间距判断段落分割
+        result_lines = []
+        prev_line_y = None
+        prev_line_height = None
+        
+        for line_idx, line in enumerate(lines):
+            # 计算当前行的Y坐标和高度
+            line_y_min = min(b['y_min'] for b in line)
+            line_y_max = max(b['y_max'] for b in line)
+            line_height = line_y_max - line_y_min
+            line_center_y = (line_y_min + line_y_max) / 2
+            
+            # 拼接当前行的文本
+            # 对于表格数据，使用制表符分隔；对于普通文本，使用空格
+            line_text = ""
+            prev_x_max = None
+            
+            # 判断是否是表格行（如果一行中有多个文本块且X坐标分布较均匀）
+            is_table_row = len(line) > 2
+            
+            for block in line:
+                if prev_x_max is not None:
+                    x_gap = block['x_min'] - prev_x_max
+                    # 如果间距较大，添加分隔符
+                    if x_gap > avg_height * 0.3:
+                        if is_table_row:
+                            # 表格使用制表符
+                            line_text += "\t"
+                        else:
+                            # 普通文本使用空格
+                            line_text += " "
+                line_text += block['text']
+                prev_x_max = block['x_max']
+            
+            # 判断是否需要换段
+            if prev_line_y is not None and prev_line_height is not None:
+                # 计算行间距
+                line_gap = line_y_min - prev_line_y
+                gap_ratio = line_gap / prev_line_height if prev_line_height > 0 else 0
+                
+                # 如果行间距大于段落阈值，添加空行
+                if gap_ratio > paragraph_gap_threshold:
+                    result_lines.append("")  # 空行表示段落分隔
+            
+            result_lines.append(line_text)
+            prev_line_y = line_y_max
+            prev_line_height = line_height
+        
+        # 合并为最终文本
+        result_text = "\n".join(result_lines)
+        logger.info(f"[OCR文本提取] 成功提取文本，共 {len(lines)} 行，{len(result_lines)} 行（含段落分隔）")
+        
+        return result_text
+        
+    except Exception as e:
+        logger.exception(f"[OCR文本提取] 处理失败: {e}")
+        return ""
 

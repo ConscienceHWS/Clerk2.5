@@ -9,8 +9,9 @@ import os
 import shutil
 import tempfile
 import uuid
+import base64
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -118,6 +119,20 @@ class TaskStatus(BaseModel):
     markdown_file: Optional[str] = None
     json_file: Optional[str] = None
     document_type: Optional[str] = None
+    error: Optional[str] = None
+
+
+class OCRRequest(BaseModel):
+    """OCR识别请求模型"""
+    image_base64: str  # base64编码的图片数据
+    image_format: Optional[str] = "png"  # 图片格式：png, jpg, jpeg
+
+
+class OCRResponse(BaseModel):
+    """OCR识别响应模型"""
+    success: bool
+    texts: Optional[List[str]] = None  # 识别出的文本列表
+    message: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -533,12 +548,110 @@ async def delete_task(task_id: str):
     return {"message": "任务已删除"}
 
 
+@app.post("/ocr", response_model=OCRResponse)
+async def ocr_image(request: OCRRequest):
+    """
+    对base64编码的图片进行OCR识别
+    
+    - **image_base64**: base64编码的图片数据（可以包含data:image/xxx;base64,前缀）
+    - **image_format**: 图片格式（png, jpg, jpeg），默认为png
+    
+    返回识别出的文本列表
+    """
+    temp_dir = None
+    image_path = None
+    
+    try:
+        # 创建临时目录
+        temp_dir = tempfile.mkdtemp(prefix=f"pdf_converter_ocr_{uuid.uuid4()}_")
+        logger.info(f"[OCR] 创建临时目录: {temp_dir}")
+        
+        # 解码base64数据
+        image_base64 = request.image_base64.strip()
+        
+        # 移除可能的数据URI前缀（如 data:image/png;base64,）
+        if "," in image_base64:
+            image_base64 = image_base64.split(",")[-1]
+        
+        try:
+            image_bytes = base64.b64decode(image_base64)
+            logger.info(f"[OCR] Base64解码成功，图片大小: {len(image_bytes)} bytes")
+        except Exception as e:
+            logger.error(f"[OCR] Base64解码失败: {e}")
+            return OCRResponse(
+                success=False,
+                error=f"Base64解码失败: {str(e)}",
+                message="无法解码base64图片数据"
+            )
+        
+        # 确定图片格式和扩展名
+        image_format = request.image_format.lower() if request.image_format else "png"
+        if image_format not in ["png", "jpg", "jpeg"]:
+            image_format = "png"
+        
+        ext_map = {
+            "png": ".png",
+            "jpg": ".jpg",
+            "jpeg": ".jpg"
+        }
+        ext = ext_map.get(image_format, ".png")
+        
+        # 保存图片文件
+        image_filename = f"ocr_image_{uuid.uuid4().hex[:8]}{ext}"
+        image_path = os.path.join(temp_dir, image_filename)
+        
+        with open(image_path, "wb") as f:
+            f.write(image_bytes)
+        logger.info(f"[OCR] 图片已保存: {image_path}")
+        
+        # 调用PaddleOCR进行识别
+        from ..utils.paddleocr_fallback import call_paddleocr_ocr
+        
+        # 创建保存OCR结果的目录
+        ocr_save_path = os.path.join(temp_dir, "ocr_output")
+        os.makedirs(ocr_save_path, exist_ok=True)
+        
+        logger.info(f"[OCR] 开始调用PaddleOCR识别: {image_path}")
+        texts = call_paddleocr_ocr(image_path, ocr_save_path)
+        
+        if texts is None:
+            logger.warning("[OCR] PaddleOCR识别失败或未返回结果")
+            return OCRResponse(
+                success=False,
+                error="OCR识别失败",
+                message="PaddleOCR未能识别出文本内容"
+            )
+        
+        logger.info(f"[OCR] 识别成功，共识别出 {len(texts)} 个文本片段")
+        return OCRResponse(
+            success=True,
+            texts=texts,
+            message=f"成功识别出 {len(texts)} 个文本片段"
+        )
+        
+    except Exception as e:
+        logger.exception(f"[OCR] 处理失败: {e}")
+        return OCRResponse(
+            success=False,
+            error=str(e),
+            message="OCR处理过程中发生错误"
+        )
+    finally:
+        # 清理临时文件
+        if temp_dir and os.path.exists(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+                logger.debug(f"[OCR] 临时目录已清理: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"[OCR] 清理临时目录失败: {e}")
+
+
 # 启动时的初始化
 @app.on_event("startup")
 async def startup_event():
     """应用启动时的初始化"""
     logger.info("PDF转换工具API v2 服务启动")
-    logger.info("可用端点: POST /convert, GET /task/{task_id}, GET /download/{task_id}/*")
+    logger.info("可用端点: POST /convert, GET /task/{task_id}, GET /download/{task_id}/*, POST /ocr")
 
 
 # 关闭时的清理
