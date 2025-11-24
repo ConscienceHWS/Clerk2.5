@@ -408,11 +408,22 @@ def markdown_to_plain_text(markdown_content: str) -> List[str]:
     
     lines = []
     in_code_block = False
-    in_table = False
     
+    # 先处理HTML表格：提取整个表格，转换为文本行
+    # 查找所有<table>...</table>块
+    table_pattern = r'<table[^>]*>.*?</table>'
+    tables = re.findall(table_pattern, markdown_content, re.DOTALL)
+    
+    # 将表格内容替换为占位符，稍后处理
+    table_placeholders = []
+    for i, table in enumerate(tables):
+        placeholder = f"__TABLE_PLACEHOLDER_{i}__"
+        table_placeholders.append((placeholder, table))
+        markdown_content = markdown_content.replace(table, placeholder, 1)
+    
+    # 处理每一行
     for line in markdown_content.split('\n'):
-        original_line = line
-        line = line.rstrip()  # 只移除右侧空格，保留左侧缩进信息
+        line = line.rstrip()  # 只移除右侧空格
         
         # 检测代码块
         if line.strip().startswith('```'):
@@ -425,9 +436,19 @@ def markdown_to_plain_text(markdown_content: str) -> List[str]:
                 lines.append(line)
             continue
         
-        # 检测表格（Markdown表格以 | 开头）
+        # 处理表格占位符
+        if '__TABLE_PLACEHOLDER_' in line:
+            # 找到对应的表格
+            for placeholder, table_html in table_placeholders:
+                if placeholder in line:
+                    # 提取表格中的所有单元格文本
+                    table_lines = extract_table_text(table_html)
+                    lines.extend(table_lines)
+                    break
+            continue
+        
+        # 检测Markdown表格（以 | 开头）
         if '|' in line and line.strip().startswith('|'):
-            in_table = True
             # 处理表格行：移除首尾的 |，分割单元格
             cells = [cell.strip() for cell in line.split('|') if cell.strip()]
             # 移除表格分隔行（只包含 - 和 |）
@@ -438,9 +459,6 @@ def markdown_to_plain_text(markdown_content: str) -> List[str]:
             if table_line.strip():
                 lines.append(table_line)
             continue
-        else:
-            if in_table:
-                in_table = False
         
         # 移除Markdown语法标记
         # 移除标题标记 (# ## ### 等)
@@ -461,28 +479,12 @@ def markdown_to_plain_text(markdown_content: str) -> List[str]:
         # 移除行内代码标记
         line = re.sub(r'`([^`]+)`', r'\1', line)
         
-        # 处理HTML表格（如果存在）
-        if '<table>' in line or '</table>' in line:
-            continue
-        if '<tr>' in line or '</tr>' in line:
-            continue
-        if '<td' in line or '</td>' in line:
-            # 提取td标签内的文本
-            td_texts = re.findall(r'<td[^>]*>(.*?)</td>', line, re.DOTALL)
-            if td_texts:
-                # 清理HTML实体和标签
-                cleaned_cells = []
-                for td_text in td_texts:
-                    cleaned = re.sub(r'<[^>]+>', '', td_text)  # 移除嵌套标签
-                    cleaned = cleaned.strip()
-                    if cleaned:
-                        cleaned_cells.append(cleaned)
-                if cleaned_cells:
-                    lines.append(' '.join(cleaned_cells))
-            continue
-        
-        # 移除其他HTML标签
-        line = re.sub(r'<[^>]+>', '', line)
+        # 移除HTML标签（div、span等）
+        line = re.sub(r'<div[^>]*>', '', line)
+        line = re.sub(r'</div>', '', line)
+        line = re.sub(r'<span[^>]*>', '', line)
+        line = re.sub(r'</span>', '', line)
+        line = re.sub(r'<[^>]+>', '', line)  # 移除其他HTML标签
         
         # 清理多余空格
         line = line.strip()
@@ -491,6 +493,50 @@ def markdown_to_plain_text(markdown_content: str) -> List[str]:
             lines.append(line)
     
     return lines
+
+
+def extract_table_text(table_html: str) -> List[str]:
+    """从HTML表格中提取文本，每行一个元素
+    
+    Args:
+        table_html: HTML表格字符串
+        
+    Returns:
+        文本行列表
+    """
+    table_lines = []
+    
+    try:
+        # 提取所有<tr>标签
+        tr_pattern = r'<tr[^>]*>(.*?)</tr>'
+        tr_matches = re.findall(tr_pattern, table_html, re.DOTALL)
+        
+        for tr_content in tr_matches:
+            # 提取所有<td>和<th>标签内的文本
+            cell_pattern = r'<(?:td|th)[^>]*>(.*?)</(?:td|th)>'
+            cells = re.findall(cell_pattern, tr_content, re.DOTALL)
+            
+            if cells:
+                # 清理每个单元格的文本
+                cleaned_cells = []
+                for cell in cells:
+                    # 移除嵌套的HTML标签
+                    cleaned = re.sub(r'<[^>]+>', '', cell)
+                    # 移除HTML实体
+                    cleaned = cleaned.replace('&nbsp;', ' ')
+                    cleaned = cleaned.strip()
+                    if cleaned:
+                        cleaned_cells.append(cleaned)
+                
+                if cleaned_cells:
+                    # 合并单元格内容，用空格分隔
+                    table_line = ' '.join(cleaned_cells)
+                    if table_line.strip():
+                        table_lines.append(table_line)
+    except Exception as e:
+        logger.warning(f"[Markdown转换] 提取表格文本失败: {e}")
+    
+    return table_lines
 
 
 def call_paddleocr_ocr(image_path: str, save_path: str) -> Optional[List[str]]:
