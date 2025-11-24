@@ -130,11 +130,9 @@ class OCRRequest(BaseModel):
 
 class OCRResponse(BaseModel):
     """OCR识别响应模型"""
-    success: bool
-    texts: Optional[List[str]] = None  # 识别出的文本列表
-    full_text: Optional[str] = None  # 完整的段落文本（带段落分割）
-    message: Optional[str] = None
-    error: Optional[str] = None
+    code: int  # 状态码：0表示成功，-1或其他表示错误
+    message: str  # 消息
+    data: Optional[dict] = None  # 数据，包含texts和full_text
 
 
 @app.get("/")
@@ -580,9 +578,9 @@ async def ocr_image(request: OCRRequest):
         except Exception as e:
             logger.error(f"[OCR] Base64解码失败: {e}")
             return OCRResponse(
-                success=False,
-                error=f"Base64解码失败: {str(e)}",
-                message="无法解码base64图片数据"
+                code=-1,
+                message="无法解码base64图片数据",
+                data=None
             )
         
         # 确定图片格式和扩展名
@@ -618,9 +616,9 @@ async def ocr_image(request: OCRRequest):
         if texts is None:
             logger.warning("[OCR] PaddleOCR识别失败或未返回结果")
             return OCRResponse(
-                success=False,
-                error="OCR识别失败",
-                message="PaddleOCR未能识别出文本内容"
+                code=-1,
+                message="PaddleOCR未能识别出文本内容",
+                data=None
             )
         
         # 返回所有文本（已按Y坐标排序并合并，保持正确顺序）
@@ -639,18 +637,20 @@ async def ocr_image(request: OCRRequest):
         logger.info(f"[OCR] 所有文件保存在目录: {temp_dir}")
         
         return OCRResponse(
-            success=True,
-            texts=texts,
-            full_text=full_text,
-            message=f"成功识别出 {len(texts)} 个文本片段"
+            code=0,
+            message=f"成功识别出 {len(texts)} 个文本片段",
+            data={
+                "texts": texts,
+                "full_text": full_text
+            }
         )
         
     except Exception as e:
         logger.exception(f"[OCR] 处理失败: {e}")
         return OCRResponse(
-            success=False,
-            error=str(e),
-            message="OCR处理过程中发生错误"
+            code=-1,
+            message=f"OCR处理过程中发生错误: {str(e)}",
+            data=None
         )
     # 注意：不再删除临时文件，保留上传的图片和生成的markdown文件
 
