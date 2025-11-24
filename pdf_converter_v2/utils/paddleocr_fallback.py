@@ -1073,7 +1073,7 @@ def fallback_parse_with_paddleocr(
         # 调用paddleocr ocr提取关键词来补充数据
         logger.info("[PaddleOCR备用] 调用OCR提取关键词补充数据")
         ocr_save_path = os.path.dirname(image_path)  # 使用图片所在目录作为保存路径
-        ocr_texts = call_paddleocr_ocr(image_path, ocr_save_path)
+        ocr_texts, _ = call_paddleocr_ocr(image_path, ocr_save_path)
         
         if ocr_texts:
             # 从OCR文本中提取关键词
