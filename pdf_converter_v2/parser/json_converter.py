@@ -214,8 +214,29 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                     logger.debug("[JSON转换] 格式3/5解析未找到结果，继续尝试其他格式")
             
             # 3. 检查是否为opStatus格式（附件 工况及工程信息，没有"2"，表格结构是U/I/P/Q）
-            # 格式4：附件 工况及工程信息（没有"2"）
+            # 格式4：附件 工况及工程信息（没有"2"），且表格结构是U/I/P/Q（不是"检测时间 项目"格式）
+            # 先检查表格结构，避免误判包含"检测时间"和"项目"列的格式2
+            is_opstatus_format = False
             if "附件" in markdown_content and "工况" in markdown_content and not has_attachment_2:
+                # 检查表格结构：opStatus格式的表头应该是"名称 时间 U (kV) I (A) P (MW) Q (Mvar)"
+                # 而不是"检测时间 项目 电压 电流 有功功率 无功功率"
+                from ..parser.table_parser import extract_table_with_rowspan_colspan
+                tables = extract_table_with_rowspan_colspan(markdown_content)
+                for table in tables:
+                    if table and len(table) > 0:
+                        first_row = table[0]
+                        first_row_text = " ".join(first_row).lower()
+                        # 如果包含"检测时间"和"项目"，则不是opStatus格式（可能是格式2）
+                        if "检测时间" in first_row_text and "项目" in first_row_text:
+                            logger.debug("[JSON转换] 表格包含'检测时间'和'项目'列，不是opStatus格式，跳过")
+                            is_opstatus_format = False
+                            break
+                        # 如果包含"运行工况"或"U (kV)"、"I (A)"等，则是opStatus格式
+                        if "运行工况" in first_row_text or ("u" in first_row_text and "kv" in first_row_text):
+                            is_opstatus_format = True
+                            break
+            
+            if is_opstatus_format:
                 logger.info("[JSON转换] 检测到'附件 工况及工程信息'格式（格式4），使用opStatus格式解析并转换为V2格式")
                 op_list = parse_operational_conditions_opstatus(markdown_content)
                 # 将opStatus格式转换为V2格式（将范围值拆分为max/min）
