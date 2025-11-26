@@ -949,7 +949,8 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
                 if not current_weather_info["windDirection"]:
                     # 先检查当前文本是否包含风向值（格式：风向南风）
                     # 改进正则表达式，匹配更长的风向值（如"南风"、"东北"、"东偏北"等）
-                    wind_dir_match = re.search(r'风向\s*([^\s日期温度湿度风速]+)', text)
+                    # 注意：不要排除"风"字，因为"风速"中包含"风"，会导致"南风"只匹配到"南"
+                    wind_dir_match = re.search(r'风向\s*([^\s日期温度湿度]+?)(?=\s|日期|温度|湿度|风速|$)', text)
                     if wind_dir_match:
                         wind_value = wind_dir_match.group(1).strip()
                         # 确保不是"m/s"或数字
@@ -964,7 +965,8 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
                             current_weather_info["windDirection"] = wind_value
                     # 如果当前文本是"m/s风向"或"_m/s风向"格式，风向值在同一文本中（如 "_m/s风向南风" 或 "m/s风向南风"）
                     if not current_weather_info["windDirection"]:
-                        wind_dir_match = re.search(r'[_\s]*m/s\s*风向\s*([^\s日期温度湿度风速]+)', text)
+                        # 注意：不要排除"风"字，因为"风速"中包含"风"，会导致"南风"只匹配到"南"
+                        wind_dir_match = re.search(r'[_\s]*m/s\s*风向\s*([^\s日期温度湿度]+?)(?=\s|日期|温度|湿度|风速|$)', text)
                         if wind_dir_match:
                             wind_value = wind_dir_match.group(1).strip()
                             if wind_value and not re.match(r'^[0-9.\-]+$', wind_value):
