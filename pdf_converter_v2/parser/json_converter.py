@@ -2,8 +2,9 @@
 
 """JSON转换模块 v2 - 独立版本，不依赖v1"""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import re
+from copy import deepcopy
 from PIL import Image
 
 from ..utils.logging_config import get_logger
@@ -14,6 +15,95 @@ from .electromagnetic_parser import parse_electromagnetic_detection_record
 from .table_parser import parse_operational_conditions, parse_operational_conditions_v2, parse_operational_conditions_opstatus
 
 logger = get_logger("pdf_converter_v2.parser.json")
+
+NOISE_HEADER_FIELDS = [
+    "project",
+    "standardReferences",
+    "soundLevelMeterMode",
+    "soundCalibratorMode",
+    "calibrationValueBefore",
+    "calibrationValueAfter",
+]
+
+WEATHER_VALUE_FIELDS = ["weather", "temp", "humidity", "windSpeed", "windDirection"]
+
+
+def _normalize_date(date: Optional[str]) -> str:
+    if not date:
+        return ""
+    return date.strip().rstrip(".")
+
+
+def _merge_weather_lists(
+    primary: Optional[List[Dict[str, Any]]],
+    secondary: Optional[List[Dict[str, Any]]]
+) -> List[Dict[str, Any]]:
+    if not primary and not secondary:
+        return []
+    if not primary:
+        return deepcopy(secondary or [])
+
+    merged = deepcopy(primary)
+    if not secondary:
+        return merged
+
+    date_to_index: Dict[str, int] = {}
+    empty_indices: List[int] = []
+    for idx, item in enumerate(merged):
+        norm_date = _normalize_date(item.get("monitorAt"))
+        if norm_date:
+            date_to_index.setdefault(norm_date, idx)
+        else:
+            empty_indices.append(idx)
+
+    for src in secondary:
+        norm_date = _normalize_date(src.get("monitorAt"))
+        target = None
+        if norm_date and norm_date in date_to_index:
+            target = merged[date_to_index[norm_date]]
+        elif empty_indices:
+            target = merged[empty_indices.pop(0)]
+
+        if target:
+            if not _normalize_date(target.get("monitorAt")) and src.get("monitorAt"):
+                target["monitorAt"] = src["monitorAt"]
+            for field in WEATHER_VALUE_FIELDS:
+                if (not target.get(field) or not str(target.get(field)).strip()) and src.get(field):
+                    target[field] = src[field]
+        else:
+            merged.append(deepcopy(src))
+
+    return merged
+
+
+def _merge_noise_records(
+    primary: Optional[Dict[str, Any]],
+    secondary: Optional[Dict[str, Any]],
+    preserve_primary_noise: bool = True
+) -> Dict[str, Any]:
+    if not primary and not secondary:
+        return {}
+
+    merged = deepcopy(primary) if primary else {}
+    secondary = secondary or {}
+
+    for field in NOISE_HEADER_FIELDS:
+        primary_value = merged.get(field) if merged else ""
+        secondary_value = secondary.get(field)
+        if (not primary_value or not str(primary_value).strip()) and secondary_value:
+            merged[field] = secondary_value
+
+    merged["weather"] = _merge_weather_lists(merged.get("weather"), secondary.get("weather"))
+
+    if not merged.get("operationalConditions") and secondary.get("operationalConditions"):
+        merged["operationalConditions"] = deepcopy(secondary["operationalConditions"])
+
+    if preserve_primary_noise and primary and primary.get("noise"):
+        merged["noise"] = deepcopy(primary["noise"])
+    elif not merged.get("noise") and secondary.get("noise"):
+        merged["noise"] = deepcopy(secondary["noise"])
+
+    return merged
 
 def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Image.Image] = None, output_dir: Optional[str] = None, forced_document_type: Optional[str] = None, enable_paddleocr_fallback: bool = True, input_file: Optional[str] = None) -> Dict[str, Any]:
     """将Markdown内容转换为JSON - v2独立版本，不依赖v1和OCR
@@ -90,14 +180,14 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                     if fallback_markdown:
                         logger.info("[JSON转换] PaddleOCR备用解析成功，重新解析JSON")
                         if result.get("document_type") == "noiseMonitoringRecord":
-                            # 保存原始的noise数组（由MinerU生成的表格解析，不依赖OCR）
-                            original_noise = result.get("data", {}).get("noise", [])
-                            data = parse_noise_detection_record(fallback_markdown, first_page_image=None, output_dir=output_dir).to_dict()
-                            # 保留原始的noise数组，只更新头部字段
-                            if original_noise:
-                                data["noise"] = original_noise
-                                logger.info(f"[JSON转换] 保留原始noise数组（{len(original_noise)}条），只更新头部字段")
-                            result = {"document_type": "noiseMonitoringRecord", "data": data}
+                            original_data = result.get("data", {}) or {}
+                            fallback_data = parse_noise_detection_record(fallback_markdown, first_page_image=None, output_dir=output_dir).to_dict()
+                            merged_data = _merge_noise_records(
+                                primary=original_data,
+                                secondary=fallback_data,
+                                preserve_primary_noise=True
+                            )
+                            result = {"document_type": "noiseMonitoringRecord", "data": merged_data}
                         elif result.get("document_type") == "electromagneticTestRecord":
                             data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
                             result = {"document_type": "electromagneticTestRecord", "data": data}
@@ -141,14 +231,14 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                     logger.info("[JSON转换] PaddleOCR备用解析成功，重新解析JSON")
                     # 使用PaddleOCR的结果重新解析
                     if result.get("document_type") == "noiseMonitoringRecord" or doc_type == "noise_detection":
-                        # 保存原始的noise数组（由MinerU生成的表格解析，不依赖OCR）
-                        original_noise = result.get("data", {}).get("noise", [])
-                        data = parse_noise_detection_record(fallback_markdown, first_page_image=None, output_dir=output_dir).to_dict()
-                        # 保留原始的noise数组，只更新头部字段
-                        if original_noise:
-                            data["noise"] = original_noise
-                            logger.info(f"[JSON转换] 保留原始noise数组（{len(original_noise)}条），只更新头部字段")
-                        result = {"document_type": "noiseMonitoringRecord", "data": data}
+                        original_data = result.get("data", {}) or {}
+                        fallback_data = parse_noise_detection_record(fallback_markdown, first_page_image=None, output_dir=output_dir).to_dict()
+                        merged_data = _merge_noise_records(
+                            primary=original_data,
+                            secondary=fallback_data,
+                            preserve_primary_noise=True
+                        )
+                        result = {"document_type": "noiseMonitoringRecord", "data": merged_data}
                     elif result.get("document_type") == "electromagneticTestRecord" or doc_type == "electromagnetic_detection":
                         data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
                         result = {"document_type": "electromagneticTestRecord", "data": data}
