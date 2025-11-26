@@ -315,5 +315,12 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 seen_codes.add(code)
                 record.electricMagnetic.append(em)
     
+    # 矫正编号：按照数据顺序重新分配编号为 EB1, EB2, EB3...
+    for idx, em in enumerate(record.electricMagnetic, start=1):
+        original_code = em.code
+        em.code = f"EB{idx}"
+        if original_code != em.code:
+            logger.info(f"[电磁检测] 编号矫正: {original_code} -> {em.code}")
+    
     return record
 

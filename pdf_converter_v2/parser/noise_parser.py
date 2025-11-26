@@ -1114,6 +1114,13 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             else:
                 logger.warning(f"[噪声检测] 跳过无效数据行: {row}")
     
+    # 矫正编号：按照数据顺序重新分配编号为 N1, N2, N3...
+    for idx, nd in enumerate(record.noise, start=1):
+        original_code = nd.code
+        nd.code = f"N{idx}"
+        if original_code != nd.code:
+            logger.info(f"[噪声检测] 编号矫正: {original_code} -> {nd.code}")
+    
     # 解析工况信息
     # 优先使用opStatus格式解析（附件 工况及工程信息），如果失败则使用旧格式
     if "附件" in markdown_content and "工况" in markdown_content:
