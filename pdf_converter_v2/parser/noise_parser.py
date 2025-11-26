@@ -391,47 +391,47 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
     """解析噪声检测记录 - v2版本不依赖OCR，只从markdown内容解析"""
     record = NoiseDetectionRecord()
     
-    # 首先提取OCR关键词补充（如果存在）
-    ocr_keywords_comment_match = re.search(r'<!--\s*OCR关键词补充:(.*?)-->', markdown_content, re.DOTALL)
-    if ocr_keywords_comment_match:
-        keywords_text = ocr_keywords_comment_match.group(1)
-        logger.info("[噪声检测] 发现OCR关键词补充，开始提取")
+    # 首先提取Markdown关键词补充（优先级高）
+    md_keywords_comment_match = re.search(r'<!--\s*Markdown关键词补充:(.*?)-->', markdown_content, re.DOTALL)
+    if md_keywords_comment_match:
+        keywords_text = md_keywords_comment_match.group(1)
+        logger.info("[噪声检测] 发现Markdown关键词补充，开始提取（优先级高）")
         
         # 提取项目名称
         project_match = re.search(r'项目名称[:：]([^\n]+)', keywords_text)
         if project_match:
             record.project = clean_project_field(project_match.group(1).strip())
-            logger.debug(f"[噪声检测] 从OCR关键词补充提取到项目名称: {record.project}")
+            logger.debug(f"[噪声检测] 从Markdown关键词补充提取到项目名称: {record.project}")
         
         # 提取检测依据
         standard_match = re.search(r'检测依据[:：]([^\n]+)', keywords_text)
         if standard_match:
             record.standardReferences = extract_standard_references(standard_match.group(1))
-            logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测依据: {record.standardReferences}")
+            logger.debug(f"[噪声检测] 从Markdown关键词补充提取到检测依据: {record.standardReferences}")
         
         # 提取声级计型号/编号
         sound_meter_match = re.search(r'声级计型号/编号[:：]([^\n]+)', keywords_text)
         if sound_meter_match:
             record.soundLevelMeterMode = sound_meter_match.group(1).strip()
-            logger.debug(f"[噪声检测] 从OCR关键词补充提取到声级计型号: {record.soundLevelMeterMode}")
+            logger.debug(f"[噪声检测] 从Markdown关键词补充提取到声级计型号: {record.soundLevelMeterMode}")
         
         # 提取声校准器型号/编号
         calibrator_match = re.search(r'声校准器型号/编号[:：]([^\n]+)', keywords_text)
         if calibrator_match:
             record.soundCalibratorMode = calibrator_match.group(1).strip()
-            logger.debug(f"[噪声检测] 从OCR关键词补充提取到声校准器型号: {record.soundCalibratorMode}")
+            logger.debug(f"[噪声检测] 从Markdown关键词补充提取到声校准器型号: {record.soundCalibratorMode}")
         
         # 提取检测前校准值
         before_cal_match = re.search(r'检测前校准值[:：]([^\n]+)', keywords_text)
         if before_cal_match:
             record.calibrationValueBefore = before_cal_match.group(1).strip()
-            logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测前校准值: {record.calibrationValueBefore}")
+            logger.debug(f"[噪声检测] 从Markdown关键词补充提取到检测前校准值: {record.calibrationValueBefore}")
         
         # 提取检测后校准值
         after_cal_match = re.search(r'检测后校准值[:：]([^\n]+)', keywords_text)
         if after_cal_match:
             record.calibrationValueAfter = after_cal_match.group(1).strip()
-            logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测后校准值: {record.calibrationValueAfter}")
+            logger.debug(f"[噪声检测] 从Markdown关键词补充提取到检测后校准值: {record.calibrationValueAfter}")
         
         # 提取天气信息
         weather_lines = re.findall(r'日期[:：]([^\n]+)', keywords_text)
@@ -479,7 +479,130 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             # 如果至少有一个字段不为空，添加到记录（即使monitorAt为空也先添加，后续会从表格中补充）
             if any([weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
                 record.weather.append(weather)
-                logger.debug(f"[噪声检测] 从OCR关键词补充提取到天气信息: {weather.to_dict()}")
+                logger.debug(f"[噪声检测] 从Markdown关键词补充提取到天气信息: {weather.to_dict()}")
+    
+    # 然后提取OCR关键词补充（优先级低，只在字段为空时补充）
+    ocr_keywords_comment_match = re.search(r'<!--\s*OCR关键词补充:(.*?)-->', markdown_content, re.DOTALL)
+    if ocr_keywords_comment_match:
+        keywords_text = ocr_keywords_comment_match.group(1)
+        logger.info("[噪声检测] 发现OCR关键词补充，开始提取（优先级低，仅在字段为空时补充）")
+        
+        # 提取项目名称（仅在字段为空时）
+        project_match = re.search(r'项目名称[:：]([^\n]+)', keywords_text)
+        if project_match and (not record.project or not record.project.strip()):
+            record.project = clean_project_field(project_match.group(1).strip())
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到项目名称: {record.project}")
+        
+        # 提取检测依据（仅在字段为空时）
+        standard_match = re.search(r'检测依据[:：]([^\n]+)', keywords_text)
+        if standard_match and (not record.standardReferences or not record.standardReferences.strip()):
+            record.standardReferences = extract_standard_references(standard_match.group(1))
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测依据: {record.standardReferences}")
+        
+        # 提取声级计型号/编号（仅在字段为空时）
+        sound_meter_match = re.search(r'声级计型号/编号[:：]([^\n]+)', keywords_text)
+        if sound_meter_match and (not record.soundLevelMeterMode or not record.soundLevelMeterMode.strip()):
+            record.soundLevelMeterMode = sound_meter_match.group(1).strip()
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到声级计型号: {record.soundLevelMeterMode}")
+        
+        # 提取声校准器型号/编号（仅在字段为空时）
+        calibrator_match = re.search(r'声校准器型号/编号[:：]([^\n]+)', keywords_text)
+        if calibrator_match and (not record.soundCalibratorMode or not record.soundCalibratorMode.strip()):
+            record.soundCalibratorMode = calibrator_match.group(1).strip()
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到声校准器型号: {record.soundCalibratorMode}")
+        
+        # 提取检测前校准值（仅在字段为空时）
+        before_cal_match = re.search(r'检测前校准值[:：]([^\n]+)', keywords_text)
+        if before_cal_match and (not record.calibrationValueBefore or not record.calibrationValueBefore.strip()):
+            record.calibrationValueBefore = before_cal_match.group(1).strip()
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测前校准值: {record.calibrationValueBefore}")
+        
+        # 提取检测后校准值（仅在字段为空时）
+        after_cal_match = re.search(r'检测后校准值[:：]([^\n]+)', keywords_text)
+        if after_cal_match and (not record.calibrationValueAfter or not record.calibrationValueAfter.strip()):
+            record.calibrationValueAfter = after_cal_match.group(1).strip()
+            logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测后校准值: {record.calibrationValueAfter}")
+        
+        # 提取天气信息（仅在MD天气信息中没有对应日期或字段为空时补充）
+        weather_lines = re.findall(r'日期[:：]([^\n]+)', keywords_text)
+        for weather_line in weather_lines:
+            ocr_weather = WeatherData()
+            # 解析天气行：日期：xxx 天气：xxx 温度：xxx 湿度：xxx 风速：xxx 风向：xxx
+            date_match = re.search(r'日期[:：]\s*([\d.\-]+)', weather_line)
+            if date_match:
+                ocr_weather.monitorAt = date_match.group(1).strip()
+            
+            weather_match = re.search(r'天气[:：]\s*([^\s温度]+)', weather_line)
+            if weather_match:
+                ocr_weather.weather = weather_match.group(1).strip()
+            
+            temp_match = re.search(r'温度[:：]\s*([0-9.\-]+)', weather_line)
+            if temp_match:
+                ocr_weather.temp = temp_match.group(1).strip()
+            
+            humidity_match = re.search(r'湿度[:：]\s*([0-9.\-]+)', weather_line)
+            if humidity_match:
+                ocr_weather.humidity = humidity_match.group(1).strip()
+            
+            wind_speed_match = re.search(r'风速[:：]\s*([0-9.\-]+)', weather_line)
+            if wind_speed_match:
+                ocr_weather.windSpeed = wind_speed_match.group(1).strip()
+            
+            # 注意：不能排除"风"字，否则"南风"只能匹配到"南"
+            # 使用非贪婪匹配，匹配到下一个字段名或行尾
+            wind_dir_match = re.search(r'风向[:：]\s*([^\s日期温度湿度]+?)(?=\s*(?:日期|温度|湿度|风速)|$)', weather_line)
+            if wind_dir_match:
+                wind_dir_value = wind_dir_match.group(1).strip()
+                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
+                if wind_dir_value and "日期" not in wind_dir_value and "温度" not in wind_dir_value and \
+                   "湿度" not in wind_dir_value and "风速" not in wind_dir_value and \
+                   not wind_dir_value.startswith("日期") and len(wind_dir_value) < 50:  # 风向值不应该太长
+                    ocr_weather.windDirection = wind_dir_value
+                else:
+                    logger.warning(f"[噪声检测] 风向值验证失败，跳过: {wind_dir_value}")
+            
+            # 如果天气为空但其他字段有值，默认为"晴"
+            if not ocr_weather.weather or not ocr_weather.weather.strip():
+                if any([ocr_weather.temp, ocr_weather.humidity, ocr_weather.windSpeed, ocr_weather.windDirection]):
+                    ocr_weather.weather = "晴"
+            
+            # 检查是否已存在相同日期的MD天气记录
+            if ocr_weather.monitorAt:
+                ocr_date = ocr_weather.monitorAt.strip().rstrip('.')
+                found_md_weather = None
+                for md_weather in record.weather:
+                    md_date = md_weather.monitorAt.strip().rstrip('.') if md_weather.monitorAt else ""
+                    if md_date == ocr_date:
+                        found_md_weather = md_weather
+                        break
+                
+                if found_md_weather:
+                    # 如果找到MD天气记录，只在字段为空时用OCR补充
+                    if not found_md_weather.weather and ocr_weather.weather:
+                        found_md_weather.weather = ocr_weather.weather
+                        logger.debug(f"[噪声检测] 从OCR补充MD天气记录的天气字段: {found_md_weather.weather}")
+                    if not found_md_weather.temp and ocr_weather.temp:
+                        found_md_weather.temp = ocr_weather.temp
+                        logger.debug(f"[噪声检测] 从OCR补充MD天气记录的温度字段: {found_md_weather.temp}")
+                    if not found_md_weather.humidity and ocr_weather.humidity:
+                        found_md_weather.humidity = ocr_weather.humidity
+                        logger.debug(f"[噪声检测] 从OCR补充MD天气记录的湿度字段: {found_md_weather.humidity}")
+                    if not found_md_weather.windSpeed and ocr_weather.windSpeed:
+                        found_md_weather.windSpeed = ocr_weather.windSpeed
+                        logger.debug(f"[噪声检测] 从OCR补充MD天气记录的风速字段: {found_md_weather.windSpeed}")
+                    if not found_md_weather.windDirection and ocr_weather.windDirection:
+                        found_md_weather.windDirection = ocr_weather.windDirection
+                        logger.debug(f"[噪声检测] 从OCR补充MD天气记录的风向字段: {found_md_weather.windDirection}")
+                else:
+                    # 如果没有找到MD天气记录，且OCR天气信息有值，则添加OCR天气记录
+                    if any([ocr_weather.weather, ocr_weather.temp, ocr_weather.humidity, ocr_weather.windSpeed, ocr_weather.windDirection]):
+                        record.weather.append(ocr_weather)
+                        logger.debug(f"[噪声检测] 从OCR关键词补充添加天气信息（MD中无对应日期）: {ocr_weather.to_dict()}")
+            else:
+                # 如果OCR天气信息没有日期，但有其他字段，也添加（后续会从表格中补充日期）
+                if any([ocr_weather.weather, ocr_weather.temp, ocr_weather.humidity, ocr_weather.windSpeed, ocr_weather.windDirection]):
+                    record.weather.append(ocr_weather)
+                    logger.debug(f"[噪声检测] 从OCR关键词补充添加天气信息（无日期）: {ocr_weather.to_dict()}")
     
     # 保存OCR提取的天气信息（用于后续与表格解析结果合并）
     ocr_weather_list = record.weather.copy() if record.weather else []
