@@ -28,6 +28,7 @@ TEST_RUNS_PER_FILE = 3  # 每个文件测试次数
 POLL_INTERVAL = 2  # 轮询间隔（秒）
 MAX_POLL_ATTEMPTS = 300  # 最大轮询次数（300次 * 2秒 = 10分钟超时）
 SUPPORTED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg'}
+ENABLE_CONCURRENT_TEST = True  # 是否启用并发测试（可通过命令行参数覆盖）
 
 # 文档类型映射（根据文件名推断）
 FILE_TYPE_MAP = {
@@ -835,8 +836,19 @@ def main():
     parser.add_argument('--runs', type=int, default=TEST_RUNS_PER_FILE, help=f'每个文件测试次数 (默认: {TEST_RUNS_PER_FILE})')
     parser.add_argument('--output', help='测试报告输出文件路径')
     parser.add_argument('--json-dir', help='JSON结果保存目录 (默认: test/json_results)')
+    parser.add_argument('--enable-concurrent', action='store_true', default=None, 
+                       help='启用并发测试（覆盖配置默认值）')
+    parser.add_argument('--disable-concurrent', action='store_true', 
+                       help='禁用并发测试（覆盖配置默认值）')
     
     args = parser.parse_args()
+    
+    # 确定是否启用并发测试
+    enable_concurrent = ENABLE_CONCURRENT_TEST
+    if args.enable_concurrent:
+        enable_concurrent = True
+    elif args.disable_concurrent:
+        enable_concurrent = False
     
     # 创建测试器
     tester = APITester(args.api_url, args.pdf_dir, runs_per_file=args.runs, output_dir=args.json_dir)
@@ -845,9 +857,11 @@ def main():
     try:
         tester.test_all_files()
         
-        # 所有单次测试完成后，进行并发测试
-        if tester.test_results:
+        # 所有单次测试完成后，根据配置决定是否进行并发测试
+        if enable_concurrent and tester.test_results:
             tester.test_concurrent()
+        elif not enable_concurrent:
+            print("\n⚠️  并发测试已禁用，跳过并发测试")
     except KeyboardInterrupt:
         print("\n\n⚠️  测试被用户中断")
     except Exception as e:

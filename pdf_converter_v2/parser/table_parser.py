@@ -543,13 +543,13 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
                 project_idx = idx
             elif "名称" in cell:
                 name_idx = idx
-            elif "电压" in cell or ("u" in cell_normalized and "kv" in cell_normalized):
+            elif "电压" in cell or ("u" in cell_normalized and "kv" in cell_normalized) or ("u (kv)" in cell_normalized):
                 voltage_idx = idx
-            elif "电流" in cell or ("i" in cell_normalized and "a" in cell_normalized):
+            elif "电流" in cell or ("i" in cell_normalized and "a" in cell_normalized) or ("i (a)" in cell_normalized):
                 current_idx = idx
-            elif "有功功率" in cell or ("有功" in cell and "功率" in cell) or ("p" in cell_normalized and "mw" in cell_normalized):
+            elif "有功功率" in cell or ("有功" in cell and "功率" in cell) or ("p" in cell_normalized and "mw" in cell_normalized) or ("p (mw)" in cell_normalized):
                 active_power_idx = idx
-            elif "无功功率" in cell or ("无功" in cell and "功率" in cell) or ("q" in cell_normalized and "mvar" in cell_normalized):
+            elif "无功功率" in cell or ("无功" in cell and "功率" in cell) or ("q" in cell_normalized and "mvar" in cell_normalized) or ("q (mvar)" in cell_normalized):
                 reactive_power_idx = idx
         
         # 如果第一行表头有"名称"，也检查第一行
@@ -819,30 +819,18 @@ def parse_operational_conditions_format3_5(markdown_content: str) -> List[Operat
                             break
         
         name_idx = 0
-        if has_time_colspan2:
-            # 格式5：时间列占用2列（列1和列2）
-            time_idx = 1
-            voltage_time_idx = 3  # 电压时间段列
-            voltage_max_idx = 4    # 电压最大值列
-            voltage_min_idx = 5    # 电压最小值列
-            current_max_idx = 6    # 电流最大值列
-            current_min_idx = 7    # 电流最小值列
-            active_power_max_idx = 8  # 有功最大值列
-            active_power_min_idx = 9  # 有功最小值列
-            reactive_power_max_idx = 10  # 无功最大值列
-            reactive_power_min_idx = 11  # 无功最小值列
-        else:
-            # 格式3：时间列占用1列
-            time_idx = 1
-            voltage_time_idx = 2  # 电压时间段列
-            voltage_max_idx = 3    # 电压最大值列
-            voltage_min_idx = 4    # 电压最小值列
-            current_max_idx = 5    # 电流最大值列
-            current_min_idx = 6    # 电流最小值列
-            active_power_max_idx = 7  # 有功最大值列
-            active_power_min_idx = 8  # 有功最小值列
-            reactive_power_max_idx = 9  # 无功最大值列
-            reactive_power_min_idx = 10  # 无功最小值列
+        # 无论格式3还是格式5，时间段都在列2（索引2），因为时间列虽然有colspan=2，
+        # 但实际数据中时间段是电压列的第一列，在索引2
+        time_idx = 1
+        voltage_time_idx = 2  # 电压时间段列（格式3和格式5都在索引2）
+        voltage_max_idx = 3    # 电压最大值列
+        voltage_min_idx = 4    # 电压最小值列
+        current_max_idx = 5    # 电流最大值列
+        current_min_idx = 6    # 电流最小值列
+        active_power_max_idx = 7  # 有功最大值列
+        active_power_min_idx = 8  # 有功最小值列
+        reactive_power_max_idx = 9  # 无功最大值列
+        reactive_power_min_idx = 10  # 无功最小值列
         
         # 从第三行开始解析数据（前两行是表头）
         current_name = ""
@@ -877,32 +865,27 @@ def parse_operational_conditions_format3_5(markdown_content: str) -> List[Operat
             # 更新名称（如果有值）
             if name_idx < len(row) and row[name_idx].strip():
                 name_value = row[name_idx].strip()
-                # 检查是否是有效名称（包含"主变"、"#"等）
-                if any(k in name_value for k in ["主变", "#", "线"]):
+                # 检查是否是有效名称（包含"主变"、"#"等，但排除"输电线路"这样的项目名称）
+                if name_value in ["输电线路", "变电站"]:
+                    # 这是项目名称行，跳过
+                    logger.debug(f"[工况信息格式3/5] 跳过项目名称行: {name_value}")
+                    continue
+                elif any(k in name_value for k in ["主变", "#"]) or ("kV" in name_value and "线" in name_value):
                     current_name = name_value
                     logger.debug(f"[工况信息格式3/5] 更新名称: {current_name}")
             
             # 更新时间（如果有值）
-            # 格式5的时间列有colspan=2，可能时间值在列1或列2
-            if has_time_colspan2:
-                # 格式5：检查列1和列2
-                time_value = ""
-                if time_idx < len(row) and row[time_idx].strip():
-                    time_value = row[time_idx].strip()
-                elif time_idx + 1 < len(row) and row[time_idx + 1].strip():
-                    time_value = row[time_idx + 1].strip()
-                
-                if time_value and re.match(r'^\d{4}\.\d{1,2}\.\d{1,2}', time_value):
-                    current_time = time_value
-                    logger.debug(f"[工况信息格式3/5] 更新时间（格式5）: {current_time}")
-            else:
-                # 格式3：只检查列1
-                if time_idx < len(row) and row[time_idx].strip():
-                    time_value = row[time_idx].strip()
-                    # 检查是否是日期格式
-                    if re.match(r'^\d{4}\.\d{1,2}\.\d{1,2}', time_value):
-                        current_time = time_value
-                        logger.debug(f"[工况信息格式3/5] 更新时间（格式3）: {current_time}")
+            # 时间列可能有colspan=2，所以检查列1和列2
+            time_value = ""
+            if time_idx < len(row) and row[time_idx].strip():
+                time_value = row[time_idx].strip()
+            elif time_idx + 1 < len(row) and row[time_idx + 1].strip():
+                time_value = row[time_idx + 1].strip()
+            
+            # 检查是否是日期格式（支持"2025.03.28"和"2025.08.29-08.30"）
+            if time_value and (re.match(r'^\d{4}\.\d{1,2}\.\d{1,2}', time_value) or re.match(r'^\d{4}\.\d{1,2}\.\d{1,2}-\d{1,2}\.\d{1,2}', time_value)):
+                current_time = time_value
+                logger.debug(f"[工况信息格式3/5] 更新时间: {current_time}")
             
             # 检查是否有电压时间段（格式3/5的特征）
             if voltage_time_idx < len(row) and row[voltage_time_idx].strip():
