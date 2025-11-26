@@ -204,12 +204,22 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
         
         return True
     
+    # 使用集合跟踪已添加的测点编号，避免重复添加（处理跨页重复的情况）
+    seen_codes = set()
+    
     for table in tables:
         for row in table:
             if is_valid_data_row(row):
+                code = row[0].strip() if row[0] else ""
+                
+                # 检查是否已经添加过该测点编号
+                if code in seen_codes:
+                    logger.debug(f"[电磁检测] 跳过重复的测点编号: {code}")
+                    continue
+                
                 logger.info(row)
                 em = ElectromagneticData()
-                em.code = row[0]
+                em.code = code
                 em.address = row[1] if len(row) > 1 else ""
                 # 高度字段校验：可以为空，但不应包含冒号
                 height_value = row[2] if len(row) > 2 else ""
@@ -268,6 +278,8 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                         em.avgPowerFrequencyMagneticDensity = calculated_avg
                         logger.debug(f"计算平均磁感应强度: {calculated_avg} (基于前5个值)")
                 
+                # 标记该测点编号已添加
+                seen_codes.add(code)
                 record.electricMagnetic.append(em)
     
     return record
