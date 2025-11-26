@@ -126,7 +126,7 @@ async def _convert_with_paddle(
                     first_page_image=None,
                     output_dir=json_output_dir,
                     forced_document_type=forced_document_type,
-                    enable_paddleocr_fallback=False,
+                    enable_paddleocr_fallback=True,
                     input_file=input_file,
                 )
                 json_path = os.path.join(output_dir, f"{file_name}.json")
