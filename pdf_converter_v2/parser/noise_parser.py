@@ -36,6 +36,36 @@ def clean_project_field(project: str) -> str:
     return project
 
 
+def normalize_standard_text(text: str) -> str:
+    """标准字段中可能包含数学/LaTeX格式，需先清理"""
+    if not text:
+        return text
+    
+    # 去掉美元符号和常见LaTeX指令（例如 \mathrm、\left、\right、\cdot 等）
+    text = text.replace("$", "")
+    text = re.sub(r"\\(mathrm|left|right|cdot|cdots|ldots|frac|overline|underline|mathbf|mathbf|mathit|mathsf|mathtt|mathcal)\b", "", text)
+    # 删除其他未知的反斜杠命令，保留紧跟其后的文本
+    text = re.sub(r"\\[a-zA-Z]+", "", text)
+    # 去掉多余的大括号
+    text = re.sub(r"[{}]", "", text)
+    # 合并多余空白
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def extract_standard_references(text: str) -> str:
+    """解析检测/监测依据，支持包含数学格式的文本"""
+    if not text:
+        return ""
+    
+    text = normalize_standard_text(text.strip())
+    text = re.sub(r'□其他[:：]?$', '', text).strip()
+    gb_standards = re.findall(r'GB\s*\d+[-\.]?\d*[-\.]?\d*', text)
+    if gb_standards:
+        return " ".join(gb_standards)
+    return re.sub(r'□\s*', '', text).strip()
+
+
 def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> None:
     """从文本中解析天气数据，支持多条记录
     
@@ -278,30 +308,16 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
     # 注意：检测依据后面可能跟着"□其他:"，需要截断到"声级计"或"声校准器"或"检测前"或"检测后"或"气象条件"
     standard_match = re.search(r'(?:检测依据|监测依据)[:：](.+?)(?:声级计|声校准器|检测前|检测后|气象条件)', cell_text)
     if standard_match:
-        standard_text = standard_match.group(1).strip()
-        # 去掉可能的"□其他:"部分（如果存在）
-        standard_text = re.sub(r'□其他[:：]?$', '', standard_text).strip()
-        # 提取所有GB标准（格式如 GB 12348-2008 或 GB3096-2008）
-        gb_standards = re.findall(r'GB\s*\d+[-\.]?\d*[-\.]?\d*', standard_text)
-        if gb_standards:
-            result["standardReferences"] = " ".join(gb_standards)
-        else:
-            # 如果没有找到GB标准，保留原文本（去掉可能的□标记）
-            result["standardReferences"] = re.sub(r'□\s*', '', standard_text).strip()
+        standard_text = extract_standard_references(standard_match.group(1))
+        if standard_text:
+            result["standardReferences"] = standard_text
     else:
         # 如果第一个正则没有匹配到，尝试更宽松的匹配：匹配到行尾或下一个字段
         standard_match2 = re.search(r'(?:检测依据|监测依据)[:：]([^声级计声校准器检测前检测后气象条件]+?)(?:声级计|声校准器|检测前|检测后|气象条件|$)', cell_text)
         if standard_match2:
-            standard_text = standard_match2.group(1).strip()
-            # 去掉可能的"□其他:"部分（如果存在）
-            standard_text = re.sub(r'□其他[:：]?$', '', standard_text).strip()
-            # 提取所有GB标准（格式如 GB 12348-2008 或 GB3096-2008）
-            gb_standards = re.findall(r'GB\s*\d+[-\.]?\d*[-\.]?\d*', standard_text)
-            if gb_standards:
-                result["standardReferences"] = " ".join(gb_standards)
-            else:
-                # 如果没有找到GB标准，保留原文本（去掉可能的□标记）
-                result["standardReferences"] = re.sub(r'□\s*', '', standard_text).strip()
+            standard_text = extract_standard_references(standard_match2.group(1))
+            if standard_text:
+                result["standardReferences"] = standard_text
     
     # 解析声级计型号/编号：声级计型号/编号:AY2201 或 声级计型号:AY2201 或 声级计型号/编号：AWA628+/AY2249
     # 支持包含+号和斜杠的型号，如 AWA628+/AY2249
@@ -359,7 +375,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
         # 提取检测依据
         standard_match = re.search(r'检测依据[:：]([^\n]+)', keywords_text)
         if standard_match:
-            record.standardReferences = standard_match.group(1).strip()
+            record.standardReferences = extract_standard_references(standard_match.group(1))
             logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测依据: {record.standardReferences}")
         
         # 提取声级计型号/编号
@@ -582,9 +598,12 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                 if any(k in row[0] for k in ["检测依据", "监测依据"]):
                     for i, cell in enumerate(row):
                         if any(k in cell for k in ["检测依据", "监测依据"]) and i + 1 < len(row):
-                            record.standardReferences = row[i + 1]
-                            if not record.standardReferences.strip():
-                                logger.error(f"[噪声检测] 检测/监测依据 为空，行数据: {row}")
+                            candidate_standard = extract_standard_references(row[i + 1])
+                            if candidate_standard:
+                                record.standardReferences = candidate_standard
+                                logger.debug(f"[噪声检测] 从行数据解析到检测依据: {record.standardReferences}")
+                            else:
+                                logger.error(f"[噪声检测] 检测/监测依据 为空或无法解析，行数据: {row}")
                             break
                 # 尝试从同一单元格或下一个单元格提取声级计型号
                 for i, cell in enumerate(row):
