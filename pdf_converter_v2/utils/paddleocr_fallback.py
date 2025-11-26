@@ -1000,6 +1000,147 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
     return keywords
 
 
+def extract_keywords_from_markdown(markdown_content: str) -> Dict[str, Any]:
+    """从markdown内容中直接提取关键信息
+    
+    Args:
+        markdown_content: markdown内容字符串
+        
+    Returns:
+        包含提取的关键信息的字典
+    """
+    keywords = {
+        "project": "",
+        "standardReferences": "",
+        "soundLevelMeterMode": "",
+        "soundCalibratorMode": "",
+        "calibrationValueBefore": "",
+        "calibrationValueAfter": "",
+        "weather_info": []  # 存储天气相关信息
+    }
+    
+    if not markdown_content:
+        return keywords
+    
+    # 移除HTML标签，保留文本内容（但保留表格结构信息）
+    # 先提取表格中的文本内容
+    text_content = markdown_content
+    
+    # 提取项目名称
+    project_match = re.search(r'项目名称[:：]([^检测依据声级计声校准器检测前检测后气象条件日期<>]+)', text_content)
+    if project_match:
+        project = project_match.group(1).strip()
+        # 清理可能的后续内容和HTML标签
+        project = re.sub(r'检测依据.*$', '', project).strip()
+        project = re.sub(r'<[^>]+>', '', project).strip()
+        if project:
+            keywords["project"] = project
+            logger.debug(f"[Markdown关键词提取] 提取到项目名称: {project}")
+    
+    # 提取检测依据
+    standard_match = re.search(r'检测依据[:：]([^声级计声校准器检测前检测后气象条件日期<>]+)', text_content)
+    if standard_match:
+        standard = standard_match.group(1).strip()
+        # 提取GB标准
+        gb_standards = re.findall(r'GB\s*\d+[-\.]?\d*[-\.]?\d*', standard)
+        if gb_standards:
+            keywords["standardReferences"] = " ".join(gb_standards)
+        else:
+            keywords["standardReferences"] = re.sub(r'<[^>]+>', '', standard).replace("□其他：", "").strip()
+        logger.debug(f"[Markdown关键词提取] 提取到检测依据: {keywords['standardReferences']}")
+    
+    # 提取声级计型号/编号
+    sound_meter_match = re.search(r'声级计型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9+/（）()]+)', text_content)
+    if sound_meter_match:
+        sound_meter = sound_meter_match.group(1).strip()
+        sound_meter = re.sub(r'<[^>]+>', '', sound_meter).strip()
+        if sound_meter:
+            keywords["soundLevelMeterMode"] = sound_meter
+            logger.debug(f"[Markdown关键词提取] 提取到声级计型号: {keywords['soundLevelMeterMode']}")
+    
+    # 提取声校准器型号/编号
+    calibrator_match = re.search(r'声校准器型号[/：:]?(?:编号)?[:：]\s*([A-Z0-9+/（）()]+)', text_content)
+    if calibrator_match:
+        calibrator = calibrator_match.group(1).strip()
+        calibrator = re.sub(r'<[^>]+>', '', calibrator).strip()
+        if calibrator:
+            keywords["soundCalibratorMode"] = calibrator
+            logger.debug(f"[Markdown关键词提取] 提取到声校准器型号: {keywords['soundCalibratorMode']}")
+    
+    # 提取检测前校准值
+    before_cal_match = re.search(r'检测前校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', text_content)
+    if before_cal_match:
+        cal_value = before_cal_match.group(1).strip()
+        keywords["calibrationValueBefore"] = f"{cal_value} dB(A)"
+        logger.debug(f"[Markdown关键词提取] 提取到检测前校准值: {keywords['calibrationValueBefore']}")
+    
+    # 提取检测后校准值
+    after_cal_match = re.search(r'检测后校准值[:：]\s*([0-9.]+)\s*dB[（(]?A[）)]?', text_content)
+    if after_cal_match:
+        cal_value = after_cal_match.group(1).strip()
+        keywords["calibrationValueAfter"] = f"{cal_value} dB(A)"
+        logger.debug(f"[Markdown关键词提取] 提取到检测后校准值: {keywords['calibrationValueAfter']}")
+    
+    # 提取天气信息
+    # 查找所有包含"日期："的行或片段
+    date_pattern = r'日期[:：]\s*([\d.\-]+)'
+    date_matches = list(re.finditer(date_pattern, text_content))
+    
+    for date_match in date_matches:
+        date_value = date_match.group(1).strip()
+        # 获取日期匹配位置后的文本（最多500字符）
+        start_pos = date_match.end()
+        weather_section = text_content[start_pos:start_pos + 500]
+        
+        weather_info = {
+            "monitorAt": date_value,
+            "weather": "",
+            "temp": "",
+            "humidity": "",
+            "windSpeed": "",
+            "windDirection": ""
+        }
+        
+        # 提取天气
+        weather_match = re.search(r'天气\s*([^\s温度湿度风速风向<>]+)', weather_section)
+        if weather_match:
+            weather_value = weather_match.group(1).strip()
+            weather_value = re.sub(r'<[^>]+>', '', weather_value).strip()
+            if weather_value and weather_value != "_" and not re.match(r'^[\d.\-]+$', weather_value):
+                weather_info["weather"] = weather_value
+        
+        # 提取温度
+        temp_match = re.search(r'温度[:：]?\s*([0-9.\-]+)', weather_section)
+        if temp_match:
+            weather_info["temp"] = temp_match.group(1).strip()
+        
+        # 提取湿度
+        humidity_match = re.search(r'湿度[:：]?\s*([0-9.\-]+)', weather_section)
+        if humidity_match:
+            weather_info["humidity"] = humidity_match.group(1).strip()
+        
+        # 提取风速
+        wind_speed_match = re.search(r'风速[:：]?\s*([0-9.\-]+)', weather_section)
+        if wind_speed_match:
+            weather_info["windSpeed"] = wind_speed_match.group(1).strip()
+        
+        # 提取风向
+        wind_dir_match = re.search(r'风向[:：]?\s*([^\s日期温度湿度风速<>]+?)(?=\s|日期|温度|湿度|风速|$|<)', weather_section)
+        if wind_dir_match:
+            wind_value = wind_dir_match.group(1).strip()
+            wind_value = re.sub(r'<[^>]+>', '', wind_value).strip()
+            if wind_value and wind_value != "m/s" and not re.match(r'^[0-9.\-]+$', wind_value):
+                weather_info["windDirection"] = wind_value
+        
+        # 如果至少有一个字段不为空，则添加这条记录
+        if any([weather_info["monitorAt"], weather_info["weather"], weather_info["temp"], 
+                weather_info["humidity"], weather_info["windSpeed"], weather_info["windDirection"]]):
+            keywords["weather_info"].append(weather_info)
+            logger.debug(f"[Markdown关键词提取] 提取到天气记录: {weather_info}")
+    
+    return keywords
+
+
 def extract_image_from_markdown(markdown_content: str, output_dir: str) -> Optional[str]:
     """从markdown内容中提取第一张图片路径
     
@@ -1167,6 +1308,35 @@ def fallback_parse_with_paddleocr(
             # 直接从MD文件读取的内容
             paddleocr_markdown = paddleocr_result["markdown_content"]
             logger.info(f"[PaddleOCR备用] 成功从MD文件读取，生成 {len(paddleocr_markdown)} 字符的markdown")
+            
+            # 从markdown内容中提取关键词来补充数据
+            logger.info("[PaddleOCR备用] 从MD文件内容中提取关键词补充数据")
+            keywords = extract_keywords_from_markdown(paddleocr_markdown)
+            
+            # 将关键词信息添加到markdown中（作为注释，供后续解析使用）
+            keywords_comment = "\n\n<!-- Markdown关键词补充:\n"
+            if keywords["project"]:
+                keywords_comment += f"项目名称：{keywords['project']}\n"
+            if keywords["standardReferences"]:
+                keywords_comment += f"检测依据：{keywords['standardReferences']}\n"
+            if keywords["soundLevelMeterMode"]:
+                keywords_comment += f"声级计型号/编号：{keywords['soundLevelMeterMode']}\n"
+            if keywords["soundCalibratorMode"]:
+                keywords_comment += f"声校准器型号/编号：{keywords['soundCalibratorMode']}\n"
+            if keywords["calibrationValueBefore"]:
+                keywords_comment += f"检测前校准值：{keywords['calibrationValueBefore']}\n"
+            if keywords["calibrationValueAfter"]:
+                keywords_comment += f"检测后校准值：{keywords['calibrationValueAfter']}\n"
+            if keywords["weather_info"]:
+                for weather in keywords["weather_info"]:
+                    keywords_comment += f"日期：{weather['monitorAt']} 天气：{weather['weather']} 温度：{weather['temp']} 湿度：{weather['humidity']} 风速：{weather['windSpeed']} 风向：{weather['windDirection']}\n"
+            keywords_comment += "-->\n"
+            
+            # 将关键词信息合并到markdown中
+            paddleocr_markdown = paddleocr_markdown + keywords_comment
+            # 统计补充的字段数量（不包括weather_info列表）
+            field_count = sum(1 for k, v in keywords.items() if k != "weather_info" and v) + len(keywords.get("weather_info", []))
+            logger.info(f"[PaddleOCR备用] MD文件关键词提取完成，补充了 {field_count} 个字段")
         elif "parsing_res_list" in paddleocr_result:
             # 从JSON或stdout解析的结果，需要转换为markdown
             paddleocr_markdown = paddleocr_to_markdown(paddleocr_result)
@@ -1209,6 +1379,7 @@ def fallback_parse_with_paddleocr(
             # 将关键词信息合并到markdown中
             paddleocr_markdown = paddleocr_markdown + keywords_comment
             logger.info(f"[PaddleOCR备用] OCR关键词提取完成，补充了 {len(keywords)} 个字段")
+
         
         # 合并原始markdown和paddleocr结果
         # 优先使用paddleocr的结果，因为它更完整
