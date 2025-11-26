@@ -1141,6 +1141,110 @@ def extract_keywords_from_markdown(markdown_content: str) -> Dict[str, Any]:
     return keywords
 
 
+def supplement_missing_fields_from_ocr_json(
+    records: List[Dict[str, Any]], 
+    ocr_json_path: str,
+    field_mapping: Dict[str, str] = None
+) -> List[Dict[str, Any]]:
+    """从OCR的JSON输出中补充缺失字段
+    
+    根据文本位置关系来补充缺失字段。例如，如果找到了maxReactivePower的值（如"-2.48"），
+    那么minReactivePower的值就在它后面的位置（"-4.75"）。
+    
+    Args:
+        records: 原始解析记录列表（OperationalConditionV2格式）
+        ocr_json_path: OCR输出的JSON文件路径
+        field_mapping: 字段映射关系，如{"maxReactivePower": "minReactivePower"}，表示maxReactivePower后面是minReactivePower
+        
+    Returns:
+        补充后的记录列表
+    """
+    if not records or not ocr_json_path or not os.path.exists(ocr_json_path):
+        return records
+    
+    try:
+        # 读取OCR JSON文件
+        with open(ocr_json_path, 'r', encoding='utf-8') as f:
+            ocr_data = json.load(f)
+        
+        # 提取rec_texts数组
+        rec_texts = ocr_data.get("rec_texts", [])
+        if not rec_texts:
+            logger.warning("[OCR字段补充] JSON中未找到rec_texts字段")
+            return records
+        
+        logger.info(f"[OCR字段补充] 从OCR JSON中提取到 {len(rec_texts)} 个文本片段")
+        
+        # 默认字段映射：max字段后面是min字段
+        if field_mapping is None:
+            field_mapping = {
+                "maxVoltage": "minVoltage",
+                "maxCurrent": "minCurrent",
+                "maxActivePower": "minActivePower",
+                "maxReactivePower": "minReactivePower"
+            }
+        
+        # 为每条记录补充缺失字段
+        for record in records:
+            record_name = record.get("name", "")
+            logger.debug(f"[OCR字段补充] 处理记录: {record_name}")
+            
+            # 对于每个max字段，如果对应的min字段为空，尝试从OCR中补充
+            for max_field, min_field in field_mapping.items():
+                max_value = record.get(max_field, "").strip()
+                min_value = record.get(min_field, "").strip()
+                
+                # 如果max字段有值但min字段为空，尝试从OCR中补充
+                if max_value and not min_value:
+                    logger.debug(f"[OCR字段补充] 记录 {record_name}: {max_field}={max_value}, {min_field}为空，尝试从OCR补充")
+                    
+                    # 在rec_texts中查找max_value
+                    try:
+                        max_value_float = float(max_value)
+                        # 查找匹配的文本（允许小的数值差异）
+                        found_max = False
+                        for i, text in enumerate(rec_texts):
+                            # 尝试将文本转换为数值
+                            try:
+                                text_float = float(text.strip())
+                                # 如果数值匹配（允许小的误差）
+                                if abs(text_float - max_value_float) < 0.01:
+                                    found_max = True
+                                    # 检查后续几个文本，找到第一个数值作为min_value
+                                    # 在表格中，max和min通常是相邻的，但中间可能有其他文本
+                                    for j in range(i + 1, min(i + 5, len(rec_texts))):  # 检查后续最多4个文本
+                                        next_text = rec_texts[j].strip()
+                                        try:
+                                            next_value_float = float(next_text)
+                                            # 如果找到数值，且与max_value不同，则作为min_value
+                                            if abs(next_value_float - max_value_float) > 0.01:
+                                                record[min_field] = next_text
+                                                logger.info(f"[OCR字段补充] 从OCR补充 {min_field}: {next_text} (在 {max_field}={max_value} 之后，位置 {j})")
+                                                break
+                                        except ValueError:
+                                            # 不是数值，继续查找
+                                            continue
+                                    if record.get(min_field):
+                                        break
+                            except ValueError:
+                                # 文本不是数值，继续
+                                pass
+                        
+                        if not found_max:
+                            logger.debug(f"[OCR字段补充] 未在OCR中找到 {max_field} 的值 '{max_value}'")
+                    except ValueError:
+                        # max_value不是数值，跳过
+                        logger.debug(f"[OCR字段补充] {max_field}值 '{max_value}' 不是数值，跳过")
+                        pass
+        
+        logger.info("[OCR字段补充] 字段补充完成")
+        return records
+        
+    except Exception as e:
+        logger.exception(f"[OCR字段补充] 补充过程出错: {e}")
+        return records
+
+
 def extract_image_from_markdown(markdown_content: str, output_dir: str) -> Optional[str]:
     """从markdown内容中提取第一张图片路径
     

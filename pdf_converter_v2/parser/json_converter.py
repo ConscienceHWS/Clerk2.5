@@ -165,9 +165,9 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                         if has_missing_fields:
                             break
                     
-                    # 如果有缺失字段，调用paddle doc_parser重新识别
+                    # 如果有缺失字段，调用paddle ocr获取JSON来补充缺失字段
                     if has_missing_fields and enable_paddleocr_fallback and (output_dir or input_file):
-                        logger.info("[JSON转换] 检测到缺失字段，调用PaddleOCR doc_parser重新识别")
+                        logger.info("[JSON转换] 检测到缺失字段，调用PaddleOCR OCR获取JSON来补充")
                         try:
                             # 查找图片路径
                             image_path = None
@@ -185,41 +185,24 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                                     image_path = input_file
                             
                             if image_path and os.path.exists(image_path):
-                                logger.info(f"[JSON转换] 使用PaddleOCR重新解析图片: {image_path}")
-                                paddleocr_result = call_paddleocr(image_path)
+                                logger.info(f"[JSON转换] 使用PaddleOCR OCR解析图片: {image_path}")
+                                from ..utils.paddleocr_fallback import call_paddleocr_ocr, supplement_missing_fields_from_ocr_json
                                 
-                                if paddleocr_result:
-                                    # 从paddleocr结果中提取markdown
-                                    paddle_markdown = None
-                                    if "markdown_content" in paddleocr_result:
-                                        paddle_markdown = paddleocr_result["markdown_content"]
-                                    elif "parsing_res_list" in paddleocr_result:
-                                        from ..utils.paddleocr_fallback import paddleocr_to_markdown
-                                        paddle_markdown = paddleocr_to_markdown(paddleocr_result)
-                                    
-                                    if paddle_markdown:
-                                        # 使用paddle解析的markdown重新解析
-                                        logger.info("[JSON转换] 使用PaddleOCR解析结果重新解析")
-                                        paddle_op_list = parse_operational_conditions_format3_5(paddle_markdown)
-                                        if paddle_op_list:
-                                            paddle_serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in paddle_op_list]
-                                            
-                                            # 合并结果：用paddle解析的结果补充缺失字段
-                                            logger.info(f"[JSON转换] PaddleOCR解析到 {len(paddle_serialized)} 条记录，开始合并")
-                                            for i, original_record in enumerate(serialized):
-                                                if i < len(paddle_serialized):
-                                                    paddle_record = paddle_serialized[i]
-                                                    # 只补充原始记录中为空的字段
-                                                    for field in required_fields:
-                                                        if (not original_record.get(field) or original_record.get(field) == "") and paddle_record.get(field):
-                                                            original_record[field] = paddle_record[field]
-                                                            logger.debug(f"[JSON转换] 从PaddleOCR补充字段 {field}: {paddle_record[field]}")
-                                            
-                                            logger.info("[JSON转换] 字段补充完成")
+                                # 调用OCR获取JSON
+                                ocr_save_path = os.path.dirname(image_path) if image_path else output_dir
+                                ocr_texts, ocr_json_path = call_paddleocr_ocr(image_path, ocr_save_path)
+                                
+                                if ocr_json_path and os.path.exists(ocr_json_path):
+                                    logger.info(f"[JSON转换] 从OCR JSON文件补充缺失字段: {ocr_json_path}")
+                                    # 使用OCR JSON补充缺失字段
+                                    serialized = supplement_missing_fields_from_ocr_json(serialized, ocr_json_path)
+                                    logger.info("[JSON转换] OCR字段补充完成")
+                                else:
+                                    logger.warning("[JSON转换] 未找到OCR JSON文件，无法补充缺失字段")
                             else:
-                                logger.warning("[JSON转换] 未找到可用的图片文件，无法使用PaddleOCR重新识别")
+                                logger.warning("[JSON转换] 未找到可用的图片文件，无法使用PaddleOCR OCR补充")
                         except Exception as e:
-                            logger.exception(f"[JSON转换] PaddleOCR重新识别过程出错: {e}")
+                            logger.exception(f"[JSON转换] PaddleOCR OCR补充过程出错: {e}")
                     
                     return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
                 else:
