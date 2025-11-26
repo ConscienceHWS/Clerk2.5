@@ -678,7 +678,7 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
     return conditions
 
 
-def parse_operational_conditions_format3_5(markdown_content: str) -> List[OperationalCondition]:
+def parse_operational_conditions_format3_5(markdown_content: str) -> List[OperationalConditionV2]:
     """解析工况信息表格（格式3和格式5：附件 2 工况信息，电压列第一列存储时间段）
     
     表格结构：
@@ -689,20 +689,24 @@ def parse_operational_conditions_format3_5(markdown_content: str) -> List[Operat
       - 电流列的第一列是电流最大值，第二列是电流最小值
       - 有功和无功类似
     
-    输出格式：
+    输出格式（使用OperationalConditionV2）：
     [
         {
-            "monitorAt": "",  // 检测时间
+            "monitorAt": "",  // 检测时间（从时间列和电压时间段列组合）
             "project": "",    // 项目名称
             "name": "",       // 名称，如#3主变
-            "voltage": "",    // 时间段（从电压列第一列提取）
-            "current": "",    // 电流值（从电流列提取）
-            "activePower": "", // 有功功率
-            "reactivePower": "", // 无功功率
+            "maxVoltage": "", // 电压最大值
+            "minVoltage": "", // 电压最小值
+            "maxCurrent": "", // 电流最大值
+            "minCurrent": "", // 电流最小值
+            "maxActivePower": "", // 有功功率最大值
+            "minActivePower": "", // 有功功率最小值
+            "maxReactivePower": "", // 无功功率最大值
+            "minReactivePower": "", // 无功功率最小值
         }
     ]
     """
-    conditions: List[OperationalCondition] = []
+    conditions: List[OperationalConditionV2] = []
     
     # 检查是否包含"附件 2 工况信息"标识
     if "附件" not in markdown_content or "工况信息" not in markdown_content:
@@ -823,47 +827,53 @@ def parse_operational_conditions_format3_5(markdown_content: str) -> List[Operat
                 voltage_time = row[voltage_time_idx].strip()
                 # 检查是否是时间段（包含"昼间"、"夜间"等）
                 if any(k in voltage_time for k in ["昼间", "夜间", "次日", "~", ":"]):
-                    # 创建工况信息记录
-                    oc = OperationalCondition()
-                    oc.monitorAt = current_time
+                    # 创建工况信息记录（使用OperationalConditionV2格式）
+                    oc = OperationalConditionV2()
                     oc.project = ""
                     oc.name = current_name
-                    oc.voltage = voltage_time  # 存储时间段
                     
-                    # 电流值（格式3/5特殊：current字段存储的是电压最小值）
+                    # 组合monitorAt：时间 + 时间段（保持原始格式，如"2025.03.28 昼间9:00~11:00"）
+                    if current_time:
+                        oc.monitorAt = f"{current_time} {voltage_time}".strip()
+                    else:
+                        oc.monitorAt = voltage_time
+                    
+                    # 电压最大值
+                    if voltage_max_idx < len(row) and row[voltage_max_idx].strip():
+                        oc.maxVoltage = row[voltage_max_idx].strip()
+                    
+                    # 电压最小值
                     if voltage_min_idx < len(row) and row[voltage_min_idx].strip():
-                        oc.current = row[voltage_min_idx].strip()
-                    # 如果电压最小值列不存在，尝试从电流列获取（向后兼容）
-                    elif current_max_idx < len(row) and row[current_max_idx].strip():
-                        current_max = row[current_max_idx].strip()
-                        if current_min_idx < len(row) and row[current_min_idx].strip():
-                            current_min = row[current_min_idx].strip()
-                            oc.current = f"{current_max}-{current_min}" if current_min != current_max else current_max
-                        else:
-                            oc.current = current_max
+                        oc.minVoltage = row[voltage_min_idx].strip()
                     
-                    # 有功功率
+                    # 电流最大值
+                    if current_max_idx < len(row) and row[current_max_idx].strip():
+                        oc.maxCurrent = row[current_max_idx].strip()
+                    
+                    # 电流最小值
+                    if current_min_idx < len(row) and row[current_min_idx].strip():
+                        oc.minCurrent = row[current_min_idx].strip()
+                    
+                    # 有功功率最大值
                     if active_power_max_idx < len(row) and row[active_power_max_idx].strip():
-                        active_max = row[active_power_max_idx].strip()
-                        if active_power_min_idx < len(row) and row[active_power_min_idx].strip():
-                            active_min = row[active_power_min_idx].strip()
-                            oc.activePower = f"{active_max}-{active_min}" if active_min != active_max else active_max
-                        else:
-                            oc.activePower = active_max
+                        oc.maxActivePower = row[active_power_max_idx].strip()
                     
-                    # 无功功率
+                    # 有功功率最小值
+                    if active_power_min_idx < len(row) and row[active_power_min_idx].strip():
+                        oc.minActivePower = row[active_power_min_idx].strip()
+                    
+                    # 无功功率最大值
                     if reactive_power_max_idx < len(row) and row[reactive_power_max_idx].strip():
-                        reactive_max = row[reactive_power_max_idx].strip()
-                        if reactive_power_min_idx < len(row) and row[reactive_power_min_idx].strip():
-                            reactive_min = row[reactive_power_min_idx].strip()
-                            oc.reactivePower = f"{reactive_max}-{reactive_min}" if reactive_min != reactive_max else reactive_max
-                        else:
-                            oc.reactivePower = reactive_max
+                        oc.maxReactivePower = row[reactive_power_max_idx].strip()
+                    
+                    # 无功功率最小值
+                    if reactive_power_min_idx < len(row) and row[reactive_power_min_idx].strip():
+                        oc.minReactivePower = row[reactive_power_min_idx].strip()
                     
                     # 添加记录（只要名称不为空）
                     if oc.name:
                         conditions.append(oc)
-                        logger.info(f"[工况信息格式3/5] 解析到第{len(conditions)}条记录: name='{oc.name}', 时间='{oc.monitorAt}', 电压时间段='{oc.voltage}'")
+                        logger.info(f"[工况信息格式3/5] 解析到第{len(conditions)}条记录: name='{oc.name}', monitorAt='{oc.monitorAt}'")
         
         # 只处理第一个匹配的表格
         if conditions:
