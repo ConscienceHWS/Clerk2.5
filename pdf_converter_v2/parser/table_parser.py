@@ -677,3 +677,198 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
     logger.info(f"[工况信息opStatus] 共解析到 {len(conditions)} 条工况信息")
     return conditions
 
+
+def parse_operational_conditions_format3_5(markdown_content: str) -> List[OperationalCondition]:
+    """解析工况信息表格（格式3和格式5：附件 2 工况信息，电压列第一列存储时间段）
+    
+    表格结构：
+    - 第一行：名称（rowspan=2）、时间（rowspan=2或colspan=2）、电压（kV）（colspan=2）、电流（A）（colspan=2）、有功（MW）（colspan=2）、无功（Mvar）（colspan=2）
+    - 第二行：最大值、最小值（重复4次）
+    - 数据行特点：
+      - 电压列的第一列存储时间段（如"昼间9:00~11:00"），第二列是电压最大值
+      - 电流列的第一列是电流最大值，第二列是电流最小值
+      - 有功和无功类似
+    
+    输出格式：
+    [
+        {
+            "monitorAt": "",  // 检测时间
+            "project": "",    // 项目名称
+            "name": "",       // 名称，如#3主变
+            "voltage": "",    // 时间段（从电压列第一列提取）
+            "current": "",    // 电流值（从电流列提取）
+            "activePower": "", // 有功功率
+            "reactivePower": "", // 无功功率
+        }
+    ]
+    """
+    conditions: List[OperationalCondition] = []
+    
+    # 检查是否包含"附件 2 工况信息"标识
+    if "附件" not in markdown_content or "工况信息" not in markdown_content:
+        logger.debug("[工况信息格式3/5] 未找到'附件 2 工况信息'标识")
+        return conditions
+    
+    # 提取表格数据（支持rowspan和colspan）
+    tables = extract_table_with_rowspan_colspan(markdown_content)
+    
+    if not tables:
+        logger.warning("[工况信息格式3/5] 未能提取出任何表格内容")
+        return conditions
+    
+    # 查找工况信息表格
+    for table in tables:
+        if not table or len(table) < 3:  # 至少需要表头2行和数据1行
+            continue
+        
+        # 检查表头是否包含工况信息的关键词
+        first_row = table[0]
+        second_row = table[1] if len(table) > 1 else []
+        header_text = normalize_text(" ".join(first_row + second_row))
+        
+        has_keywords = any(
+            keyword in header_text 
+            for keyword in ["名称", "时间", "电压", "电流", "有功", "无功", "kv", "mw", "mvar"]
+        )
+        
+        if not has_keywords:
+            continue
+        
+        logger.info(f"[工况信息格式3/5] 找到工况信息表格，行数: {len(table)}")
+        
+        # 检查是否是格式3/5（电压列第一列存储时间段）
+        # 从数据行检查：如果电压列第一列包含"昼间"、"夜间"等时间段关键词，则是格式3/5
+        is_format3_5 = False
+        if len(table) > 2:
+            for row_idx in range(2, min(5, len(table))):  # 检查前几行数据
+                row = table[row_idx]
+                if len(row) >= 4:  # 至少需要名称、时间、电压列
+                    # 电压列通常在索引2或3（跳过名称和时间列）
+                    for col_idx in range(2, min(5, len(row))):
+                        cell = row[col_idx].strip()
+                        if any(k in cell for k in ["昼间", "夜间", "次日", "~", ":"]) and not re.match(r'^[\d.\-]+$', cell):
+                            is_format3_5 = True
+                            logger.debug(f"[工况信息格式3/5] 检测到格式3/5特征：电压列包含时间段 '{cell}'")
+                            break
+                    if is_format3_5:
+                        break
+        
+        if not is_format3_5:
+            logger.debug("[工况信息格式3/5] 未检测到格式3/5特征，跳过")
+            continue
+        
+        # 确定列索引
+        # 根据表格结构：名称、时间、电压（kV）[colspan=2]、电流（A）[colspan=2]、有功（MW）[colspan=2]、无功（Mvar）[colspan=2]
+        # 第二行表头：最大值、最小值（重复4次）
+        # 数据行：列2存储时间段（格式3/5特殊），列3是电压最大值，列4是电压最小值，列5是电流最大值，列6是电流最小值...
+        # 列0: 名称
+        # 列1: 时间
+        # 列2: 电压时间段（格式3/5特殊：第一列是时间段）
+        # 列3: 电压最大值
+        # 列4: 电压最小值（期望输出中current字段实际存储的是这个值）
+        # 列5: 电流最大值
+        # 列6: 电流最小值
+        # 列7: 有功最大值
+        # 列8: 有功最小值
+        # 列9: 无功最大值
+        # 列10: 无功最小值（如果有）
+        
+        name_idx = 0
+        time_idx = 1
+        voltage_time_idx = 2  # 电压时间段列
+        voltage_max_idx = 3    # 电压最大值列
+        voltage_min_idx = 4    # 电压最小值列（在格式3/5中，current字段存储这个值）
+        current_max_idx = 5    # 电流最大值列
+        current_min_idx = 6    # 电流最小值列
+        active_power_max_idx = 7  # 有功最大值列
+        active_power_min_idx = 8  # 有功最小值列
+        reactive_power_max_idx = 9  # 无功最大值列
+        reactive_power_min_idx = 10  # 无功最小值列
+        
+        # 从第三行开始解析数据（前两行是表头）
+        current_name = ""
+        current_time = ""
+        
+        for row_idx in range(2, len(table)):
+            row = table[row_idx]
+            
+            # 至少需要4列
+            if len(row) < 4:
+                continue
+            
+            # 检查是否是项目名称行（整行合并，如"蕲昌220kV变电站"）
+            if len(row) > 0 and row[0].strip() and len([c for c in row if c.strip()]) == 1:
+                # 可能是项目名称行，跳过
+                logger.debug(f"[工况信息格式3/5] 跳过项目名称行: {row[0]}")
+                continue
+            
+            # 更新名称（如果有值）
+            if name_idx < len(row) and row[name_idx].strip():
+                name_value = row[name_idx].strip()
+                # 检查是否是有效名称（包含"主变"、"#"等）
+                if any(k in name_value for k in ["主变", "#", "线"]):
+                    current_name = name_value
+                    logger.debug(f"[工况信息格式3/5] 更新名称: {current_name}")
+            
+            # 更新时间（如果有值）
+            if time_idx < len(row) and row[time_idx].strip():
+                time_value = row[time_idx].strip()
+                # 检查是否是日期格式
+                if re.match(r'^\d{4}\.\d{1,2}\.\d{1,2}', time_value):
+                    current_time = time_value
+                    logger.debug(f"[工况信息格式3/5] 更新时间: {current_time}")
+            
+            # 检查是否有电压时间段（格式3/5的特征）
+            if voltage_time_idx < len(row) and row[voltage_time_idx].strip():
+                voltage_time = row[voltage_time_idx].strip()
+                # 检查是否是时间段（包含"昼间"、"夜间"等）
+                if any(k in voltage_time for k in ["昼间", "夜间", "次日", "~", ":"]):
+                    # 创建工况信息记录
+                    oc = OperationalCondition()
+                    oc.monitorAt = current_time
+                    oc.project = ""
+                    oc.name = current_name
+                    oc.voltage = voltage_time  # 存储时间段
+                    
+                    # 电流值（格式3/5特殊：current字段存储的是电压最小值）
+                    if voltage_min_idx < len(row) and row[voltage_min_idx].strip():
+                        oc.current = row[voltage_min_idx].strip()
+                    # 如果电压最小值列不存在，尝试从电流列获取（向后兼容）
+                    elif current_max_idx < len(row) and row[current_max_idx].strip():
+                        current_max = row[current_max_idx].strip()
+                        if current_min_idx < len(row) and row[current_min_idx].strip():
+                            current_min = row[current_min_idx].strip()
+                            oc.current = f"{current_max}-{current_min}" if current_min != current_max else current_max
+                        else:
+                            oc.current = current_max
+                    
+                    # 有功功率
+                    if active_power_max_idx < len(row) and row[active_power_max_idx].strip():
+                        active_max = row[active_power_max_idx].strip()
+                        if active_power_min_idx < len(row) and row[active_power_min_idx].strip():
+                            active_min = row[active_power_min_idx].strip()
+                            oc.activePower = f"{active_max}-{active_min}" if active_min != active_max else active_max
+                        else:
+                            oc.activePower = active_max
+                    
+                    # 无功功率
+                    if reactive_power_max_idx < len(row) and row[reactive_power_max_idx].strip():
+                        reactive_max = row[reactive_power_max_idx].strip()
+                        if reactive_power_min_idx < len(row) and row[reactive_power_min_idx].strip():
+                            reactive_min = row[reactive_power_min_idx].strip()
+                            oc.reactivePower = f"{reactive_max}-{reactive_min}" if reactive_min != reactive_max else reactive_max
+                        else:
+                            oc.reactivePower = reactive_max
+                    
+                    # 添加记录（只要名称不为空）
+                    if oc.name:
+                        conditions.append(oc)
+                        logger.info(f"[工况信息格式3/5] 解析到第{len(conditions)}条记录: name='{oc.name}', 时间='{oc.monitorAt}', 电压时间段='{oc.voltage}'")
+        
+        # 只处理第一个匹配的表格
+        if conditions:
+            break
+    
+    logger.info(f"[工况信息格式3/5] 共解析到 {len(conditions)} 条工况信息")
+    return conditions
+

@@ -12,7 +12,7 @@ from ..utils.paddleocr_fallback import fallback_parse_with_paddleocr
 from .document_type import detect_document_type
 from .noise_parser import parse_noise_detection_record
 from .electromagnetic_parser import parse_electromagnetic_detection_record
-from .table_parser import parse_operational_conditions, parse_operational_conditions_v2, parse_operational_conditions_opstatus
+from .table_parser import parse_operational_conditions, parse_operational_conditions_v2, parse_operational_conditions_opstatus, parse_operational_conditions_format3_5
 
 logger = get_logger("pdf_converter_v2.parser.json")
 
@@ -132,7 +132,7 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
             result = {"document_type": forced_document_type, "data": data}
         elif forced_document_type == "operatingConditionInfo":
             # 仅解析工况信息
-            # 优先级：表1检测工况格式 > opStatus格式 > 旧格式
+            # 优先级：表1检测工况格式 > 格式3/5 > opStatus格式 > 旧格式
             # 1. 检查是否为"表1检测工况"格式（使用正则表达式，允许中间有空格）
             # 支持：表1检测工况、表 1 检测工况、表 1检测工况、表1 检测工况 等变体
             pattern = r'表\s*1\s*检测工况'
@@ -142,7 +142,18 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                 serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
                 return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
             
-            # 2. 检查是否为opStatus格式（附件 工况及工程信息，且不包含"表1检测工况"）
+            # 2. 检查是否为格式3/5（附件 2 工况信息，电压列第一列存储时间段）
+            if "附件" in markdown_content and "工况信息" in markdown_content:
+                logger.info("[JSON转换] 检测到'附件 2 工况信息'格式，尝试使用格式3/5解析")
+                op_list = parse_operational_conditions_format3_5(markdown_content)
+                if op_list:
+                    serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in op_list]
+                    logger.info(f"[JSON转换] 格式3/5解析成功，共解析到 {len(serialized)} 条记录")
+                    return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
+                else:
+                    logger.debug("[JSON转换] 格式3/5解析未找到结果，继续尝试其他格式")
+            
+            # 3. 检查是否为opStatus格式（附件 工况及工程信息，且不包含"表1检测工况"）
             if "附件" in markdown_content and "工况" in markdown_content:
                 logger.info("[JSON转换] 检测到'附件 工况及工程信息'格式，使用opStatus格式解析")
                 op_list = parse_operational_conditions_opstatus(markdown_content)
