@@ -69,52 +69,85 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
         logger.warning(f"[电磁检测] 未能提取出任何表格内容")
         return record
 
+    # 定义元数据标签关键词，用于识别标签（避免将标签误认为值）
+    METADATA_LABELS = {"项目名称", "监测依据", "仪器名称", "仪器型号", "仪器编号", 
+                       "测量高度", "检测高度", "检测环境条件", "测点分布示意图", 
+                       "工况及工程信息", "备注", "备注："}
+    
+    def find_next_non_empty_value(row: List[str], start_idx: int) -> tuple[str, int]:
+        """从指定索引开始查找下一个非空值（遇到下一个标签时停止）
+        
+        Args:
+            row: 行数据
+            start_idx: 起始索引（标签所在位置）
+            
+        Returns:
+            (value, next_idx): 找到的值和下一个索引位置
+        """
+        for j in range(start_idx + 1, len(row)):
+            cell_value = row[j].strip() if row[j] else ""
+            if cell_value:
+                # 如果找到的值是另一个标签，说明当前标签没有值，停止查找
+                if cell_value in METADATA_LABELS:
+                    return "", j  # 返回空值和下一个标签的位置
+                # 找到非标签的值，返回它
+                return cell_value, j + 1
+        return "", len(row)
+    
     first_table = tables[0]
     for row in first_table:
         logger.debug(f"[电磁检测][ROW] len={len(row)}, content={row}")
         i = 0
         while i < len(row):
             cell = row[i]
-            if i+1 >= len(row):
-                break
-            value = row[i+1]
+            if not cell or not cell.strip():
+                i += 1
+                continue
+            
             if "项目名称" in cell:
+                value, next_idx = find_next_non_empty_value(row, i)
                 record.project = value
                 if not record.project.strip():
-                    logger.error(f"[电磁检测] 项目名称 为空，行数据: {row}")
-                i += 2
+                    logger.warning(f"[电磁检测] 项目名称 为空，行数据: {row}")
+                i = next_idx
                 continue
             if "监测依据" in cell:
+                value, next_idx = find_next_non_empty_value(row, i)
                 record.standardReferences = value
                 if not record.standardReferences.strip():
-                    logger.error(f"[电磁检测] 监测依据 为空，行数据: {row}")
-                i += 2
+                    logger.warning(f"[电磁检测] 监测依据 为空，行数据: {row}")
+                i = next_idx
                 continue
             if "仪器名称" in cell:
+                value, next_idx = find_next_non_empty_value(row, i)
                 record.deviceName = value
                 if not record.deviceName.strip():
-                    logger.error(f"[电磁检测] 仪器名称 为空，行数据: {row}")
-                i += 2
+                    logger.warning(f"[电磁检测] 仪器名称 为空，行数据: {row}")
+                i = next_idx
                 continue
             if "仪器型号" in cell:
+                value, next_idx = find_next_non_empty_value(row, i)
                 record.deviceMode = value
                 if not record.deviceMode.strip():
-                    logger.error(f"[电磁检测] 仪器型号 为空，行数据: {row}")
-                i += 2
+                    logger.warning(f"[电磁检测] 仪器型号 为空，行数据: {row}")
+                i = next_idx
                 continue
             if "仪器编号" in cell:
+                value, next_idx = find_next_non_empty_value(row, i)
                 record.deviceCode = value
                 if not record.deviceCode.strip():
-                    logger.error(f"[电磁检测] 仪器编号 为空，行数据: {row}")
-                i += 2
+                    logger.warning(f"[电磁检测] 仪器编号 为空，行数据: {row}")
+                i = next_idx
                 continue
             if any(k in cell for k in ["测量高度", "检测高度"]):
+                value, next_idx = find_next_non_empty_value(row, i)
                 record.monitorHeight = value
                 if not record.monitorHeight.strip():
-                    logger.error(f"[电磁检测] 检测/测量高度 为空，行数据: {row}")
-                i += 2
+                    logger.warning(f"[电磁检测] 检测/测量高度 为空，行数据: {row}")
+                i = next_idx
                 continue
             if "检测环境条件" in cell:
+                value, next_idx = find_next_non_empty_value(row, i)
                 text = value
                 m = re.search(r'([0-9.\-]+)\s*℃', text)
                 if m: record.weather.temp = m.group(1)
@@ -130,7 +163,7 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                     record.weather.temp, record.weather.humidity, record.weather.windSpeed
                 ]):
                     record.weather.weather = "晴"
-                i += 2
+                i = next_idx
                 continue
             i += 1
 
