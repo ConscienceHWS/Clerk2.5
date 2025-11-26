@@ -107,10 +107,18 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
             logger.debug(f"[噪声检测] 提取到风速: {weather.windSpeed}")
         
         # 提取风向（格式：风向东北 或 风向 东北）
+        # 注意：风向值不应该包含"日期"关键词，如果匹配到包含"日期"的内容，说明匹配错误
         wd_match = re.search(wind_dir_pattern, section)
         if wd_match:
-            weather.windDirection = wd_match.group(1).strip()
-            logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
+            wind_dir_value = wd_match.group(1).strip()
+            # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
+            if wind_dir_value and "日期" not in wind_dir_value and "温度" not in wind_dir_value and \
+               "湿度" not in wind_dir_value and "风速" not in wind_dir_value and \
+               not wind_dir_value.startswith("日期") and len(wind_dir_value) < 50:  # 风向值不应该太长
+                weather.windDirection = wind_dir_value
+                logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
+            else:
+                logger.warning(f"[噪声检测] 风向值验证失败，跳过: {wind_dir_value}")
         
         # weather 为空且其它气象字段有任意一个不为空时，默认填入“晴”
         if not weather.weather.strip() and any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
@@ -193,10 +201,18 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
                 logger.debug(f"[噪声检测] 提取到风速: {weather.windSpeed}")
             
             # 提取风向（格式：风向东北 或 风向 东北）
+            # 注意：风向值不应该包含"日期"关键词，如果匹配到包含"日期"的内容，说明匹配错误
             wd_match = re.search(wind_dir_pattern, section)
             if wd_match:
-                weather.windDirection = wd_match.group(1).strip()
-                logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
+                wind_dir_value = wd_match.group(1).strip()
+                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
+                if wind_dir_value and "日期" not in wind_dir_value and "温度" not in wind_dir_value and \
+                   "湿度" not in wind_dir_value and "风速" not in wind_dir_value and \
+                   not wind_dir_value.startswith("日期") and len(wind_dir_value) < 50:  # 风向值不应该太长
+                    weather.windDirection = wind_dir_value
+                    logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
+                else:
+                    logger.warning(f"[噪声检测] 风向值验证失败，跳过: {wind_dir_value}")
             
             # weather 为空且其它气象字段有任意一个不为空时，默认填入“晴”
             if not weather.weather.strip() and any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
@@ -375,9 +391,16 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             if wind_speed_match:
                 weather.windSpeed = wind_speed_match.group(1).strip()
             
-            wind_dir_match = re.search(r'风向[:：]\s*([^\s]+)', weather_line)
+            wind_dir_match = re.search(r'风向[:：]\s*([^\s日期温度湿度风速]+)', weather_line)
             if wind_dir_match:
-                weather.windDirection = wind_dir_match.group(1).strip()
+                wind_dir_value = wind_dir_match.group(1).strip()
+                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
+                if wind_dir_value and "日期" not in wind_dir_value and "温度" not in wind_dir_value and \
+                   "湿度" not in wind_dir_value and "风速" not in wind_dir_value and \
+                   not wind_dir_value.startswith("日期") and len(wind_dir_value) < 50:  # 风向值不应该太长
+                    weather.windDirection = wind_dir_value
+                else:
+                    logger.warning(f"[噪声检测] 风向值验证失败，跳过: {wind_dir_value}")
             
             # 如果天气为空但其他字段有值，默认为"晴"
             if not weather.weather or not weather.weather.strip():
@@ -751,7 +774,11 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                         for col_idx, cell in enumerate(check_row):
                             if "风向" in cell and col_idx + 1 < len(check_row):
                                 wind_dir_value = check_row[col_idx + 1].strip()
-                                if wind_dir_value and wind_dir_value != "风向":
+                                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
+                                if wind_dir_value and wind_dir_value != "风向" and \
+                                   "日期" not in wind_dir_value and "温度" not in wind_dir_value and \
+                                   "湿度" not in wind_dir_value and "风速" not in wind_dir_value and \
+                                   not wind_dir_value.startswith("日期") and len(wind_dir_value) < 50:
                                     weather.windDirection = wind_dir_value
                                     break
                         
