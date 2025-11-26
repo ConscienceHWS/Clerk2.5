@@ -540,7 +540,76 @@ def extract_table_text(table_html: str) -> List[str]:
 
 
 def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[str]], Optional[str]]:
-    """调用paddleocr doc_parser命令，将markdown转换为纯文本
+    """调用paddleocr ocr命令提取文本（用于API接口）
+    
+    Args:
+        image_path: 图片路径
+        save_path: 保存路径（目录）
+        
+    Returns:
+        (OCR识别的文本列表, JSON文件路径)，如果失败返回(None, None)
+    """
+    try:
+        if not os.path.exists(image_path):
+            logger.error(f"[PaddleOCR OCR] 图片文件不存在: {image_path}")
+            return None, None
+
+        # 构建paddleocr ocr命令
+        cmd = ["paddleocr", "ocr", "-i", image_path, "--save_path", save_path]
+
+        logger.info(f"[PaddleOCR OCR] 执行命令: {' '.join(cmd)}")
+
+        # 执行命令
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,  # 5分钟超时
+            check=False,
+        )
+
+        if result.returncode != 0:
+            logger.error(f"[PaddleOCR OCR] 命令执行失败，返回码: {result.returncode}")
+            logger.error(f"[PaddleOCR OCR] 错误输出: {result.stderr}")
+            return None, None
+
+        # 查找保存的JSON文件
+        # OCR命令会在save_path下生成 {basename}_res.json
+        image_basename = os.path.splitext(os.path.basename(image_path))[0]
+        json_file = os.path.join(save_path, f"{image_basename}_res.json")
+
+        if not os.path.exists(json_file):
+            logger.warning(f"[PaddleOCR OCR] JSON文件不存在: {json_file}")
+            return None, None
+
+        # 读取JSON文件
+        try:
+            with open(json_file, 'r', encoding='utf-8') as f:
+                ocr_data = json.load(f)
+
+            # 提取rec_texts字段
+            if "rec_texts" in ocr_data and isinstance(ocr_data["rec_texts"], list):
+                texts = ocr_data["rec_texts"]
+                logger.info(f"[PaddleOCR OCR] 成功提取 {len(texts)} 个文本片段")
+                return texts, json_file
+            else:
+                logger.warning("[PaddleOCR OCR] JSON文件中未找到rec_texts字段")
+                return None, json_file
+
+        except Exception as e:
+            logger.exception(f"[PaddleOCR OCR] 读取JSON文件失败: {e}")
+            return None, json_file
+
+    except subprocess.TimeoutExpired:
+        logger.error("[PaddleOCR OCR] 命令执行超时")
+        return None, None
+    except Exception as e:
+        logger.exception(f"[PaddleOCR OCR] 调用失败: {e}")
+        return None, None
+
+
+def call_paddleocr_doc_parser_for_text(image_path: str, save_path: str) -> tuple[Optional[List[str]], Optional[str]]:
+    """调用paddleocr doc_parser命令，将markdown转换为纯文本（用于内部调用提取关键词）
     
     Args:
         image_path: 图片路径
@@ -551,7 +620,7 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
     """
     try:
         if not os.path.exists(image_path):
-            logger.error(f"[PaddleOCR OCR] 图片文件不存在: {image_path}")
+            logger.error(f"[PaddleOCR DocParser] 图片文件不存在: {image_path}")
             return None, None
         
         # 生成输出目录和基础文件名
@@ -570,7 +639,7 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
             "--save_path", save_path_base
         ]
         
-        logger.info(f"[PaddleOCR OCR] 执行命令: {' '.join(cmd)}")
+        logger.info(f"[PaddleOCR DocParser] 执行命令: {' '.join(cmd)}")
         
         # 执行命令
         result = subprocess.run(
@@ -582,8 +651,8 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
         )
         
         if result.returncode != 0:
-            logger.error(f"[PaddleOCR OCR] 命令执行失败，返回码: {result.returncode}")
-            logger.error(f"[PaddleOCR OCR] 错误输出: {result.stderr}")
+            logger.error(f"[PaddleOCR DocParser] 命令执行失败，返回码: {result.returncode}")
+            logger.error(f"[PaddleOCR DocParser] 错误输出: {result.stderr}")
             return None, None
         
         # 查找保存的Markdown文件
@@ -595,10 +664,10 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
             md_files = sorted(Path(save_path_base).rglob("*.md"))
             if md_files:
                 md_file = str(md_files[0])
-                logger.info(f"[PaddleOCR OCR] 在子目录中找到Markdown文件: {md_file}")
+                logger.info(f"[PaddleOCR DocParser] 在子目录中找到Markdown文件: {md_file}")
         
         if not os.path.exists(md_file):
-            logger.warning(f"[PaddleOCR OCR] Markdown文件不存在: {md_file}")
+            logger.warning(f"[PaddleOCR DocParser] Markdown文件不存在: {md_file}")
             return None, None
         
         # 读取Markdown文件并转换为纯文本
@@ -607,23 +676,23 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
                 markdown_content = f.read()
             
             if not markdown_content.strip():
-                logger.warning("[PaddleOCR OCR] Markdown文件内容为空")
+                logger.warning("[PaddleOCR DocParser] Markdown文件内容为空")
                 return [], md_file
             
             # 将Markdown转换为纯文本列表
             plain_text_lines = markdown_to_plain_text(markdown_content)
-            logger.info(f"[PaddleOCR OCR] 成功提取 {len(plain_text_lines)} 行纯文本，Markdown文件: {md_file}")
+            logger.info(f"[PaddleOCR DocParser] 成功提取 {len(plain_text_lines)} 行纯文本，Markdown文件: {md_file}")
             return plain_text_lines, md_file
                 
         except Exception as e:
-            logger.exception(f"[PaddleOCR OCR] 读取Markdown文件失败: {e}")
+            logger.exception(f"[PaddleOCR DocParser] 读取Markdown文件失败: {e}")
             return None, md_file
             
     except subprocess.TimeoutExpired:
-        logger.error("[PaddleOCR OCR] 命令执行超时")
+        logger.error("[PaddleOCR DocParser] 命令执行超时")
         return None, None
     except Exception as e:
-        logger.exception(f"[PaddleOCR OCR] 调用失败: {e}")
+        logger.exception(f"[PaddleOCR DocParser] 调用失败: {e}")
         return None, None
 
 
@@ -1070,10 +1139,10 @@ def fallback_parse_with_paddleocr(
             logger.error("[PaddleOCR备用] PaddleOCR返回格式不正确")
             return None
         
-        # 调用paddleocr ocr提取关键词来补充数据
-        logger.info("[PaddleOCR备用] 调用OCR提取关键词补充数据")
+        # 调用paddleocr doc_parser提取关键词来补充数据
+        logger.info("[PaddleOCR备用] 调用doc_parser提取关键词补充数据")
         ocr_save_path = os.path.dirname(image_path)  # 使用图片所在目录作为保存路径
-        ocr_texts, _ = call_paddleocr_ocr(image_path, ocr_save_path)
+        ocr_texts, _ = call_paddleocr_doc_parser_for_text(image_path, ocr_save_path)
         
         if ocr_texts:
             # 从OCR文本中提取关键词
