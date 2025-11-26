@@ -13,6 +13,7 @@ logger = get_logger("pdf_converter_v2.parser.noise")
 
 def clean_project_field(project: str) -> str:
     """清理project字段：如果包含"检测依据"，删除"检测依据"及其后面的所有字符
+    同时清理末尾的标点符号（逗号、句号、分号等）
     
     Args:
         project: 原始project字段值
@@ -28,6 +29,9 @@ def clean_project_field(project: str) -> str:
         idx = project.find("检测依据")
         project = project[:idx].strip()
         logger.debug(f"[噪声检测] 清理project字段，删除'检测依据'及之后内容: {project}")
+    
+    # 清理末尾的标点符号（逗号、句号、分号、冒号等）
+    project = re.sub(r'[，。；：,.;:]+$', '', project).strip()
     
     return project
 
@@ -284,6 +288,20 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
         else:
             # 如果没有找到GB标准，保留原文本（去掉可能的□标记）
             result["standardReferences"] = re.sub(r'□\s*', '', standard_text).strip()
+    else:
+        # 如果第一个正则没有匹配到，尝试更宽松的匹配：匹配到行尾或下一个字段
+        standard_match2 = re.search(r'(?:检测依据|监测依据)[:：]([^声级计声校准器检测前检测后气象条件]+?)(?:声级计|声校准器|检测前|检测后|气象条件|$)', cell_text)
+        if standard_match2:
+            standard_text = standard_match2.group(1).strip()
+            # 去掉可能的"□其他:"部分（如果存在）
+            standard_text = re.sub(r'□其他[:：]?$', '', standard_text).strip()
+            # 提取所有GB标准（格式如 GB 12348-2008 或 GB3096-2008）
+            gb_standards = re.findall(r'GB\s*\d+[-\.]?\d*[-\.]?\d*', standard_text)
+            if gb_standards:
+                result["standardReferences"] = " ".join(gb_standards)
+            else:
+                # 如果没有找到GB标准，保留原文本（去掉可能的□标记）
+                result["standardReferences"] = re.sub(r'□\s*', '', standard_text).strip()
     
     # 解析声级计型号/编号：声级计型号/编号:AY2201 或 声级计型号:AY2201 或 声级计型号/编号：AWA628+/AY2249
     # 支持包含+号和斜杠的型号，如 AWA628+/AY2249
@@ -851,11 +869,29 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                                          ocr_weather.windDirection.strip() == table_weather.windDirection.strip())
                     
                     # 如果至少有两个字段匹配，认为这是同一条天气记录
+                    # 或者如果表格解析的天气记录只有部分字段（如只有windDirection），也尝试合并
                     match_count = sum([temp_match, humidity_match, wind_speed_match, wind_dir_match])
-                    if match_count >= 2 and table_weather.monitorAt:
+                    # 如果表格解析的天气记录只有windDirection，也尝试合并（通过日期匹配）
+                    has_only_wind_dir = (table_weather.windDirection and not table_weather.weather and 
+                                        not table_weather.temp and not table_weather.humidity and 
+                                        not table_weather.windSpeed)
+                    
+                    if (match_count >= 2 and table_weather.monitorAt) or (has_only_wind_dir and table_weather.monitorAt):
                         ocr_weather.monitorAt = table_weather.monitorAt
                         logger.debug(f"[噪声检测] 从表格解析结果补充OCR天气信息的日期: {ocr_weather.monitorAt}")
-                        # 将OCR提取的风向值赋给表格解析的天气信息
+                        # 将OCR提取的所有字段补充到表格解析的天气信息中
+                        if not table_weather.weather and ocr_weather.weather:
+                            table_weather.weather = ocr_weather.weather
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的天气: {table_weather.weather}")
+                        if not table_weather.temp and ocr_weather.temp:
+                            table_weather.temp = ocr_weather.temp
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的温度: {table_weather.temp}")
+                        if not table_weather.humidity and ocr_weather.humidity:
+                            table_weather.humidity = ocr_weather.humidity
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的湿度: {table_weather.humidity}")
+                        if not table_weather.windSpeed and ocr_weather.windSpeed:
+                            table_weather.windSpeed = ocr_weather.windSpeed
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的风速: {table_weather.windSpeed}")
                         if not table_weather.windDirection and ocr_weather.windDirection:
                             table_weather.windDirection = ocr_weather.windDirection
                             logger.debug(f"[噪声检测] 从OCR补充表格解析的风向: {table_weather.windDirection}")
@@ -883,20 +919,30 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                 exists = False
                 for table_weather in record.weather:
                     table_date = table_weather.monitorAt.strip() if table_weather.monitorAt else ""
-                    # 直接比较或比较归一化后的日期
-                    if table_date and (table_date == ocr_date or table_date == ocr_date_normalized):
+                    # 处理表格日期格式（可能包含末尾的点号，如 "2025.03.28."）
+                    table_date_clean = table_date.rstrip('.')
+                    ocr_date_clean = ocr_date.rstrip('.')
+                    ocr_date_normalized_clean = ocr_date_normalized.rstrip('.')
+                    
+                    # 直接比较或比较归一化后的日期（忽略末尾的点号）
+                    if table_date_clean and (table_date_clean == ocr_date_clean or table_date_clean == ocr_date_normalized_clean):
                         exists = True
                         # 如果表格解析的天气信息不完整，用OCR信息补充
                         if not table_weather.weather and ocr_weather.weather:
                             table_weather.weather = ocr_weather.weather
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的天气: {table_weather.weather}")
                         if not table_weather.temp and ocr_weather.temp:
                             table_weather.temp = ocr_weather.temp
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的温度: {table_weather.temp}")
                         if not table_weather.humidity and ocr_weather.humidity:
                             table_weather.humidity = ocr_weather.humidity
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的湿度: {table_weather.humidity}")
                         if not table_weather.windSpeed and ocr_weather.windSpeed:
                             table_weather.windSpeed = ocr_weather.windSpeed
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的风速: {table_weather.windSpeed}")
                         if not table_weather.windDirection and ocr_weather.windDirection:
                             table_weather.windDirection = ocr_weather.windDirection
+                            logger.debug(f"[噪声检测] 从OCR补充表格解析的风向: {table_weather.windDirection}")
                         logger.debug(f"[噪声检测] OCR天气信息与表格解析结果合并: {table_weather.to_dict()}")
                         break  # 找到匹配的记录后立即退出
                 
