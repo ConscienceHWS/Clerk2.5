@@ -149,18 +149,39 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
             if "检测环境条件" in cell:
                 value, next_idx = find_next_non_empty_value(row, i)
                 text = value
+                # 解析天气字段，即使字段为空也保留（ElectromagneticWeatherData的__init__已初始化所有字段为空字符串）
+                # 温度：匹配格式如 "29.5-35.0℃" 或 "29.5-35.0 ℃"
                 m = re.search(r'([0-9.\-]+)\s*℃', text)
-                if m: record.weather.temp = m.group(1)
+                if m: 
+                    record.weather.temp = m.group(1)
+                # 如果没有匹配到，字段保持为空字符串（已在__init__中初始化）
+                
+                # 湿度：匹配格式如 "74.0-74.1%RH" 或 "74.0-74.1 %RH"
                 m = re.search(r'([0-9.\-]+)\s*%RH', text)
-                if m: record.weather.humidity = m.group(1)
+                if m: 
+                    record.weather.humidity = m.group(1)
+                # 如果没有匹配到，字段保持为空字符串（已在__init__中初始化）
+                
+                # 风速：匹配格式如 "0.4-0.5 m/s" 或 "0.4-0.5m/s"
                 m = re.search(r'([0-9.\-]+)\s*m/s', text)
-                if m: record.weather.windSpeed = m.group(1)
+                if m: 
+                    record.weather.windSpeed = m.group(1)
+                # 如果没有匹配到，字段保持为空字符串（已在__init__中初始化）
+                
+                # 天气：匹配格式如 "天气：晴" 或 "天气 晴"
                 m = re.search(r'天气[：:]*\s*([^\s温度湿度风速]+)', text)
-                if m: record.weather.weather = m.group(1).strip()
+                if m: 
+                    record.weather.weather = m.group(1).strip()
+                # 如果没有匹配到，字段保持为空字符串（已在__init__中初始化）
+                
+                # 解析风向
+                m = re.search(r'风向[：:]*\s*([^\s温度湿度风速天气]+)', text)
+                if m: record.weather.windDirection = m.group(1).strip()
+
                 # 天气为空、":"或只有冒号时，如果其它气象字段有任意一个不为空，默认填入"晴"
                 weather_value = record.weather.weather.strip() if record.weather.weather else ""
                 if (not weather_value or weather_value == ":") and any([
-                    record.weather.temp, record.weather.humidity, record.weather.windSpeed
+                    record.weather.temp, record.weather.humidity, record.weather.windSpeed, record.weather.windDirection
                 ]):
                     record.weather.weather = "晴"
                 i = next_idx
