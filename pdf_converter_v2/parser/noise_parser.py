@@ -52,7 +52,8 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
     # 风速模式：风速后跟数字和"m/s"
     wind_speed_pattern = r'风速\s*([0-9.\-]+)\s*m/s'
     # 风向模式：风向后跟方向描述，直到遇到"日期"或文本结束
-    wind_dir_pattern = r'风向\s*([^\s日期温度湿度风速]+)'
+    # 注意：不能排除"风"字，否则"南风"只能匹配到"南"
+    wind_dir_pattern = r'风向\s*([^\s日期温度湿度]+?)(?=\s*(?:日期|温度|湿度|风速)|$)'
     
     # 找到所有日期位置，然后为每个日期解析一条记录
     dates = list(re.finditer(date_pattern, weather_text))
@@ -150,7 +151,8 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
         # 风速模式：风速后跟数字和单位，直到遇到"风向"或其他字段
         wind_speed_pattern = r'风速\s*([0-9.\-]+)\s*m/s'
         # 风向模式：风向后跟方向描述，直到遇到"日期"或文本结束
-        wind_dir_pattern = r'风向\s*([^\s日期温度湿度风速]+)'
+        # 注意：不能排除"风"字，否则"南风"只能匹配到"南"
+        wind_dir_pattern = r'风向\s*([^\s日期温度湿度]+?)(?=\s*(?:日期|温度|湿度|风速)|$)'
         
         # 找到所有日期位置，然后为每个日期解析一条记录
         dates = list(re.finditer(date_pattern, weather_text))
@@ -391,7 +393,9 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             if wind_speed_match:
                 weather.windSpeed = wind_speed_match.group(1).strip()
             
-            wind_dir_match = re.search(r'风向[:：]\s*([^\s日期温度湿度风速]+)', weather_line)
+            # 注意：不能排除"风"字，否则"南风"只能匹配到"南"
+            # 使用非贪婪匹配，匹配到下一个字段名或行尾
+            wind_dir_match = re.search(r'风向[:：]\s*([^\s日期温度湿度]+?)(?=\s*(?:日期|温度|湿度|风速)|$)', weather_line)
             if wind_dir_match:
                 wind_dir_value = wind_dir_match.group(1).strip()
                 # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
