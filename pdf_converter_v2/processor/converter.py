@@ -333,7 +333,7 @@ async def convert_to_markdown(
                         first_page_image=None,
                         output_dir=json_output_dir,
                         forced_document_type=forced_document_type,
-                        enable_paddleocr_fallback=True,
+                        enable_paddleocr_fallback=False,
                         input_file=input_file,
                     )
                     json_path = os.path.join(output_dir, f"{file_name}.json")
