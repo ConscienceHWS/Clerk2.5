@@ -142,8 +142,8 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                 serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
                 return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
             
-            # 2. 检查是否为格式3/5（附件 2 工况信息，电压列第一列存储时间段）
-            if "附件" in markdown_content and "工况信息" in markdown_content:
+            # 2. 检查是否为格式3/5（附件 2 工况信息 或 附件 2 工况及工程信息，电压列第一列存储时间段）
+            if "附件" in markdown_content and ("工况信息" in markdown_content or "工况及工程信息" in markdown_content):
                 logger.info("[JSON转换] 检测到'附件 2 工况信息'格式，尝试使用格式3/5解析")
                 op_list = parse_operational_conditions_format3_5(markdown_content)
                 if op_list:
