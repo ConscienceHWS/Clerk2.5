@@ -66,12 +66,43 @@ def extract_standard_references(text: str) -> str:
     return re.sub(r'□\s*', '', text).strip()
 
 
+def _normalize_weather_text(weather_text: str) -> str:
+    """标准化气象字段文本，插入缺失的分隔符，移除HTML"""
+    if not weather_text:
+        return weather_text
+    
+    text = weather_text
+    text = re.sub(r'<[^>]+>', ' ', text)  # 移除HTML标签
+    text = text.replace("&nbsp;", " ")
+    text = text.replace("．", ".")
+    text = text.replace("，", " ")
+    text = text.replace("：", ":")
+    text = text.replace("℃C", "℃")
+    
+    # 为不同字段增加缺失的空格，避免如 "℃湿度" 无法拆分
+    text = re.sub(r'([℃°C])\s*湿度', r'\1 湿度', text)
+    text = re.sub(r'([℃°C])\s*风速', r'\1 风速', text)
+    text = re.sub(r'(%RH)\s*风速', r'\1 风速', text, flags=re.IGNORECASE)
+    text = re.sub(r'(％RH)\s*风速', r'%RH 风速', text)
+    text = re.sub(r'(m/s)\s*风向', r'\1 风向', text, flags=re.IGNORECASE)
+    text = re.sub(r'(M/S)\s*风向', r'm/s 风向', text)
+    text = re.sub(r'风速([0-9])', r'风速 \1', text)
+    
+    # 保证冒号后有空格，便于分段
+    text = re.sub(r'(日期|天气|温度|湿度|风速|风向)\s*[:：]', r'\1: ', text)
+    
+    # 合并多余空白
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
 def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> None:
     """从文本中解析天气数据，支持多条记录
     
     文本格式示例：
     日期:2025.9.23 天气 多云 温度26.7-27.4℃湿度66.6-67.4%RH 风速0.9-1.0 m/s 风向东偏北 日期:2025.9.24 天气 多云 温度24.5-28.6℃湿度65.3-67.1%RH 风速1.4-1.5 m/s 风向东偏北
     """
+    weather_text = _normalize_weather_text(weather_text)
     if not weather_text or "日期" not in weather_text:
         return
     
