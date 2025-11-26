@@ -788,22 +788,35 @@ def parse_operational_conditions_format3_5(markdown_content: str) -> List[Operat
         # 格式3：名称、时间、电压时间段、电压最大值、电压最小值、电流最大值、电流最小值...
         # 格式5：名称、时间（colspan=2，占用2列）、电压时间段、电压最大值、电压最小值、电流最大值、电流最小值...
         
-        # 动态检测时间列是否有colspan=2（通过检查数据行的列数）
-        # 格式3：名称(1) + 时间(1) + 电压(2) + 电流(2) + 有功(2) + 无功(2) = 10列
-        # 格式5：名称(1) + 时间(2) + 电压(2) + 电流(2) + 有功(2) + 无功(2) = 11列
+        # 动态检测时间列是否有colspan=2（通过检查表头和数据行的列数）
+        # 格式3和格式5的时间列都有colspan=2，但实际数据行可能都是11列
+        # 检查表头第一行，看时间列是否有colspan=2
         has_time_colspan2 = False
-        if len(table) > 2:
-            for row_idx in range(2, min(5, len(table))):
-                row = table[row_idx]
-                logger.debug(f"[工况信息格式3/5] 检查第{row_idx}行，列数: {len(row)}")
-                if len(row) >= 11:  # 格式5：名称(1) + 时间(2) + 电压(2) + 电流(2) + 有功(2) + 无功(2) = 11列
-                    has_time_colspan2 = True
-                    logger.info(f"[工况信息格式3/5] 检测到时间列有colspan=2（格式5），数据行有{len(row)}列")
-                    break
-                elif len(row) >= 10:
-                    # 格式3：10列
-                    logger.debug(f"[工况信息格式3/5] 检测到格式3，数据行有{len(row)}列")
-                    break
+        if len(table) > 0:
+            first_row = table[0]
+            # 检查表头中是否有"时间"列，并且该列有colspan=2
+            # 如果第一行包含"时间"且后续列数较多，可能是colspan=2
+            header_text = " ".join(first_row).lower()
+            if "时间" in header_text:
+                # 检查表头结构：如果时间列后面直接是电压列，可能是colspan=2
+                # 或者检查数据行的列数
+                if len(table) > 2:
+                    for row_idx in range(2, min(5, len(table))):
+                        row = table[row_idx]
+                        logger.debug(f"[工况信息格式3/5] 检查第{row_idx}行，列数: {len(row)}")
+                        if len(row) >= 11:  # 格式3/5：名称(1) + 时间(2) + 电压时间段(1) + 电压max(1) + 电压min(1) + 电流max(1) + 电流min(1) + 有功max(1) + 有功min(1) + 无功max(1) + 无功min(1) = 11列
+                            has_time_colspan2 = True
+                            logger.info(f"[工况信息格式3/5] 检测到时间列有colspan=2，数据行有{len(row)}列")
+                            break
+                        elif len(row) >= 10:
+                            # 可能是格式3，但时间列也可能有colspan=2（只是数据值只占1列）
+                            # 检查列2是否是时间段（包含"昼间"、"夜间"等）
+                            if len(row) > 2 and any(k in row[2] for k in ["昼间", "夜间", "次日", "~", ":"]):
+                                has_time_colspan2 = True
+                                logger.info(f"[工况信息格式3/5] 检测到时间列有colspan=2（格式3），数据行有{len(row)}列，列2是时间段")
+                                break
+                            logger.debug(f"[工况信息格式3/5] 检测到格式3，数据行有{len(row)}列")
+                            break
         
         name_idx = 0
         if has_time_colspan2:
@@ -845,11 +858,21 @@ def parse_operational_conditions_format3_5(markdown_content: str) -> List[Operat
                 logger.debug(f"[工况信息格式3/5] 第{row_idx}行列数不足4列，跳过")
                 continue
             
-            # 检查是否是项目名称行（整行合并，如"蕲昌220kV变电站"）
-            if len(row) > 0 and row[0].strip() and len([c for c in row if c.strip()]) == 1:
-                # 可能是项目名称行，跳过
-                logger.debug(f"[工况信息格式3/5] 跳过项目名称行: {row[0]}")
+            # 检查是否是表头行（包含"名称"、"时间"、"最大值"、"最小值"等关键词）
+            if any(keyword in " ".join(row[:5]).lower() for keyword in ["名称", "时间", "最大值", "最小值", "电压", "电流", "有功", "无功"]):
+                logger.debug(f"[工况信息格式3/5] 跳过表头行: {row[:3]}")
                 continue
+            
+            # 检查是否是项目名称行（整行合并，如"蕲昌220kV变电站"、"输电线路"）
+            # 项目名称行通常只有第0列有值，其他列都为空（因为colspan）
+            non_empty_cols = [i for i, cell in enumerate(row) if cell.strip()]
+            if len(non_empty_cols) == 1 and non_empty_cols[0] == 0:
+                # 检查内容是否是项目名称（不包含"主变"、"#"、"线"等设备名称关键词）
+                cell_value = row[0].strip()
+                if not any(k in cell_value for k in ["主变", "#", "线"]):
+                    # 可能是项目名称行，跳过
+                    logger.debug(f"[工况信息格式3/5] 跳过项目名称行: {cell_value}")
+                    continue
             
             # 更新名称（如果有值）
             if name_idx < len(row) and row[name_idx].strip():
