@@ -587,14 +587,30 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
             with open(json_file, 'r', encoding='utf-8') as f:
                 ocr_data = json.load(f)
 
-            # 提取rec_texts字段
+            # 优先提取rec_texts字段（如果存在）
             if "rec_texts" in ocr_data and isinstance(ocr_data["rec_texts"], list):
                 texts = ocr_data["rec_texts"]
-                logger.info(f"[PaddleOCR OCR] 成功提取 {len(texts)} 个文本片段")
+                logger.info(f"[PaddleOCR OCR] 成功提取 {len(texts)} 个文本片段（从rec_texts）")
                 return texts, json_file
-            else:
-                logger.warning("[PaddleOCR OCR] JSON文件中未找到rec_texts字段")
-                return None, json_file
+            
+            # 如果没有rec_texts，尝试从parsing_res_list中提取block_content
+            if "parsing_res_list" in ocr_data and isinstance(ocr_data["parsing_res_list"], list):
+                texts = []
+                for item in ocr_data["parsing_res_list"]:
+                    if isinstance(item, dict) and "block_content" in item:
+                        block_content = item["block_content"]
+                        if block_content and block_content.strip():
+                            # 如果block_content包含换行符，按行分割
+                            if "\n" in block_content:
+                                texts.extend([line.strip() for line in block_content.split("\n") if line.strip()])
+                            else:
+                                texts.append(block_content.strip())
+                if texts:
+                    logger.info(f"[PaddleOCR OCR] 成功提取 {len(texts)} 个文本片段（从parsing_res_list）")
+                    return texts, json_file
+            
+            logger.warning("[PaddleOCR OCR] JSON文件中未找到rec_texts或parsing_res_list字段")
+            return None, json_file
 
         except Exception as e:
             logger.exception(f"[PaddleOCR OCR] 读取JSON文件失败: {e}")
@@ -1139,10 +1155,10 @@ def fallback_parse_with_paddleocr(
             logger.error("[PaddleOCR备用] PaddleOCR返回格式不正确")
             return None
         
-        # 调用paddleocr doc_parser提取关键词来补充数据
-        logger.info("[PaddleOCR备用] 调用doc_parser提取关键词补充数据")
+        # 调用paddleocr ocr提取关键词来补充数据
+        logger.info("[PaddleOCR备用] 调用OCR提取关键词补充数据")
         ocr_save_path = os.path.dirname(image_path)  # 使用图片所在目录作为保存路径
-        ocr_texts, _ = call_paddleocr_doc_parser_for_text(image_path, ocr_save_path)
+        ocr_texts, _ = call_paddleocr_ocr(image_path, ocr_save_path)
         
         if ocr_texts:
             # 从OCR文本中提取关键词
