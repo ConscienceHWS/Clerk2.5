@@ -569,9 +569,12 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
                 for idx, cell in enumerate(first_data_row):
                     # 跳过已知的列（时间列和项目列）
                     if idx != time_idx and idx != project_idx and cell.strip():
-                        if any(k in cell for k in ["主变", "#"]):
+                        # 支持主变格式（包含"主变"或"#"）和输电线路格式（包含"kV"和"线"）
+                        if (any(k in cell for k in ["主变", "#"]) or 
+                            ("kV" in cell and "线" in cell) or
+                            ("kV" in cell)):
                             name_idx = idx
-                            logger.debug(f"[工况信息opStatus] 从数据行推断名称列索引: {name_idx}")
+                            logger.debug(f"[工况信息opStatus] 从数据行推断名称列索引: {name_idx}, 内容='{cell}'")
                             break
         
         # 如果仍然没有找到名称列，但找到了项目列，则名称列通常在项目列之后
@@ -633,7 +636,20 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
                     logger.debug(f"[工况信息opStatus] 第{row_idx}行疑似噪声数据行，跳过: 第一列或名称列='{check_cell}'")
             
             # 只有当名称存在且不是噪声数据行时才创建工况信息记录
-            if name_value and any(k in name_value for k in ["主变", "#"]) and not is_noise_row:
+            # 放宽名称验证：支持主变（包含"主变"或"#"）和输电线路（包含"kV"和"线"）
+            is_valid_name = False
+            if name_value:
+                # 主变格式：包含"主变"或"#"
+                if any(k in name_value for k in ["主变", "#"]):
+                    is_valid_name = True
+                # 输电线路格式：包含"kV"和"线"
+                elif "kV" in name_value and "线" in name_value:
+                    is_valid_name = True
+                # 其他可能的格式：包含"kV"（可能是其他设备）
+                elif "kV" in name_value:
+                    is_valid_name = True
+            
+            if is_valid_name and not is_noise_row:
                 # 进一步验证：必须有电压或电流或功率列，否则可能是噪声数据行
                 if voltage_idx == -1 and current_idx == -1 and active_power_idx == -1 and reactive_power_idx == -1:
                     logger.debug(f"[工况信息opStatus] 第{row_idx}行没有找到电压/电流/功率列，跳过: name='{name_value}'")
