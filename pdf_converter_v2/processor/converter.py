@@ -177,16 +177,6 @@ async def convert_to_markdown(
         logger.error(f"输入文件不存在: {input_file}")
         return None
 
-    if forced_document_type == "operatingConditionInfo":
-        logger.info("[convert_to_markdown] opStatus 文档使用 PaddleOCR 解析流程")
-        return await _convert_with_paddle(
-            input_file=input_file,
-            output_dir=output_dir,
-            embed_images=embed_images,
-            output_json=output_json,
-            forced_document_type=forced_document_type,
-        )
-
     # 生成文件名
     file_name = f'{safe_stem(Path(input_file).stem)}_{time.strftime("%y%m%d_%H%M%S")}'
     
