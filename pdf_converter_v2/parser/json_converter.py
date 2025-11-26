@@ -133,7 +133,8 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                     result,
                     original_markdown,
                     output_dir=output_dir,
-                    document_type=result.get("document_type")
+                    document_type=result.get("document_type"),
+                    input_file=input_file
                 )
                 
                 if fallback_markdown:
