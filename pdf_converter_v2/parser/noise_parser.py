@@ -114,11 +114,12 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
     temp_pattern = r'温度\s*([0-9.\-]+)[℃°C]?'
     # 湿度模式：湿度后跟数字，直到遇到"%RH"或"风速"
     humidity_pattern = r'湿度\s*([0-9.\-]+)[%RH]?'
-    # 风速模式：风速后跟数字和"m/s"
-    wind_speed_pattern = r'风速\s*([0-9.\-]+)\s*m/s'
-    # 风向模式：风向后跟方向描述，直到遇到"日期"或文本结束
+    # 风速模式：风速后跟数字和"m/s"，支持~符号（如2.1~3.1）
+    wind_speed_pattern = r'风速\s*([0-9.~\-]+)\s*m/s'
+    # 风向模式：风向后跟方向描述，直到遇到"日期"、"气候条件"或文本结束
     # 注意：不能排除"风"字，否则"南风"只能匹配到"南"
-    wind_dir_pattern = r'风向\s*([^\s日期温度湿度]+?)(?=\s*(?:日期|温度|湿度|风速)|$)'
+    # 需要处理"气候条件"紧跟在风向后的情况（如"西北气候条件"）
+    wind_dir_pattern = r'风向\s*([^\s日期温度湿度气候条件]+?)(?=\s*(?:日期|温度|湿度|风速|气候条件)|$)'
     
     # 找到所有日期位置，然后为每个日期解析一条记录
     dates = list(re.finditer(date_pattern, weather_text))
@@ -165,10 +166,10 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
             weather.humidity = humidity
             logger.debug(f"[噪声检测] 提取到湿度: {weather.humidity}")
         
-        # 提取风速（格式：风速0.9-1.0 m/s 或 风速 0.9-1.0 m/s）
+        # 提取风速（格式：风速0.9-1.0 m/s 或 风速 0.9-1.0 m/s，支持~符号但输出时转换为-）
         ws_match = re.search(wind_speed_pattern, section)
         if ws_match:
-            wind_speed = ws_match.group(1).strip()
+            wind_speed = ws_match.group(1).strip().replace("~", "-")
             weather.windSpeed = wind_speed
             logger.debug(f"[噪声检测] 提取到风速: {weather.windSpeed}")
         
@@ -177,9 +178,13 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
         wd_match = re.search(wind_dir_pattern, section)
         if wd_match:
             wind_dir_value = wd_match.group(1).strip()
-            # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
+            # 如果风向值包含"气候条件"，需要截断（处理"西北气候条件"这种情况）
+            if "气候条件" in wind_dir_value:
+                wind_dir_value = wind_dir_value.split("气候条件")[0].strip()
+            # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"、"气候条件"等关键词
             if wind_dir_value and "日期" not in wind_dir_value and "温度" not in wind_dir_value and \
                "湿度" not in wind_dir_value and "风速" not in wind_dir_value and \
+               "气候条件" not in wind_dir_value and \
                not wind_dir_value.startswith("日期") and len(wind_dir_value) < 50:  # 风向值不应该太长
                 weather.windDirection = wind_dir_value
                 logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
@@ -213,11 +218,12 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
         temp_pattern = r'温度\s*([0-9.\-]+)[℃°C]?'
         # 湿度模式：湿度后跟数字和单位，直到遇到"风速"或其他字段
         humidity_pattern = r'湿度\s*([0-9.\-]+)[%RH]?'
-        # 风速模式：风速后跟数字和单位，直到遇到"风向"或其他字段
-        wind_speed_pattern = r'风速\s*([0-9.\-]+)\s*m/s'
-        # 风向模式：风向后跟方向描述，直到遇到"日期"或文本结束
+        # 风速模式：风速后跟数字和单位，直到遇到"风向"或其他字段，支持~符号（如2.1~3.1）
+        wind_speed_pattern = r'风速\s*([0-9.~\-]+)\s*m/s'
+        # 风向模式：风向后跟方向描述，直到遇到"日期"、"气候条件"或文本结束
         # 注意：不能排除"风"字，否则"南风"只能匹配到"南"
-        wind_dir_pattern = r'风向\s*([^\s日期温度湿度]+?)(?=\s*(?:日期|温度|湿度|风速)|$)'
+        # 需要处理"气候条件"紧跟在风向后的情况（如"西北气候条件"）
+        wind_dir_pattern = r'风向\s*([^\s日期温度湿度气候条件]+?)(?=\s*(?:日期|温度|湿度|风速|气候条件)|$)'
         
         # 找到所有日期位置，然后为每个日期解析一条记录
         dates = list(re.finditer(date_pattern, weather_text))
@@ -260,10 +266,10 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
                 weather.humidity = humidity
                 logger.debug(f"[噪声检测] 提取到湿度: {weather.humidity}")
             
-            # 提取风速（格式：风速0.9-1.0 m/s 或 风速 0.9-1.0 m/s）
+            # 提取风速（格式：风速0.9-1.0 m/s 或 风速 0.9-1.0 m/s，支持~符号但输出时转换为-）
             ws_match = re.search(wind_speed_pattern, section)
             if ws_match:
-                wind_speed = ws_match.group(1).strip()
+                wind_speed = ws_match.group(1).strip().replace("~", "-")
                 weather.windSpeed = wind_speed
                 logger.debug(f"[噪声检测] 提取到风速: {weather.windSpeed}")
             
@@ -272,9 +278,13 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
             wd_match = re.search(wind_dir_pattern, section)
             if wd_match:
                 wind_dir_value = wd_match.group(1).strip()
-                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
+                # 如果风向值包含"气候条件"，需要截断（处理"西北气候条件"这种情况）
+                if "气候条件" in wind_dir_value:
+                    wind_dir_value = wind_dir_value.split("气候条件")[0].strip()
+                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"、"气候条件"等关键词
                 if wind_dir_value and "日期" not in wind_dir_value and "温度" not in wind_dir_value and \
                    "湿度" not in wind_dir_value and "风速" not in wind_dir_value and \
+                   "气候条件" not in wind_dir_value and \
                    not wind_dir_value.startswith("日期") and len(wind_dir_value) < 50:  # 风向值不应该太长
                     weather.windDirection = wind_dir_value
                     logger.debug(f"[噪声检测] 提取到风向: {weather.windDirection}")
@@ -454,18 +464,22 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             if humidity_match:
                 weather.humidity = humidity_match.group(1).strip()
             
-            wind_speed_match = re.search(r'风速[:：]\s*([0-9.\-]+)', weather_line)
+            wind_speed_match = re.search(r'风速[:：]\s*([0-9.~\-]+)', weather_line)
             if wind_speed_match:
-                weather.windSpeed = wind_speed_match.group(1).strip()
+                weather.windSpeed = wind_speed_match.group(1).strip().replace("~", "-")
             
             # 注意：不能排除"风"字，否则"南风"只能匹配到"南"
-            # 使用非贪婪匹配，匹配到下一个字段名或行尾
-            wind_dir_match = re.search(r'风向[:：]\s*([^\s日期温度湿度]+?)(?=\s*(?:日期|温度|湿度|风速)|$)', weather_line)
+            # 使用非贪婪匹配，匹配到下一个字段名或行尾，需要处理"气候条件"
+            wind_dir_match = re.search(r'风向[:：]\s*([^\s日期温度湿度气候条件]+?)(?=\s*(?:日期|温度|湿度|风速|气候条件)|$)', weather_line)
             if wind_dir_match:
                 wind_dir_value = wind_dir_match.group(1).strip()
-                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
+                # 如果风向值包含"气候条件"，需要截断（处理"西北气候条件"这种情况）
+                if "气候条件" in wind_dir_value:
+                    wind_dir_value = wind_dir_value.split("气候条件")[0].strip()
+                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"、"气候条件"等关键词
                 if wind_dir_value and "日期" not in wind_dir_value and "温度" not in wind_dir_value and \
                    "湿度" not in wind_dir_value and "风速" not in wind_dir_value and \
+                   "气候条件" not in wind_dir_value and \
                    not wind_dir_value.startswith("日期") and len(wind_dir_value) < 50:  # 风向值不应该太长
                     weather.windDirection = wind_dir_value
                 else:
@@ -544,18 +558,22 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             if humidity_match:
                 ocr_weather.humidity = humidity_match.group(1).strip()
             
-            wind_speed_match = re.search(r'风速[:：]\s*([0-9.\-]+)', weather_line)
+            wind_speed_match = re.search(r'风速[:：]\s*([0-9.~\-]+)', weather_line)
             if wind_speed_match:
-                ocr_weather.windSpeed = wind_speed_match.group(1).strip()
+                ocr_weather.windSpeed = wind_speed_match.group(1).strip().replace("~", "-")
             
             # 注意：不能排除"风"字，否则"南风"只能匹配到"南"
-            # 使用非贪婪匹配，匹配到下一个字段名或行尾
-            wind_dir_match = re.search(r'风向[:：]\s*([^\s日期温度湿度]+?)(?=\s*(?:日期|温度|湿度|风速)|$)', weather_line)
+            # 使用非贪婪匹配，匹配到下一个字段名或行尾，需要处理"气候条件"
+            wind_dir_match = re.search(r'风向[:：]\s*([^\s日期温度湿度气候条件]+?)(?=\s*(?:日期|温度|湿度|风速|气候条件)|$)', weather_line)
             if wind_dir_match:
                 wind_dir_value = wind_dir_match.group(1).strip()
-                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"等关键词
+                # 如果风向值包含"气候条件"，需要截断（处理"西北气候条件"这种情况）
+                if "气候条件" in wind_dir_value:
+                    wind_dir_value = wind_dir_value.split("气候条件")[0].strip()
+                # 验证风向值：不应该包含"日期"、"温度"、"湿度"、"风速"、"气候条件"等关键词
                 if wind_dir_value and "日期" not in wind_dir_value and "温度" not in wind_dir_value and \
                    "湿度" not in wind_dir_value and "风速" not in wind_dir_value and \
+                   "气候条件" not in wind_dir_value and \
                    not wind_dir_value.startswith("日期") and len(wind_dir_value) < 50:  # 风向值不应该太长
                     ocr_weather.windDirection = wind_dir_value
                 else:
