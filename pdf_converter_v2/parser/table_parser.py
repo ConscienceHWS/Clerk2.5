@@ -519,7 +519,14 @@ def parse_operational_conditions_opstatus(markdown_content: str) -> List[Operati
         has_two_row_header = False
         if len(table) > 1:
             second_row_text = normalize_text(" ".join(table[1]))
-            if any(k in second_row_text for k in ["u(kv)", "i(a)", "p(mw)", "q(mvar)"]):
+            # 兼容带空格和不带空格的写法，例如 "U (kV)" / "U(kV)"
+            if (
+                any(k in second_row_text for k in ["u(kv)", "i(a)", "p(mw)", "q(mvar)"])
+                or ("u" in second_row_text and "kv" in second_row_text)
+                or ("i" in second_row_text and "a" in second_row_text)
+                or ("p" in second_row_text and "mw" in second_row_text)
+                or ("q" in second_row_text and "mvar" in second_row_text)
+            ):
                 has_two_row_header = True
                 logger.debug("[工况信息opStatus] 检测到两行表头格式")
         
