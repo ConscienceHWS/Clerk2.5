@@ -744,21 +744,26 @@ def parse_operational_conditions_format3_5(markdown_content: str) -> List[Operat
         # 从数据行检查：如果电压列第一列包含"昼间"、"夜间"等时间段关键词，则是格式3/5
         is_format3_5 = False
         if len(table) > 2:
+            logger.debug(f"[工况信息格式3/5] 开始检查格式3/5特征，表格行数: {len(table)}")
             for row_idx in range(2, min(5, len(table))):  # 检查前几行数据
                 row = table[row_idx]
+                logger.debug(f"[工况信息格式3/5] 检查第{row_idx}行，列数: {len(row)}, 内容: {row[:6]}")
                 if len(row) >= 4:  # 至少需要名称、时间、电压列
-                    # 电压列通常在索引2或3（跳过名称和时间列）
-                    for col_idx in range(2, min(5, len(row))):
+                    # 电压列可能在索引2或3（格式3在列2，格式5在列3，因为时间列有colspan=2）
+                    # 扩大检查范围到列2-6，以覆盖格式3和格式5
+                    for col_idx in range(2, min(7, len(row))):
                         cell = row[col_idx].strip()
-                        if any(k in cell for k in ["昼间", "夜间", "次日", "~", ":"]) and not re.match(r'^[\d.\-]+$', cell):
+                        # 处理可能的换行符（如"昼间\n10:00~17:00"）
+                        cell_normalized = cell.replace("\n", " ").replace("\r", " ").strip()
+                        if cell_normalized and any(k in cell_normalized for k in ["昼间", "夜间", "次日", "~", ":"]) and not re.match(r'^[\d.\-]+$', cell_normalized):
                             is_format3_5 = True
-                            logger.debug(f"[工况信息格式3/5] 检测到格式3/5特征：电压列包含时间段 '{cell}'")
+                            logger.info(f"[工况信息格式3/5] 检测到格式3/5特征：第{row_idx}行列{col_idx}包含时间段 '{cell_normalized}'")
                             break
                     if is_format3_5:
                         break
         
         if not is_format3_5:
-            logger.debug("[工况信息格式3/5] 未检测到格式3/5特征，跳过")
+            logger.warning("[工况信息格式3/5] 未检测到格式3/5特征（电压列包含时间段），跳过该表格")
             continue
         
         # 确定列索引
@@ -768,14 +773,20 @@ def parse_operational_conditions_format3_5(markdown_content: str) -> List[Operat
         # 格式5：名称、时间（colspan=2，占用2列）、电压时间段、电压最大值、电压最小值、电流最大值、电流最小值...
         
         # 动态检测时间列是否有colspan=2（通过检查数据行的列数）
-        # 如果数据行有12列或更多，说明时间列有colspan=2
+        # 格式3：名称(1) + 时间(1) + 电压(2) + 电流(2) + 有功(2) + 无功(2) = 10列
+        # 格式5：名称(1) + 时间(2) + 电压(2) + 电流(2) + 有功(2) + 无功(2) = 11列
         has_time_colspan2 = False
         if len(table) > 2:
             for row_idx in range(2, min(5, len(table))):
                 row = table[row_idx]
-                if len(row) >= 12:  # 格式5：名称(1) + 时间(2) + 电压(2) + 电流(2) + 有功(2) + 无功(2) = 11列，加上可能的空列
+                logger.debug(f"[工况信息格式3/5] 检查第{row_idx}行，列数: {len(row)}")
+                if len(row) >= 11:  # 格式5：名称(1) + 时间(2) + 电压(2) + 电流(2) + 有功(2) + 无功(2) = 11列
                     has_time_colspan2 = True
-                    logger.debug(f"[工况信息格式3/5] 检测到时间列有colspan=2（格式5），数据行有{len(row)}列")
+                    logger.info(f"[工况信息格式3/5] 检测到时间列有colspan=2（格式5），数据行有{len(row)}列")
+                    break
+                elif len(row) >= 10:
+                    # 格式3：10列
+                    logger.debug(f"[工况信息格式3/5] 检测到格式3，数据行有{len(row)}列")
                     break
         
         name_idx = 0
@@ -808,11 +819,14 @@ def parse_operational_conditions_format3_5(markdown_content: str) -> List[Operat
         current_name = ""
         current_time = ""
         
+        logger.info(f"[工况信息格式3/5] 开始解析数据行，表格总行数: {len(table)}, 从第3行（索引2）开始")
         for row_idx in range(2, len(table)):
             row = table[row_idx]
+            logger.debug(f"[工况信息格式3/5] 处理第{row_idx}行，列数: {len(row)}, 前5列: {row[:5]}")
             
             # 至少需要4列
             if len(row) < 4:
+                logger.debug(f"[工况信息格式3/5] 第{row_idx}行列数不足4列，跳过")
                 continue
             
             # 检查是否是项目名称行（整行合并，如"蕲昌220kV变电站"）
