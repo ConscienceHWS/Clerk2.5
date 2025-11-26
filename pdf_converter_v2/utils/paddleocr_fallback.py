@@ -948,25 +948,46 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
                 # 查找风向（可能格式：风向南风 或 在"m/s风向"之后的文本中，或 "_m/s风向南风" 或 "m/s风向南风"）
                 if not current_weather_info["windDirection"]:
                     # 先检查当前文本是否包含风向值（格式：风向南风）
-                    wind_dir_match = re.search(r'风向\s*([^\s]+)', text)
+                    # 改进正则表达式，匹配更长的风向值（如"南风"、"东北"、"东偏北"等）
+                    wind_dir_match = re.search(r'风向\s*([^\s日期温度湿度风速]+)', text)
                     if wind_dir_match:
                         wind_value = wind_dir_match.group(1).strip()
                         # 确保不是"m/s"或数字
                         if wind_value and wind_value != "m/s" and not re.match(r'^[0-9.\-]+$', wind_value):
+                            # 如果只匹配到单个方向字（如"南"），检查下一个文本片段是否是"风"
+                            if len(wind_value) == 1 and i + 1 < len(ocr_texts):
+                                next_text = ocr_texts[i + 1].strip()
+                                # 如果下一个文本是"风"，合并为"南风"等
+                                if next_text == "风" or next_text.startswith("风"):
+                                    wind_value = wind_value + "风"
+                                    logger.debug(f"[关键词提取] 合并风向值: {wind_value}")
                             current_weather_info["windDirection"] = wind_value
                     # 如果当前文本是"m/s风向"或"_m/s风向"格式，风向值在同一文本中（如 "_m/s风向南风" 或 "m/s风向南风"）
                     if not current_weather_info["windDirection"]:
-                        wind_dir_match = re.search(r'[_\s]*m/s\s*风向\s*([^\s]+)', text)
+                        wind_dir_match = re.search(r'[_\s]*m/s\s*风向\s*([^\s日期温度湿度风速]+)', text)
                         if wind_dir_match:
                             wind_value = wind_dir_match.group(1).strip()
                             if wind_value and not re.match(r'^[0-9.\-]+$', wind_value):
+                                # 如果只匹配到单个方向字，检查下一个文本片段
+                                if len(wind_value) == 1 and i + 1 < len(ocr_texts):
+                                    next_text = ocr_texts[i + 1].strip()
+                                    if next_text == "风" or next_text.startswith("风"):
+                                        wind_value = wind_value + "风"
+                                        logger.debug(f"[关键词提取] 合并风向值: {wind_value}")
                                 current_weather_info["windDirection"] = wind_value
                     # 如果当前文本是"m/s"或类似格式，风向值可能在下一行
                     if not current_weather_info["windDirection"]:
                         if ("m/s" in text or "风向" in text) and i + 1 < len(ocr_texts):
-                            next_text = ocr_texts[i + 1]
+                            next_text = ocr_texts[i + 1].strip()
                             if next_text and not re.match(r'^[0-9.\-]+', next_text) and "风向" not in next_text:
-                                current_weather_info["windDirection"] = next_text.strip()
+                                wind_value = next_text
+                                # 如果下一个文本是单个方向字，再检查下下个文本是否是"风"
+                                if len(wind_value) == 1 and i + 2 < len(ocr_texts):
+                                    next_next_text = ocr_texts[i + 2].strip()
+                                    if next_next_text == "风" or next_next_text.startswith("风"):
+                                        wind_value = wind_value + "风"
+                                        logger.debug(f"[关键词提取] 合并风向值: {wind_value}")
+                                current_weather_info["windDirection"] = wind_value
     
     # 保存最后一个天气记录
     if current_weather_info and any([current_weather_info["monitorAt"], current_weather_info["weather"], 
