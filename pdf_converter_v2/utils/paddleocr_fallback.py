@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import time
 import random
+import fcntl
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 import ast
@@ -32,13 +33,132 @@ except ImportError:
     logger.warning("[PaddleOCR备用] PIL未安装，无法处理图片")
 
 
-def stop_mineru_service() -> bool:
-    """停止mineru-api.service以释放GPU内存
+# 用于管理mineru服务状态的锁文件路径
+MINERU_LOCK_FILE = "/tmp/mineru_service_lock"
+MINERU_COUNT_FILE = "/tmp/mineru_service_count"
+
+
+def _acquire_service_lock() -> Optional[object]:
+    """获取服务操作锁（文件锁）
     
     Returns:
-        True表示成功停止，False表示失败或服务不存在
+        文件对象（用于释放锁），如果失败返回None
     """
     try:
+        lock_file = open(MINERU_LOCK_FILE, 'w')
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_file
+    except (IOError, OSError) as e:
+        logger.debug(f"[PaddleOCR] 获取服务锁失败（可能其他进程正在操作）: {e}")
+        return None
+
+
+def _release_service_lock(lock_file: object) -> None:
+    """释放服务操作锁
+    
+    Args:
+        lock_file: 锁文件对象
+    """
+    try:
+        if lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            lock_file.close()
+    except Exception as e:
+        logger.warning(f"[PaddleOCR] 释放服务锁失败: {e}")
+
+
+def _increment_service_count(lock_file: object) -> int:
+    """增加服务使用计数（需要在锁保护下调用）
+    
+    Args:
+        lock_file: 已获取的锁文件对象
+    
+    Returns:
+        当前计数
+    """
+    try:
+        count = 0
+        if os.path.exists(MINERU_COUNT_FILE):
+            with open(MINERU_COUNT_FILE, 'r') as f:
+                count = int(f.read().strip() or '0')
+        count += 1
+        with open(MINERU_COUNT_FILE, 'w') as f:
+            f.write(str(count))
+        return count
+    except Exception as e:
+        logger.warning(f"[PaddleOCR] 增加服务计数失败: {e}")
+        return 1
+
+
+def _decrement_service_count(lock_file: object) -> int:
+    """减少服务使用计数（需要在锁保护下调用）
+    
+    Args:
+        lock_file: 已获取的锁文件对象
+    
+    Returns:
+        当前计数
+    """
+    try:
+        count = 0
+        if os.path.exists(MINERU_COUNT_FILE):
+            with open(MINERU_COUNT_FILE, 'r') as f:
+                count = int(f.read().strip() or '0')
+        count = max(0, count - 1)
+        with open(MINERU_COUNT_FILE, 'w') as f:
+            f.write(str(count))
+        return count
+    except Exception as e:
+        logger.warning(f"[PaddleOCR] 减少服务计数失败: {e}")
+        return 0
+
+
+def stop_mineru_service() -> bool:
+    """停止mineru-api.service以释放GPU内存（线程安全）
+    
+    Returns:
+        True表示成功停止或已停止，False表示失败
+    """
+    lock_file = _acquire_service_lock()
+    if not lock_file:
+        # 如果无法获取锁，等待一小段时间后检查服务状态
+        time.sleep(0.5)
+        try:
+            result = subprocess.run(
+                ["systemctl", "is-active", "mineru-api.service"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False
+            )
+            if result.returncode != 0 or result.stdout.strip() != "active":
+                # 服务已经停止
+                logger.debug("[PaddleOCR] 服务已停止（其他进程已处理）")
+                return True
+        except Exception:
+            pass
+        return False
+    
+    try:
+        # 检查服务当前状态
+        result = subprocess.run(
+            ["systemctl", "is-active", "mineru-api.service"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False
+        )
+        is_active = result.returncode == 0 and result.stdout.strip() == "active"
+        
+        if not is_active:
+            logger.debug("[PaddleOCR] mineru-api.service已经停止")
+            return True
+        
+        # 增加使用计数（在锁保护下）
+        count = _increment_service_count(lock_file)
+        logger.debug(f"[PaddleOCR] 服务使用计数: {count}")
+        
+        # 停止服务
         result = subprocess.run(
             ["systemctl", "stop", "mineru-api.service"],
             capture_output=True,
@@ -50,21 +170,69 @@ def stop_mineru_service() -> bool:
             logger.info("[PaddleOCR] 成功停止mineru-api.service以释放GPU内存")
             return True
         else:
-            # 服务可能不存在或已经停止
-            logger.debug(f"[PaddleOCR] 停止mineru-api.service失败或服务不存在: {result.stderr}")
+            logger.warning(f"[PaddleOCR] 停止mineru-api.service失败: {result.stderr}")
+            _decrement_service_count(lock_file)  # 回滚计数
             return False
     except Exception as e:
         logger.warning(f"[PaddleOCR] 停止mineru-api.service时出错: {e}")
+        if lock_file:
+            _decrement_service_count(lock_file)  # 回滚计数
         return False
+    finally:
+        _release_service_lock(lock_file)
 
 
 def start_mineru_service() -> bool:
-    """启动mineru-api.service
+    """启动mineru-api.service（线程安全）
     
     Returns:
-        True表示成功启动，False表示失败
+        True表示成功启动或已启动，False表示失败
     """
+    lock_file = _acquire_service_lock()
+    if not lock_file:
+        # 如果无法获取锁，等待一小段时间后检查服务状态
+        time.sleep(0.5)
+        try:
+            result = subprocess.run(
+                ["systemctl", "is-active", "mineru-api.service"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False
+            )
+            if result.returncode == 0 and result.stdout.strip() == "active":
+                # 服务已经启动
+                logger.debug("[PaddleOCR] 服务已启动（其他进程已处理）")
+                return True
+        except Exception:
+            pass
+        return False
+    
     try:
+        # 减少使用计数（在锁保护下）
+        count = _decrement_service_count(lock_file)
+        logger.debug(f"[PaddleOCR] 服务使用计数: {count}")
+        
+        # 如果还有其他进程在使用，不启动服务
+        if count > 0:
+            logger.info(f"[PaddleOCR] 还有其他进程在使用GPU（计数={count}），暂不启动mineru-api.service")
+            return True
+        
+        # 检查服务当前状态
+        result = subprocess.run(
+            ["systemctl", "is-active", "mineru-api.service"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False
+        )
+        is_active = result.returncode == 0 and result.stdout.strip() == "active"
+        
+        if is_active:
+            logger.debug("[PaddleOCR] mineru-api.service已经启动")
+            return True
+        
+        # 启动服务
         result = subprocess.run(
             ["systemctl", "start", "mineru-api.service"],
             capture_output=True,
@@ -81,6 +249,8 @@ def start_mineru_service() -> bool:
     except Exception as e:
         logger.warning(f"[PaddleOCR] 启动mineru-api.service时出错: {e}")
         return False
+    finally:
+        _release_service_lock(lock_file)
 
 
 def detect_file_type(file_path: str) -> Optional[str]:
