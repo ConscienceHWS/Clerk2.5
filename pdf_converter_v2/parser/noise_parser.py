@@ -36,6 +36,70 @@ def clean_project_field(project: str) -> str:
     return project
 
 
+def correct_address_ocr_errors(address: str) -> str:
+    """纠正address字段中的常见OCR识别错误
+    
+    常见错误模式：
+    1. "厂界外lm" -> "厂界外1m" (手写的"1m"被识别为"lm")
+    2. "住户17" -> "住户1F" (手写的"1F"被识别为"17")
+    3. "住户47" -> "住户4F" (手写的"4F"被识别为"47")
+    4. "T界" -> "厂界" (手写的"厂"被识别为"T")
+    5. "群星木业17" -> "群星木业1F"
+    6. "东海花园137" -> "东海花园13F" (手写的"13F"被识别为"137")
+    
+    Args:
+        address: 原始address字段值
+        
+    Returns:
+        纠正后的address字段值
+    """
+    if not address:
+        return address
+    
+    original_address = address
+    
+    # 1. 纠正 "厂界外lm" -> "厂界外1m"
+    # 匹配模式：厂界外 + lm（可能是手写的"1m"被识别为"lm"）
+    address = re.sub(r'厂界外lm\b', '厂界外1m', address)
+    
+    # 2. 纠正 "外lm" -> "外1m"（在"外"后面，如"五洲国际建材中心外lm"）
+    address = re.sub(r'外lm\b', '外1m', address)
+    
+    # 3. 纠正 "T界" -> "厂界"
+    address = re.sub(r'\bT界\b', '厂界', address)
+    
+    # 4. 纠正楼层号识别错误：数字+7 -> 数字+F
+    # 模式：地址末尾的数字+7组合，很可能是楼层号（如1F、2F、13F等）
+    # 根据实际案例：
+    # - "住户17" -> "住户1F" (1楼)
+    # - "住户47" -> "住户4F" (4楼)
+    # - "群星木业17" -> "群星木业1F" (1楼)
+    # - "群星木业47" -> "群星木业4F" (4楼)
+    # - "东海花园17" -> "东海花园1F" (1楼)
+    # - "东海花园137" -> "东海花园13F" (13楼)
+    # - "东海花园177" -> "东海花园17F" (17楼)
+    # - "东海花园217" -> "东海花园21F" (21楼)
+    # - "卓维商务楼17" -> "卓维商务楼1F" (1楼)
+    # - "卓维商务楼47" -> "卓维商务楼4F" (4楼)
+    
+    # 策略：先处理较长的模式（两位数+7），再处理较短的模式（单位数+7）
+    # 这样可以避免误判，例如"137"应该被识别为"13F"而不是"1F"
+    
+    # 4.1 先处理两位数+7的情况（如137 -> 13F, 177 -> 17F, 217 -> 21F）
+    # 匹配模式：地址末尾是两位数+7，且十位是1-2，个位是0-9
+    address = re.sub(r'([1-2][0-9])7\b', r'\1F', address)
+    
+    # 4.2 再处理单位数+7的情况（如17 -> 1F, 27 -> 2F, 97 -> 9F）
+    # 注意：这个规则在两位数规则之后执行，所以"137"已经被替换为"13F"，不会再次匹配
+    address = re.sub(r'([1-9])7\b', r'\1F', address)
+    
+    # 如果地址被修改了，记录日志
+    if address != original_address:
+        logger.info(f"[噪声检测] 纠正address字段OCR错误: '{original_address}' -> '{address}'")
+    
+    return address
+
+
 def normalize_standard_text(text: str) -> str:
     """标准字段中可能包含数学/LaTeX格式，需先清理"""
     if not text:
@@ -1359,7 +1423,9 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             if code_idx >= 0 and code_idx < len(row):
                 nd.code = row[code_idx].strip()
             if address_idx >= 0 and address_idx < len(row):
-                nd.address = row[address_idx].strip()
+                raw_address = row[address_idx].strip()
+                # 纠正address字段中的常见OCR识别错误
+                nd.address = correct_address_ocr_errors(raw_address)
             if source_idx >= 0 and source_idx < len(row):
                 nd.source = row[source_idx].strip()
             if dayMonitorAt_idx >= 0 and dayMonitorAt_idx < len(row):
