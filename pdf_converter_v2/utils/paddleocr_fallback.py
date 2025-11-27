@@ -32,6 +32,57 @@ except ImportError:
     logger.warning("[PaddleOCR备用] PIL未安装，无法处理图片")
 
 
+def stop_mineru_service() -> bool:
+    """停止mineru-api.service以释放GPU内存
+    
+    Returns:
+        True表示成功停止，False表示失败或服务不存在
+    """
+    try:
+        result = subprocess.run(
+            ["systemctl", "stop", "mineru-api.service"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False
+        )
+        if result.returncode == 0:
+            logger.info("[PaddleOCR] 成功停止mineru-api.service以释放GPU内存")
+            return True
+        else:
+            # 服务可能不存在或已经停止
+            logger.debug(f"[PaddleOCR] 停止mineru-api.service失败或服务不存在: {result.stderr}")
+            return False
+    except Exception as e:
+        logger.warning(f"[PaddleOCR] 停止mineru-api.service时出错: {e}")
+        return False
+
+
+def start_mineru_service() -> bool:
+    """启动mineru-api.service
+    
+    Returns:
+        True表示成功启动，False表示失败
+    """
+    try:
+        result = subprocess.run(
+            ["systemctl", "start", "mineru-api.service"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False
+        )
+        if result.returncode == 0:
+            logger.info("[PaddleOCR] 成功启动mineru-api.service")
+            return True
+        else:
+            logger.warning(f"[PaddleOCR] 启动mineru-api.service失败: {result.stderr}")
+            return False
+    except Exception as e:
+        logger.warning(f"[PaddleOCR] 启动mineru-api.service时出错: {e}")
+        return False
+
+
 def detect_file_type(file_path: str) -> Optional[str]:
     """通过文件内容（魔数）检测文件类型，不依赖扩展名
     
@@ -247,6 +298,9 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
     Returns:
         paddleocr解析结果，如果失败返回None
     """
+    # 在调用PaddleOCR前停止mineru服务以释放GPU内存
+    mineru_stopped = stop_mineru_service()
+    
     try:
         # 检查图片文件是否存在
         if not os.path.exists(image_path):
@@ -331,6 +385,10 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.exception(f"[PaddleOCR] 调用失败: {e}")
         return None
+    finally:
+        # 无论成功或失败，都尝试重启mineru服务
+        if mineru_stopped:
+            start_mineru_service()
 
 
 def extract_first_page_from_pdf(pdf_path: str, output_dir: str) -> Optional[str]:
@@ -566,6 +624,9 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
     Returns:
         (OCR识别的文本列表, JSON文件路径)，如果失败返回(None, None)
     """
+    # 在调用PaddleOCR前停止mineru服务以释放GPU内存
+    mineru_stopped = stop_mineru_service()
+    
     try:
         if not os.path.exists(image_path):
             logger.error(f"[PaddleOCR OCR] 图片文件不存在: {image_path}")
@@ -639,6 +700,10 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
     except Exception as e:
         logger.exception(f"[PaddleOCR OCR] 调用失败: {e}")
         return None, None
+    finally:
+        # 无论成功或失败，都尝试重启mineru服务
+        if mineru_stopped:
+            start_mineru_service()
 
 
 def call_paddleocr_doc_parser_for_text(image_path: str, save_path: str) -> tuple[Optional[List[str]], Optional[str]]:
