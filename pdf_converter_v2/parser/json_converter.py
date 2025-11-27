@@ -125,8 +125,11 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
     original_markdown = markdown_content
     
     if forced_document_type:
+        auto_weather_default = False
         if forced_document_type == "noiseMonitoringRecord":
-            data = parse_noise_detection_record(markdown_content, first_page_image=None, output_dir=output_dir).to_dict()
+            noise_record = parse_noise_detection_record(markdown_content, first_page_image=None, output_dir=output_dir)
+            auto_weather_default = getattr(noise_record, "_auto_weather_default_used", False)
+            data = noise_record.to_dict()
             result = {"document_type": forced_document_type, "data": data}
         elif forced_document_type == "electromagneticTestRecord":
             data = parse_electromagnetic_detection_record(markdown_content).to_dict()
@@ -260,6 +263,9 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
             try:
                 from ..utils.paddleocr_fallback import check_json_data_completeness
                 is_complete = check_json_data_completeness(result, result.get("document_type"))
+                if auto_weather_default and result.get("document_type") == "noiseMonitoringRecord":
+                    logger.warning("[JSON转换] 检测到天气字段使用默认值，尝试使用PaddleOCR备用解析")
+                    is_complete = False
                 
                 if not is_complete:
                     logger.warning(f"[JSON转换] 检测到数据缺失，尝试使用PaddleOCR备用解析")
@@ -291,11 +297,14 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
         
         return result
 
+    auto_weather_default = False
     doc_type = detect_document_type(markdown_content)
     
     if doc_type == "noise_detection":
         # v2版本不依赖OCR，first_page_image参数会被忽略
-        data = parse_noise_detection_record(markdown_content, first_page_image=None, output_dir=output_dir).to_dict()
+        noise_record = parse_noise_detection_record(markdown_content, first_page_image=None, output_dir=output_dir)
+        auto_weather_default = getattr(noise_record, "_auto_weather_default_used", False)
+        data = noise_record.to_dict()
         result = {"document_type": doc_type, "data": data}
     elif doc_type == "electromagnetic_detection":
         data = parse_electromagnetic_detection_record(markdown_content).to_dict()
@@ -309,6 +318,9 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
             # 检查是否需要备用解析
             from ..utils.paddleocr_fallback import check_json_data_completeness
             is_complete = check_json_data_completeness(result, result.get("document_type"))
+            if auto_weather_default and result.get("document_type") in ["noiseMonitoringRecord", "noise_detection"]:
+                logger.warning("[JSON转换] 检测到天气字段使用默认值，尝试使用PaddleOCR备用解析")
+                is_complete = False
             
             if not is_complete:
                 logger.warning(f"[JSON转换] 检测到数据缺失，尝试使用PaddleOCR备用解析")

@@ -16,6 +16,7 @@ class WeatherData:
         self.humidity: str = ""
         self.windSpeed: str = ""
         self.windDirection: str = ""
+        self._auto_filled_weather: bool = False
     
     def to_dict(self):
         return {

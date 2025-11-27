@@ -65,8 +65,8 @@ def correct_address_ocr_errors(address: str) -> str:
     # 2. 纠正 "外lm" -> "外1m"（在"外"后面，如"五洲国际建材中心外lm"）
     address = re.sub(r'外lm\b', '外1m', address)
     
-    # 3. 纠正 "T界" -> "厂界"
-    address = re.sub(r'\bT界\b', '厂界', address)
+    # 3. 纠正 "T界"/"t界" -> "厂界"（手写“厂”容易被识别为T/t，且后面可能紧跟其他汉字）
+    address = re.sub(r'[Tt]界', '厂界', address)
     
     # 4. 纠正楼层号识别错误：数字+7 -> 数字+F
     # 模式：地址末尾的数字+7组合，很可能是楼层号（如1F、2F、13F等）
@@ -98,6 +98,13 @@ def correct_address_ocr_errors(address: str) -> str:
         logger.info(f"[噪声检测] 纠正address字段OCR错误: '{original_address}' -> '{address}'")
     
     return address
+
+
+def _mark_auto_weather_default(record: NoiseDetectionRecord, weather_obj: Optional[WeatherData] = None) -> None:
+    """标记天气字段使用了默认填充值"""
+    setattr(record, "_auto_weather_default_used", True)
+    if weather_obj is not None:
+        weather_obj._auto_filled_weather = True
 
 
 def normalize_standard_text(text: str) -> str:
@@ -261,6 +268,7 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
         # weather 为空且其它气象字段有任意一个不为空时，默认填入“晴”
         if not weather.weather.strip() and any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
             weather.weather = "晴"
+            _mark_auto_weather_default(record, weather)
         
         # 如果至少有一个字段不为空，则添加这条记录
         if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
@@ -363,6 +371,7 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
             # weather 为空且其它气象字段有任意一个不为空时，默认填入“晴”
             if not weather.weather.strip() and any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
                 weather.weather = "晴"
+                _mark_auto_weather_default(record, weather)
             
             # 如果至少有一个字段不为空，则添加这条记录
             if any([weather.monitorAt, weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
@@ -558,6 +567,8 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             if not weather.weather or not weather.weather.strip():
                 if any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
                     weather.weather = "晴"
+                    _mark_auto_weather_default(record, weather)
+                    _mark_auto_weather_default(record, weather)
             
             # 如果至少有一个字段不为空，添加到记录（即使monitorAt为空也先添加，后续会从表格中补充）
             if any([weather.weather, weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
@@ -652,6 +663,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             if not ocr_weather.weather or not ocr_weather.weather.strip():
                 if any([ocr_weather.temp, ocr_weather.humidity, ocr_weather.windSpeed, ocr_weather.windDirection]):
                     ocr_weather.weather = "晴"
+                    _mark_auto_weather_default(record, ocr_weather)
             
             # 检查是否已存在相同日期的MD天气记录
             if ocr_weather.monitorAt:
@@ -1068,6 +1080,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                         if not weather.weather or not weather.weather.strip():
                             if any([weather.temp, weather.humidity, weather.windSpeed, weather.windDirection]):
                                 weather.weather = "晴"
+                                _mark_auto_weather_default(record, weather)
                                 logger.debug(f"[噪声检测] 天气字段为空，但其他字段有值，默认为'晴': {weather.monitorAt}")
                         
                         # 如果至少有一个字段不为空，则添加这条记录
