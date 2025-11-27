@@ -237,36 +237,10 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                             break
             
             if is_opstatus_format:
-                logger.info("[JSON转换] 检测到'附件 工况及工程信息'格式（格式4），使用opStatus格式解析并转换为V2格式")
+                logger.info("[JSON转换] 检测到'附件 工况及工程信息'格式（格式4），使用opStatus格式解析，返回OperationalCondition格式")
                 op_list = parse_operational_conditions_opstatus(markdown_content)
-                # 将opStatus格式转换为V2格式（将范围值拆分为max/min）
-                from ..models.data_models import OperationalConditionV2
-                v2_list = []
-                for oc in (op_list or []):
-                    v2_oc = OperationalConditionV2()
-                    v2_oc.project = oc.project
-                    v2_oc.name = oc.name
-                    v2_oc.monitorAt = oc.monitorAt
-                    
-                    # 将范围值（如"111.56~115.24"）拆分为max和min
-                    def split_range(value_str):
-                        if not value_str or not value_str.strip():
-                            return "", ""
-                        value_str = value_str.strip()
-                        if "~" in value_str:
-                            parts = value_str.split("~", 1)
-                            return parts[0].strip(), parts[1].strip()
-                        # 如果没有~，尝试作为单个值（可能是最大值或最小值）
-                        return value_str, ""
-                    
-                    v2_oc.maxVoltage, v2_oc.minVoltage = split_range(oc.voltage)
-                    v2_oc.maxCurrent, v2_oc.minCurrent = split_range(oc.current)
-                    v2_oc.maxActivePower, v2_oc.minActivePower = split_range(oc.activePower)
-                    v2_oc.maxReactivePower, v2_oc.minReactivePower = split_range(oc.reactivePower)
-                    
-                    v2_list.append(v2_oc)
-                
-                serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in v2_list]
+                # 格式4直接返回OperationalCondition格式（旧格式），不转换为V2格式
+                serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
                 return {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
             
             # 3. 使用旧格式解析（先尝试有标题模式，如果失败则尝试无标题模式）
