@@ -1321,15 +1321,11 @@ def fallback_parse_with_paddleocr(
         补充后的markdown内容，如果失败返回None
     """
     try:
-        # 检查数据完整性
+        # 注意：调用方已经检查过数据完整性，这里不再重复检查
+        # 直接进行备用解析，因为调用方已经确定需要备用解析
         doc_type = document_type or json_data.get("document_type", "unknown")
-        is_complete = check_json_data_completeness(json_data, doc_type)
         
-        if is_complete:
-            logger.info("[PaddleOCR备用] 数据完整，无需使用备用解析")
-            return None
-        
-        logger.warning("[PaddleOCR备用] 检测到数据缺失，启用PaddleOCR备用解析")
+        logger.warning("[PaddleOCR备用] 启用PaddleOCR备用解析")
         
         # 检查缺失原因：如果是天气字段缺失，优先使用OCR模式
         use_ocr_mode = False
