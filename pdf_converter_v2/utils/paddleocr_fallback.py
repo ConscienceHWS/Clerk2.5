@@ -1562,33 +1562,6 @@ def fallback_parse_with_paddleocr(
         
         logger.warning("[PaddleOCR备用] 启用PaddleOCR备用解析")
         
-        # 检查缺失原因：如果是天气字段缺失，优先使用OCR模式
-        use_ocr_mode = False
-        if doc_type == "noiseMonitoringRecord":
-            data = json_data.get("data", {})
-            weather_list = data.get("weather") or []
-            if weather_list:
-                weather_label_tokens = {"天气", "天气状况", "天气情况"}
-                has_label_as_value = any(
-                    (item.get("weather") or "").strip() in weather_label_tokens for item in weather_list
-                )
-                all_wind_direction_missing = all(
-                    not (item.get("windDirection") or "").strip() for item in weather_list
-                )
-                # 检查是否有自动填充的天气标记
-                # 注意：JSON数据中的weather是字典，不是对象，所以不能直接用getattr
-                # 判断逻辑：如果weather值为"晴"且其他字段（temp/humidity/windSpeed）有值但windDirection为空，
-                # 很可能是默认填充的（因为默认填充时windDirection通常为空）
-                has_auto_filled_weather = any(
-                    (item.get("weather") or "").strip() == "晴" and 
-                    any([item.get("temp"), item.get("humidity"), item.get("windSpeed")]) and
-                    not (item.get("windDirection") or "").strip()
-                    for item in weather_list
-                )
-                if has_label_as_value or all_wind_direction_missing or has_auto_filled_weather:
-                    use_ocr_mode = True
-                    logger.info("[PaddleOCR备用] 检测到天气字段缺失，优先使用OCR模式提取文本")
-        
         # 尝试从markdown中提取图片路径
         image_path = None
         if output_dir:
@@ -1676,57 +1649,12 @@ def fallback_parse_with_paddleocr(
             logger.warning("[PaddleOCR备用] 未找到可用的图片文件，备用解析无法进行，返回None（将使用原始解析结果）")
             return None
         
-        # 根据缺失类型选择OCR模式
-        paddleocr_markdown = None
-        if use_ocr_mode:
-            # 天气字段缺失，优先使用OCR模式提取文本
-            logger.info("[PaddleOCR备用] 使用OCR模式提取文本（适合补充天气等字段）")
-            ocr_save_path = os.path.dirname(image_path) if os.path.dirname(image_path) else output_dir or os.path.dirname(image_path)
-            if not ocr_save_path:
-                ocr_save_path = os.path.dirname(image_path) or "."
-            
-            ocr_texts, ocr_json_path = call_paddleocr_ocr(image_path, ocr_save_path)
-            if ocr_texts:
-                # 从OCR文本中提取关键词
-                keywords = extract_keywords_from_ocr_texts(ocr_texts)
-                
-                # 将关键词信息添加到markdown中（作为注释，供后续解析使用）
-                keywords_comment = "\n\n<!-- OCR关键词补充:\n"
-                if keywords.get("project"):
-                    keywords_comment += f"项目名称：{keywords['project']}\n"
-                if keywords.get("standardReferences"):
-                    keywords_comment += f"检测依据：{keywords['standardReferences']}\n"
-                if keywords.get("soundLevelMeterMode"):
-                    keywords_comment += f"声级计型号/编号：{keywords['soundLevelMeterMode']}\n"
-                if keywords.get("soundCalibratorMode"):
-                    keywords_comment += f"声校准器型号/编号：{keywords['soundCalibratorMode']}\n"
-                if keywords.get("calibrationValueBefore"):
-                    keywords_comment += f"检测前校准值：{keywords['calibrationValueBefore']}\n"
-                if keywords.get("calibrationValueAfter"):
-                    keywords_comment += f"检测后校准值：{keywords['calibrationValueAfter']}\n"
-                if keywords.get("weather_info"):
-                    for weather in keywords["weather_info"]:
-                        keywords_comment += f"日期：{weather['monitorAt']} 天气：{weather['weather']} 温度：{weather['temp']} 湿度：{weather['humidity']} 风速：{weather['windSpeed']} 风向：{weather['windDirection']}\n"
-                keywords_comment += "-->\n"
-                
-                # 将关键词信息合并到原始markdown中
-                paddleocr_markdown = markdown_content + keywords_comment
-                logger.info(f"[PaddleOCR备用] OCR关键词提取完成，补充了天气等字段")
-                
-                # OCR模式成功，直接返回结果
-                return paddleocr_markdown
-            else:
-                logger.warning("[PaddleOCR备用] OCR模式提取文本失败，尝试使用doc_parser模式")
-                use_ocr_mode = False  # 降级到doc_parser模式
-        
-        # 如果OCR模式未使用或失败，使用doc_parser模式
-        if not use_ocr_mode:
-            # 其他字段缺失，使用doc_parser模式
-            logger.info("[PaddleOCR备用] 使用doc_parser模式解析文档结构")
-            paddleocr_result = call_paddleocr(image_path)
-            if not paddleocr_result:
-                logger.error("[PaddleOCR备用] PaddleOCR解析失败")
-                return None
+        # 使用doc_parser模式解析文档结构
+        logger.info("[PaddleOCR备用] 使用doc_parser模式解析文档结构")
+        paddleocr_result = call_paddleocr(image_path)
+        if not paddleocr_result:
+            logger.error("[PaddleOCR备用] PaddleOCR解析失败")
+            return None
         
         # 检查返回结果格式
         if "markdown_content" in paddleocr_result:
@@ -1773,7 +1701,7 @@ def fallback_parse_with_paddleocr(
             logger.error("[PaddleOCR备用] PaddleOCR返回格式不正确")
             return None
         
-        # 调用paddleocr ocr提取关键词来补充数据
+        # 调用paddleocr ocr提取关键词来补充数据（作为doc_parser的补充）
         logger.info("[PaddleOCR备用] 调用OCR提取关键词补充数据")
         ocr_save_path = os.path.dirname(image_path)  # 使用图片所在目录作为保存路径
         ocr_texts, _ = call_paddleocr_ocr(image_path, ocr_save_path)
