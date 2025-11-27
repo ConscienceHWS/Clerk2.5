@@ -24,11 +24,11 @@ def clean_project_field(project: str) -> str:
     if not project:
         return project
     
-    # 查找"检测依据"的位置
-    if "检测依据" in project:
-        idx = project.find("检测依据")
-        project = project[:idx].strip()
-        logger.debug(f"[噪声检测] 清理project字段，删除'检测依据'及之后内容: {project}")
+    # 查找"检测/监测/检查依据"的位置
+    match = re.search(r'(检测|监测|检查)依据', project)
+    if match:
+        project = project[:match.start()].strip()
+        logger.debug(f"[噪声检测] 清理project字段，删除'{match.group(0)}'及之后内容: {project}")
     
     # 清理末尾的标点符号（逗号、句号、分号、冒号等）
     project = re.sub(r'[，。；：,.;:]+$', '', project).strip()
@@ -123,6 +123,7 @@ def extract_standard_references(text: str) -> str:
         return ""
     
     text = normalize_standard_text(text.strip())
+    text = text.replace("☐", "□").replace("■", "□")
     text = re.sub(r'□其他[:：]?$', '', text).strip()
     gb_standards = re.findall(r'GB\s*\d+[-\.]?\d*[-\.]?\d*', text)
     if gb_standards:
@@ -211,8 +212,8 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
         w_match = re.search(weather_pattern_simple, section)
         if w_match:
             weather_value = w_match.group(1).strip()
-            # 如果提取到的值不是"温度"，则认为是天气值
-            if weather_value and weather_value != "温度":
+            # 如果提取到的值不是字段标签，则认为是天气值
+            if weather_value and weather_value not in {"温度", "天气", "天气状况", "天气情况"}:
                 weather.weather = weather_value
             logger.debug(f"[噪声检测] 提取到天气: {weather.weather}")
         
@@ -314,9 +315,11 @@ def parse_weather_from_text(weather_text: str, record: NoiseDetectionRecord) -> 
             
             # 提取天气（格式：天气 多云 或 天气多云）
             w_match = re.search(weather_pattern_simple, section)
-            if w_match:
-                weather.weather = w_match.group(1).strip()
-                logger.debug(f"[噪声检测] 提取到天气: {weather.weather}")
+        if w_match:
+            weather_value = w_match.group(1).strip()
+            if weather_value and weather_value not in {"温度", "天气", "天气状况", "天气情况"}:
+                weather.weather = weather_value
+            logger.debug(f"[噪声检测] 提取到天气: {weather.weather}")
             
             # 提取温度（格式：温度26.7-27.4℃ 或 温度 26.7-27.4℃）
             t_match = re.search(temp_pattern, section)
@@ -389,7 +392,7 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
     
     # 检查是否包含任何需要解析的字段
     has_any_field = any(keyword in cell_text for keyword in [
-        "项目名称", "检测依据", "监测依据", "声级计型号", "声校准器型号", 
+        "项目名称", "检测依据", "监测依据", "检查依据", "声级计型号", "声校准器型号", 
         "检测前校准值", "检测后校准值", "声纹计型号", "声级计校准器型号"
     ])
     if not has_any_field:
@@ -398,7 +401,7 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
     # 解析项目名称：项目名称:xxx（后面跟着检测依据或其他字段，可能没有分隔符）
     # 匹配模式：项目名称:xxx（直到检测依据、监测依据、声级计、声校准器、检测前、检测后或气象条件，或到字符串末尾）
     # 注意：项目名称后面可能直接跟着"检测依据"没有分隔符，也可能后面没有其他字段
-    project_match = re.search(r'项目名称[:：](.+?)(?:检测依据|监测依据|声级计|声校准器|检测前|检测后|气象条件|</td>|</tr>|$)', cell_text)
+    project_match = re.search(r'项目名称[:：](.+?)(?:检测依据|监测依据|检查依据|声级计|声校准器|检测前|检测后|气象条件|</td>|</tr>|$)', cell_text)
     if project_match:
         result["project"] = project_match.group(1).strip()
         # 如果提取到的项目名称为空，可能是正则表达式匹配到了但内容为空
@@ -413,14 +416,14 @@ def parse_header_from_combined_cell(cell_text: str) -> dict:
     # 解析检测依据：检测依据:GB 12348-2008 □GB3096-2008 □其他:声级计...
     # 也可能格式为：检测依据:xxx或监测依据:xxx
     # 注意：检测依据后面可能跟着"□其他:"，需要截断到"声级计"或"声校准器"或"检测前"或"检测后"或"气象条件"
-    standard_match = re.search(r'(?:检测依据|监测依据)[:：](.+?)(?:声级计|声校准器|检测前|检测后|气象条件)', cell_text)
+    standard_match = re.search(r'(?:检测|监测|检查)依据[:：](.+?)(?:声级计|声校准器|检测前|检测后|气象条件)', cell_text)
     if standard_match:
         standard_text = extract_standard_references(standard_match.group(1))
         if standard_text:
             result["standardReferences"] = standard_text
     else:
         # 如果第一个正则没有匹配到，尝试更宽松的匹配：匹配到行尾或下一个字段
-        standard_match2 = re.search(r'(?:检测依据|监测依据)[:：]([^声级计声校准器检测前检测后气象条件]+?)(?:声级计|声校准器|检测前|检测后|气象条件|$)', cell_text)
+        standard_match2 = re.search(r'(?:检测|监测|检查)依据[:：]([^声级计声校准器检测前检测后气象条件]+?)(?:声级计|声校准器|检测前|检测后|气象条件|$)', cell_text)
         if standard_match2:
             standard_text = extract_standard_references(standard_match2.group(1))
             if standard_text:
@@ -480,7 +483,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             logger.debug(f"[噪声检测] 从Markdown关键词补充提取到项目名称: {record.project}")
         
         # 提取检测依据
-        standard_match = re.search(r'检测依据[:：]([^\n]+)', keywords_text)
+        standard_match = re.search(r'(?:检测|监测|检查)依据[:：]([^\n]+)', keywords_text)
         if standard_match:
             record.standardReferences = extract_standard_references(standard_match.group(1))
             logger.debug(f"[噪声检测] 从Markdown关键词补充提取到检测依据: {record.standardReferences}")
@@ -574,7 +577,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             logger.debug(f"[噪声检测] 从OCR关键词补充提取到项目名称: {record.project}")
         
         # 提取检测依据（仅在字段为空时）
-        standard_match = re.search(r'检测依据[:：]([^\n]+)', keywords_text)
+        standard_match = re.search(r'(?:检测|监测|检查)依据[:：]([^\n]+)', keywords_text)
         if standard_match and (not record.standardReferences or not record.standardReferences.strip()):
             record.standardReferences = extract_standard_references(standard_match.group(1))
             logger.debug(f"[噪声检测] 从OCR关键词补充提取到检测依据: {record.standardReferences}")
@@ -712,7 +715,7 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
             # 检查单元格是否包含头部字段的关键词（放宽条件，支持单个字段的情况）
             # 如果单元格包含字段名和冒号，说明值就在同一单元格中
             has_header_field = any(keyword in cell for keyword in [
-                "项目名称", "检测依据", "监测依据", "声级计型号", "声校准器型号", 
+                "项目名称", "检测依据", "监测依据", "检查依据", "声级计型号", "声校准器型号", 
                 "检测前校准值", "检测后校准值", "声纹计型号", "声级计校准器型号"
             ])
             has_colon = ":" in cell or "：" in cell
@@ -833,9 +836,9 @@ def parse_noise_detection_record(markdown_content: str, first_page_image: Option
                             header_extracted = True
                             logger.debug(f"[噪声检测] 从单元格 {i+1} 解析到项目名称: {record.project}")
                         break
-                if any(k in row[0] for k in ["检测依据", "监测依据"]):
+                if any(k in row[0] for k in ["检测依据", "监测依据", "检查依据"]):
                     for i, cell in enumerate(row):
-                        if any(k in cell for k in ["检测依据", "监测依据"]) and i + 1 < len(row):
+                        if any(k in cell for k in ["检测依据", "监测依据", "检查依据"]) and i + 1 < len(row):
                             candidate_standard = extract_standard_references(row[i + 1])
                             if candidate_standard:
                                 record.standardReferences = candidate_standard

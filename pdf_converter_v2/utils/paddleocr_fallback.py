@@ -97,6 +97,23 @@ def check_json_data_completeness(json_data: Dict[str, Any], document_type: str) 
         if missing_count >= len(required_fields) / 2:
             logger.warning(f"[数据完整性检查] 关键字段缺失过多: {missing_count}/{len(required_fields)}")
             return False
+
+        # 检查天气字段是否异常（例如解析成“天气”标签或风向全部缺失）
+        weather_list = data.get("weather") or []
+        if weather_list:
+            weather_label_tokens = {"天气", "天气状况", "天气情况"}
+            has_label_as_value = any(
+                (item.get("weather") or "").strip() in weather_label_tokens for item in weather_list
+            )
+            all_wind_direction_missing = all(
+                not (item.get("windDirection") or "").strip() for item in weather_list
+            )
+            if has_label_as_value:
+                logger.warning("[数据完整性检查] 天气字段疑似被解析为标签，触发备用解析")
+                return False
+            if all_wind_direction_missing:
+                logger.warning("[数据完整性检查] 风向字段全部缺失，触发备用解析")
+                return False
         
         return True
     
