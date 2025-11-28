@@ -157,8 +157,13 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
             
             if "项目名称" in cell:
                 value, next_idx = find_next_non_empty_value(row, i)
-                record.project = value
-                if not record.project.strip():
+                # 只有当value不为空，且record.project为空时，才从表格中提取
+                # 这样可以保留从OCR关键词补充中提取的项目名称
+                if value and (not record.project or not record.project.strip()):
+                    record.project = value
+                    logger.debug(f"[电磁检测] 从表格中提取到项目名称: {record.project}")
+                elif not record.project or not record.project.strip():
+                    # 如果表格中也没有值，记录警告
                     logger.warning(f"[电磁检测] 项目名称 为空，行数据: {row}")
                 i = next_idx
                 continue
