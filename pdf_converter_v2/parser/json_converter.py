@@ -128,13 +128,19 @@ def _merge_electromagnetic_records(
     merged = deepcopy(primary) if primary else {}
     secondary = secondary or {}
     
+    logger.debug(f"[合并数据] primary project: {repr(merged.get('project'))}, secondary project: {repr(secondary.get('project'))}")
+    
     # 合并头部字段（如果原始结果中字段为空，使用fallback结果）
     header_fields = ["project", "standardReferences", "deviceName", "deviceMode", "deviceCode", "monitorHeight"]
     for field in header_fields:
         primary_value = merged.get(field) if merged else ""
         secondary_value = secondary.get(field)
+        logger.debug(f"[合并数据] 检查字段 {field}: primary={repr(primary_value)}, secondary={repr(secondary_value)}")
         if (not primary_value or not str(primary_value).strip()) and secondary_value:
             merged[field] = secondary_value
+            logger.info(f"[合并数据] 从fallback结果补充头部字段: {field} = {secondary_value}")
+        else:
+            logger.debug(f"[合并数据] 字段 {field} 不满足合并条件，跳过")
     
     # 合并天气信息
     primary_weather = merged.get("weather", {}) if merged else {}
@@ -148,8 +154,23 @@ def _merge_electromagnetic_records(
             merged["weather"][field] = secondary_value
     
     # 合并电测数据：优先保留原始数据，如果原始数据为空则使用fallback数据
+    # 但是需要合并每个数据项的address字段（如果原始数据中address为空，使用fallback数据）
     if preserve_primary_electric_magnetic and primary and primary.get("electricMagnetic"):
         merged["electricMagnetic"] = deepcopy(primary["electricMagnetic"])
+        # 合并每个数据项的address字段
+        secondary_electric_magnetic = secondary.get("electricMagnetic", [])
+        if secondary_electric_magnetic:
+            # 建立编号到数据项的映射
+            code_to_em = {em.get("code", "").upper(): em for em in merged["electricMagnetic"]}
+            # 从secondary中提取address并填充到merged中
+            for sec_em in secondary_electric_magnetic:
+                sec_code = sec_em.get("code", "").upper()
+                sec_address = sec_em.get("address", "")
+                if sec_code in code_to_em and sec_address:
+                    # 如果merged中对应数据项的address为空，使用secondary的address
+                    if not code_to_em[sec_code].get("address") or not str(code_to_em[sec_code].get("address")).strip():
+                        code_to_em[sec_code]["address"] = sec_address
+                        logger.debug(f"[合并数据] 从fallback结果补充地址: {sec_code} -> {sec_address}")
     elif not merged.get("electricMagnetic") and secondary.get("electricMagnetic"):
         merged["electricMagnetic"] = deepcopy(secondary["electricMagnetic"])
     
