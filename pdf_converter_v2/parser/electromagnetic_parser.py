@@ -63,6 +63,32 @@ def calculate_average(values: List[str]) -> str:
 def parse_electromagnetic_detection_record(markdown_content: str) -> ElectromagneticDetectionRecord:
     """解析电磁检测记录"""
     record = ElectromagneticDetectionRecord()
+    
+    # 首先从OCR关键词注释中提取项目名称（优先级高，因为OCR可能识别到了表格中缺失的信息）
+    # 先提取Markdown关键词补充（优先级高）
+    md_keywords_comment_match = re.search(r'<!--\s*Markdown关键词补充:(.*?)-->', markdown_content, re.DOTALL)
+    if md_keywords_comment_match:
+        keywords_text = md_keywords_comment_match.group(1)
+        logger.info("[电磁检测] 发现Markdown关键词补充，开始提取（优先级高）")
+        
+        # 提取项目名称
+        project_match = re.search(r'项目名称[:：]([^\n]+)', keywords_text)
+        if project_match:
+            record.project = project_match.group(1).strip()
+            logger.debug(f"[电磁检测] 从Markdown关键词补充提取到项目名称: {record.project}")
+    
+    # 然后提取OCR关键词补充（优先级低，只在字段为空时补充）
+    ocr_keywords_comment_match = re.search(r'<!--\s*OCR关键词补充:(.*?)-->', markdown_content, re.DOTALL)
+    if ocr_keywords_comment_match:
+        keywords_text = ocr_keywords_comment_match.group(1)
+        logger.info("[电磁检测] 发现OCR关键词补充，开始提取（优先级低，仅在字段为空时补充）")
+        
+        # 提取项目名称（仅在字段为空时）
+        project_match = re.search(r'项目名称[:：]([^\n]+)', keywords_text)
+        if project_match and (not record.project or not record.project.strip()):
+            record.project = project_match.group(1).strip()
+            logger.debug(f"[电磁检测] 从OCR关键词补充提取到项目名称: {record.project}")
+    
     tables = extract_table_with_rowspan_colspan(markdown_content)
     
     if not tables:
@@ -337,11 +363,54 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 record.electricMagnetic.append(em)
     
     # 矫正编号：按照数据顺序重新分配编号为 EB1, EB2, EB3...
+    # 同时建立原始编号到新编号的映射，用于从OCR关键词中提取地址
+    code_mapping = {}  # 原始编号 -> 新编号
     for idx, em in enumerate(record.electricMagnetic, start=1):
         original_code = em.code
-        em.code = f"EB{idx}"
-        if original_code != em.code:
-            logger.info(f"[电磁检测] 编号矫正: {original_code} -> {em.code}")
+        new_code = f"EB{idx}"
+        code_mapping[original_code.upper()] = new_code
+        em.code = new_code
+        if original_code != new_code:
+            logger.info(f"[电磁检测] 编号矫正: {original_code} -> {new_code}")
+    
+    # 从OCR关键词注释中提取地址信息并填充到对应的数据项中
+    # 先提取Markdown关键词补充（优先级高）
+    md_keywords_comment_match = re.search(r'<!--\s*Markdown关键词补充:(.*?)-->', markdown_content, re.DOTALL)
+    if md_keywords_comment_match:
+        keywords_text = md_keywords_comment_match.group(1)
+        logger.info("[电磁检测] 发现Markdown关键词补充，开始提取地址信息（优先级高）")
+        
+        # 提取监测地点映射
+        address_matches = re.findall(r'监测地点-([A-Z0-9]+)[：:]([^\n]+)', keywords_text)
+        for code, address in address_matches:
+            code_upper = code.upper()
+            address = address.strip()
+            if address:
+                # 查找对应的数据项（使用原始编号或新编号）
+                target_code = code_mapping.get(code_upper, code_upper)
+                for em in record.electricMagnetic:
+                    if em.code == target_code and (not em.address or not em.address.strip()):
+                        em.address = address
+                        logger.debug(f"[电磁检测] 从Markdown关键词补充提取到地址: {em.code} -> {address}")
+    
+    # 然后提取OCR关键词补充（优先级低，只在字段为空时补充）
+    ocr_keywords_comment_match = re.search(r'<!--\s*OCR关键词补充:(.*?)-->', markdown_content, re.DOTALL)
+    if ocr_keywords_comment_match:
+        keywords_text = ocr_keywords_comment_match.group(1)
+        logger.info("[电磁检测] 发现OCR关键词补充，开始提取地址信息（优先级低，仅在字段为空时补充）")
+        
+        # 提取监测地点映射
+        address_matches = re.findall(r'监测地点-([A-Z0-9]+)[：:]([^\n]+)', keywords_text)
+        for code, address in address_matches:
+            code_upper = code.upper()
+            address = address.strip()
+            if address:
+                # 查找对应的数据项（使用原始编号或新编号）
+                target_code = code_mapping.get(code_upper, code_upper)
+                for em in record.electricMagnetic:
+                    if em.code == target_code and (not em.address or not em.address.strip()):
+                        em.address = address
+                        logger.debug(f"[电磁检测] 从OCR关键词补充提取到地址: {em.code} -> {address}")
     
     return record
 

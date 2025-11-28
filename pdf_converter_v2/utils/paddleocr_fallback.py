@@ -367,6 +367,21 @@ def check_json_data_completeness(json_data: Dict[str, Any], document_type: str) 
             logger.warning(f"[数据完整性检查] 所有关键字段都缺失: {missing_required + missing_optional}/{len(required_fields) + len(optional_fields)}")
             return False
         
+        # 检查project和address字段：如果project为空且所有address都为空，说明minerU和Paddle doc_parser都丢失了，需要运行Paddle OCR
+        project_empty = not data.get("project") or not str(data.get("project")).strip()
+        if project_empty:
+            # 检查所有电磁数据项的address字段是否都为空
+            all_address_empty = True
+            for em_item in em_list:
+                address = em_item.get("address", "")
+                if address and str(address).strip():
+                    all_address_empty = False
+                    break
+            
+            if all_address_empty:
+                logger.warning("[数据完整性检查] project为空且所有address字段都为空，说明minerU和Paddle doc_parser都丢失了，需要运行Paddle OCR")
+                return False
+        
         return True
     
     elif document_type == "operatingConditionInfo":
@@ -980,7 +995,8 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
         "soundCalibratorMode": "",
         "calibrationValueBefore": "",
         "calibrationValueAfter": "",
-        "weather_info": []  # 存储天气相关信息
+        "weather_info": [],  # 存储天气相关信息
+        "address_mapping": {}  # 存储编号到地址的映射，用于电磁检测记录
     }
     
     if not ocr_texts:
@@ -1248,6 +1264,64 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
                                      current_weather_info["temp"], current_weather_info["humidity"], 
                                      current_weather_info["windSpeed"], current_weather_info["windDirection"]]):
         keywords["weather_info"].append(current_weather_info)
+    
+    # 提取监测地点（address）信息，用于电磁检测记录
+    # 匹配模式：编号（如EB1, EB2, ZB1等）后面跟着地址信息
+    # 地址通常在编号之后，可能在同一个文本片段或相邻的文本片段中
+    for i, text in enumerate(ocr_texts):
+        # 查找编号模式：EB1, EB2, ZB1, ZB2等
+        code_match = re.search(r'(E[ZB]\d+|Z[ZB]\d+)', text, re.IGNORECASE)
+        if code_match:
+            code = code_match.group(1).upper()  # 统一转为大写
+            # 在当前文本中查找地址（编号后面的非数字、非时间格式的文本）
+            # 地址通常在编号之后，可能是中文地名
+            address_candidates = []
+            
+            # 在当前文本中，编号之后查找地址
+            code_pos = code_match.end()
+            remaining_text = text[code_pos:].strip()
+            # 跳过可能的空格、标点等
+            remaining_text = re.sub(r'^[\s,，。、]+', '', remaining_text)
+            
+            # 如果剩余文本不为空且不是纯数字或时间格式，可能是地址
+            if remaining_text and not re.match(r'^[\d.\-:\s]+$', remaining_text):
+                # 提取地址（直到遇到数字、时间或特定关键词）
+                address_match = re.search(r'^([^\d\n]+?)(?=\d|时间|线高|$)', remaining_text)
+                if address_match:
+                    address = address_match.group(1).strip()
+                    # 清理地址，移除常见的非地址字符
+                    address = re.sub(r'[，。、\s]+$', '', address)
+                    if address and len(address) > 0:
+                        address_candidates.append(address)
+            
+            # 如果当前文本中没有找到地址，检查相邻的文本片段
+            if not address_candidates:
+                # 检查编号之前的文本片段（地址可能在编号之前）
+                if i > 0:
+                    prev_text = ocr_texts[i - 1].strip()
+                    # 如果前一个文本不是编号、数字、时间等，可能是地址
+                    if prev_text and not re.match(r'^(E[ZB]\d+|Z[ZB]\d+|\d+|时间|线高|编号)', prev_text, re.IGNORECASE):
+                        # 检查是否是中文地名（包含常见的地名特征）
+                        if re.search(r'[\u4e00-\u9fa5]{2,}', prev_text):
+                            address_candidates.append(prev_text)
+                
+                # 检查编号之后的文本片段
+                if i + 1 < len(ocr_texts):
+                    next_text = ocr_texts[i + 1].strip()
+                    # 如果下一个文本不是编号、数字、时间等，可能是地址
+                    if next_text and not re.match(r'^(E[ZB]\d+|Z[ZB]\d+|\d+|时间|线高|编号)', next_text, re.IGNORECASE):
+                        # 检查是否是中文地名
+                        if re.search(r'[\u4e00-\u9fa5]{2,}', next_text):
+                            address_candidates.append(next_text)
+            
+            # 如果找到地址候选，选择最合适的（通常是第一个非空的）
+            if address_candidates:
+                address = address_candidates[0]
+                # 进一步清理地址
+                address = re.sub(r'^[，。、\s]+|[，。、\s]+$', '', address)
+                if address:
+                    keywords["address_mapping"][code] = address
+                    logger.debug(f"[关键词提取] 提取到监测地点: {code} -> {address}")
     
     return keywords
 
@@ -1680,6 +1754,9 @@ def fallback_parse_with_paddleocr(
                 keywords_comment += f"检测前校准值：{keywords['calibrationValueBefore']}\n"
             if keywords["calibrationValueAfter"]:
                 keywords_comment += f"检测后校准值：{keywords['calibrationValueAfter']}\n"
+            if keywords.get("address_mapping"):
+                for code, address in keywords["address_mapping"].items():
+                    keywords_comment += f"监测地点-{code}：{address}\n"
             if keywords["weather_info"]:
                 for weather in keywords["weather_info"]:
                     keywords_comment += f"日期：{weather['monitorAt']} 天气：{weather['weather']} 温度：{weather['temp']} 湿度：{weather['humidity']} 风速：{weather['windSpeed']} 风向：{weather['windDirection']}\n"
@@ -1722,6 +1799,9 @@ def fallback_parse_with_paddleocr(
                 keywords_comment += f"声校准器型号/编号：{keywords['soundCalibratorMode']}\n"
             if keywords["calibrationValueBefore"]:
                 keywords_comment += f"检测前校准值：{keywords['calibrationValueBefore']}\n"
+            if keywords.get("address_mapping"):
+                for code, address in keywords["address_mapping"].items():
+                    keywords_comment += f"监测地点-{code}：{address}\n"
             if keywords["calibrationValueAfter"]:
                 keywords_comment += f"检测后校准值：{keywords['calibrationValueAfter']}\n"
             if keywords["weather_info"]:
