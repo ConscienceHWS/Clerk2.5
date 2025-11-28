@@ -1006,6 +1006,7 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
     full_text = " ".join(ocr_texts)
     
     # 提取项目名称
+    # 先尝试匹配"项目名称："格式
     project_match = re.search(r'项目名称[:：]([^检测依据声级计声校准器检测前检测后气象条件日期]+)', full_text)
     if project_match:
         project = project_match.group(1).strip()
@@ -1013,6 +1014,37 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
         project = re.sub(r'检测依据.*$', '', project).strip()
         keywords["project"] = project
         logger.debug(f"[关键词提取] 提取到项目名称: {project}")
+    else:
+        # 如果没找到，尝试查找"项目名称"文本，然后检查后续文本片段
+        for i, text in enumerate(ocr_texts):
+            if "项目名称" in text:
+                # 检查当前文本中是否有值（在冒号后面）
+                if "：" in text or ":" in text:
+                    project_match = re.search(r'项目名称[:：]([^检测依据声级计声校准器检测前检测后气象条件日期]+)', text)
+                    if project_match:
+                        project = project_match.group(1).strip()
+                        project = re.sub(r'检测依据.*$', '', project).strip()
+                        if project:
+                            keywords["project"] = project
+                            logger.debug(f"[关键词提取] 从当前文本提取到项目名称: {project}")
+                            break
+                # 如果当前文本只有"项目名称"，检查下一个文本片段
+                elif text.strip() == "项目名称" or text.strip().startswith("项目名称"):
+                    # 检查后续几个文本片段，找到项目名称值
+                    for j in range(i + 1, min(i + 3, len(ocr_texts))):
+                        next_text = ocr_texts[j].strip()
+                        # 如果下一个文本不是"检测依据"、"监测依据"等标签，且包含中文字符，可能是项目名称
+                        if next_text and not re.match(r'^(检测依据|监测依据|检查依据|声级计|声校准器|检测前|检测后|气象条件|日期)', next_text):
+                            # 检查是否包含中文字符（项目名称通常是中文）
+                            if re.search(r'[\u4e00-\u9fa5]', next_text):
+                                # 提取项目名称（直到遇到"检测依据"等关键词）
+                                project = re.sub(r'(检测依据|监测依据|检查依据).*$', '', next_text).strip()
+                                if project:
+                                    keywords["project"] = project
+                                    logger.debug(f"[关键词提取] 从后续文本提取到项目名称: {project}")
+                                    break
+                    if keywords["project"]:
+                        break
     
     # 提取检测依据
     standard_match = re.search(r'检测依据[:：]([^声级计声校准器检测前检测后气象条件日期]+)', full_text)
@@ -1296,20 +1328,28 @@ def extract_keywords_from_ocr_texts(ocr_texts: List[str]) -> Dict[str, Any]:
             
             # 如果当前文本中没有找到地址，检查相邻的文本片段
             if not address_candidates:
-                # 检查编号之前的文本片段（地址可能在编号之前）
-                if i > 0:
-                    prev_text = ocr_texts[i - 1].strip()
-                    # 如果前一个文本不是编号、数字、时间等，可能是地址
-                    if prev_text and not re.match(r'^(E[ZB]\d+|Z[ZB]\d+|\d+|时间|线高|编号)', prev_text, re.IGNORECASE):
-                        # 检查是否是中文地名（包含常见的地名特征）
-                        if re.search(r'[\u4e00-\u9fa5]{2,}', prev_text):
+                # 检查编号之前的文本片段（地址可能在编号之前，需要跳过数字、时间、高度等）
+                # 向前查找最多5个文本片段，跳过数字、时间、高度等，找到中文地名
+                for j in range(i - 1, max(i - 6, -1), -1):
+                    prev_text = ocr_texts[j].strip()
+                    if not prev_text:
+                        continue
+                    # 跳过编号、数字、时间、高度等
+                    if re.match(r'^(E[ZB]\d+|Z[ZB]\d+|\d+|时间|线高|编号|均值|24m|\d{4}[.\-]\d{1,2}[.\-]\d{1,2})', prev_text, re.IGNORECASE):
+                        continue
+                    # 检查是否是中文地名（包含至少2个中文字符）
+                    if re.search(r'[\u4e00-\u9fa5]{2,}', prev_text):
+                        # 进一步确认：不是纯数字、时间格式等
+                        if not re.match(r'^[\d.\-:\s]+$', prev_text):
                             address_candidates.append(prev_text)
+                            logger.debug(f"[关键词提取] 在编号{code}之前找到地址候选 (索引{j}): {prev_text}")
+                            break  # 找到第一个地址就停止
                 
                 # 检查编号之后的文本片段
-                if i + 1 < len(ocr_texts):
+                if not address_candidates and i + 1 < len(ocr_texts):
                     next_text = ocr_texts[i + 1].strip()
                     # 如果下一个文本不是编号、数字、时间等，可能是地址
-                    if next_text and not re.match(r'^(E[ZB]\d+|Z[ZB]\d+|\d+|时间|线高|编号)', next_text, re.IGNORECASE):
+                    if next_text and not re.match(r'^(E[ZB]\d+|Z[ZB]\d+|\d+|时间|线高|编号|均值|24m|\d{4}[.\-]\d{1,2}[.\-]\d{1,2})', next_text, re.IGNORECASE):
                         # 检查是否是中文地名
                         if re.search(r'[\u4e00-\u9fa5]{2,}', next_text):
                             address_candidates.append(next_text)
