@@ -106,6 +106,56 @@ def _merge_noise_records(
 
     return merged
 
+
+def _merge_electromagnetic_records(
+    primary: Optional[Dict[str, Any]],
+    secondary: Optional[Dict[str, Any]],
+    preserve_primary_electric_magnetic: bool = True
+) -> Dict[str, Any]:
+    """合并电磁检测记录的原始和fallback解析结果
+    
+    Args:
+        primary: 原始解析结果
+        secondary: fallback解析结果
+        preserve_primary_electric_magnetic: 是否保留原始的电测数据（默认True）
+        
+    Returns:
+        合并后的数据
+    """
+    if not primary and not secondary:
+        return {}
+    
+    merged = deepcopy(primary) if primary else {}
+    secondary = secondary or {}
+    
+    # 合并头部字段（如果原始结果中字段为空，使用fallback结果）
+    header_fields = ["project", "standardReferences", "deviceName", "deviceMode", "deviceCode", "monitorHeight"]
+    for field in header_fields:
+        primary_value = merged.get(field) if merged else ""
+        secondary_value = secondary.get(field)
+        if (not primary_value or not str(primary_value).strip()) and secondary_value:
+            merged[field] = secondary_value
+    
+    # 合并天气信息
+    primary_weather = merged.get("weather", {}) if merged else {}
+    secondary_weather = secondary.get("weather", {}) or {}
+    for field in ["weather", "temp", "humidity", "windSpeed", "windDirection"]:
+        primary_value = primary_weather.get(field) if primary_weather else ""
+        secondary_value = secondary_weather.get(field)
+        if (not primary_value or not str(primary_value).strip()) and secondary_value:
+            if "weather" not in merged:
+                merged["weather"] = {}
+            merged["weather"][field] = secondary_value
+    
+    # 合并电测数据：优先保留原始数据，如果原始数据为空则使用fallback数据
+    if preserve_primary_electric_magnetic and primary and primary.get("electricMagnetic"):
+        merged["electricMagnetic"] = deepcopy(primary["electricMagnetic"])
+    elif not merged.get("electricMagnetic") and secondary.get("electricMagnetic"):
+        merged["electricMagnetic"] = deepcopy(secondary["electricMagnetic"])
+    
+    return merged
+
+
 def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Image.Image] = None, output_dir: Optional[str] = None, forced_document_type: Optional[str] = None, enable_paddleocr_fallback: bool = True, input_file: Optional[str] = None) -> Dict[str, Any]:
     """将Markdown内容转换为JSON - v2独立版本，不依赖v1和OCR
     如果提供 forced_document_type（正式全称），则优先按指定类型解析。
@@ -289,8 +339,14 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                             )
                             result = {"document_type": "noiseMonitoringRecord", "data": merged_data}
                         elif result.get("document_type") == "electromagneticTestRecord":
-                            data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
-                            result = {"document_type": "electromagneticTestRecord", "data": data}
+                            original_data = result.get("data", {}) or {}
+                            fallback_data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
+                            merged_data = _merge_electromagnetic_records(
+                                primary=original_data,
+                                secondary=fallback_data,
+                                preserve_primary_electric_magnetic=True
+                            )
+                            result = {"document_type": "electromagneticTestRecord", "data": merged_data}
                         logger.info("[JSON转换] 使用PaddleOCR结果重新解析完成")
             except Exception as e:
                 logger.exception(f"[JSON转换] PaddleOCR备用解析过程出错: {e}")
@@ -346,8 +402,14 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                         )
                         result = {"document_type": "noiseMonitoringRecord", "data": merged_data}
                     elif result.get("document_type") == "electromagneticTestRecord" or doc_type == "electromagnetic_detection":
-                        data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
-                        result = {"document_type": "electromagneticTestRecord", "data": data}
+                        original_data = result.get("data", {}) or {}
+                        fallback_data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
+                        merged_data = _merge_electromagnetic_records(
+                            primary=original_data,
+                            secondary=fallback_data,
+                            preserve_primary_electric_magnetic=True
+                        )
+                        result = {"document_type": "electromagneticTestRecord", "data": merged_data}
                     logger.info("[JSON转换] 使用PaddleOCR结果重新解析完成")
         except Exception as e:
             logger.exception(f"[JSON转换] PaddleOCR备用解析过程出错: {e}")

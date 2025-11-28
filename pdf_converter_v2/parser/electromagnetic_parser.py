@@ -128,7 +128,24 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 return cell_value, j + 1
         return "", len(row)
     
-    first_table = tables[0]
+    # 查找包含头部信息的表格（可能不是第一个表格，特别是fallback后可能有多个表格）
+    # 头部信息表格的特征：包含"项目名称"、"仪器名称"等关键词
+    header_table = None
+    for table in tables:
+        for row in table:
+            if row and any("项目名称" in str(cell) or "仪器名称" in str(cell) or "监测依据" in str(cell) for cell in row if cell):
+                header_table = table
+                logger.debug(f"[电磁检测] 找到包含头部信息的表格，行数: {len(table)}")
+                break
+        if header_table:
+            break
+    
+    # 如果没找到包含头部信息的表格，使用第一个表格
+    if not header_table:
+        header_table = tables[0]
+        logger.debug(f"[电磁检测] 未找到包含头部信息的表格，使用第一个表格")
+    
+    first_table = header_table
     for row in first_table:
         logger.debug(f"[电磁检测][ROW] len={len(row)}, content={row}")
         i = 0
