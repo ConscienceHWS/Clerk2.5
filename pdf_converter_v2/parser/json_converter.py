@@ -128,19 +128,19 @@ def _merge_electromagnetic_records(
     merged = deepcopy(primary) if primary else {}
     secondary = secondary or {}
     
-    logger.debug(f"[合并数据] primary project: {repr(merged.get('project'))}, secondary project: {repr(secondary.get('project'))}")
+    logger.info(f"[合并数据] 开始合并，primary project: {repr(merged.get('project'))}, secondary project: {repr(secondary.get('project'))}")
     
     # 合并头部字段（如果原始结果中字段为空，使用fallback结果）
     header_fields = ["project", "standardReferences", "deviceName", "deviceMode", "deviceCode", "monitorHeight"]
     for field in header_fields:
         primary_value = merged.get(field) if merged else ""
         secondary_value = secondary.get(field)
-        logger.debug(f"[合并数据] 检查字段 {field}: primary={repr(primary_value)}, secondary={repr(secondary_value)}")
+        logger.info(f"[合并数据] 检查字段 {field}: primary={repr(primary_value)}, secondary={repr(secondary_value)}")
         if (not primary_value or not str(primary_value).strip()) and secondary_value:
             merged[field] = secondary_value
             logger.info(f"[合并数据] 从fallback结果补充头部字段: {field} = {secondary_value}")
         else:
-            logger.debug(f"[合并数据] 字段 {field} 不满足合并条件，跳过")
+            logger.info(f"[合并数据] 字段 {field} 不满足合并条件，跳过")
     
     # 合并天气信息
     primary_weather = merged.get("weather", {}) if merged else {}
@@ -170,7 +170,7 @@ def _merge_electromagnetic_records(
                     # 如果merged中对应数据项的address为空，使用secondary的address
                     if not code_to_em[sec_code].get("address") or not str(code_to_em[sec_code].get("address")).strip():
                         code_to_em[sec_code]["address"] = sec_address
-                        logger.debug(f"[合并数据] 从fallback结果补充地址: {sec_code} -> {sec_address}")
+                        logger.info(f"[合并数据] 从fallback结果补充地址: {sec_code} -> {sec_address}")
     elif not merged.get("electricMagnetic") and secondary.get("electricMagnetic"):
         merged["electricMagnetic"] = deepcopy(secondary["electricMagnetic"])
     
@@ -362,11 +362,13 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                         elif result.get("document_type") == "electromagneticTestRecord":
                             original_data = result.get("data", {}) or {}
                             fallback_data = parse_electromagnetic_detection_record(fallback_markdown).to_dict()
+                            logger.info(f"[JSON转换] fallback_data project: {repr(fallback_data.get('project'))}, EB1 address: {repr(fallback_data.get('electricMagnetic', [{}])[0].get('address') if fallback_data.get('electricMagnetic') else '')}")
                             merged_data = _merge_electromagnetic_records(
                                 primary=original_data,
                                 secondary=fallback_data,
                                 preserve_primary_electric_magnetic=True
                             )
+                            logger.info(f"[JSON转换] merged_data project: {repr(merged_data.get('project'))}, EB1 address: {repr(merged_data.get('electricMagnetic', [{}])[0].get('address') if merged_data.get('electricMagnetic') else '')}")
                             result = {"document_type": "electromagneticTestRecord", "data": merged_data}
                         logger.info("[JSON转换] 使用PaddleOCR结果重新解析完成")
             except Exception as e:
