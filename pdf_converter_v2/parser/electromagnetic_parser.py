@@ -114,7 +114,15 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
             cell_value = row[j].strip() if row[j] else ""
             if cell_value:
                 # 如果找到的值是另一个标签，说明当前标签没有值，停止查找
-                if cell_value in METADATA_LABELS:
+                # 但要注意：标签可能包含在值中（如"监测依据"可能出现在"☐HJ681-2013"中），所以要精确匹配
+                is_label = False
+                for label in METADATA_LABELS:
+                    # 精确匹配：单元格值完全等于标签，或者单元格值以标签开头且后面是冒号等分隔符
+                    if cell_value == label or cell_value.startswith(label + ":") or cell_value.startswith(label + "："):
+                        is_label = True
+                        break
+                
+                if is_label:
                     return "", j  # 返回空值和下一个标签的位置
                 # 找到非标签的值，返回它
                 return cell_value, j + 1
@@ -379,26 +387,58 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 else:
                     data_start_idx = 4
                 
-                # 跳过空列，找到第一个数值列
+                # 跳过空列，找到第一个数值列（应该是电场强度的第一个值）
                 while data_start_idx < len(row) and (not row[data_start_idx] or not row[data_start_idx].strip()):
                     data_start_idx += 1
                 
+                logger.debug(f"[电磁检测] 数据列起始索引: {data_start_idx}, 行数据: {row[data_start_idx:data_start_idx+12] if len(row) > data_start_idx else 'N/A'}")
+                
                 # 电场强度（从data_start_idx开始，共6列：1-5和均值）
+                # 注意：均值列可能在"均值"标签之后，也可能直接是第6个数值
                 if len(row) > data_start_idx: em.powerFrequencyEFieldStrength1 = row[data_start_idx]
                 if len(row) > data_start_idx + 1: em.powerFrequencyEFieldStrength2 = row[data_start_idx + 1]
                 if len(row) > data_start_idx + 2: em.powerFrequencyEFieldStrength3 = row[data_start_idx + 2]
                 if len(row) > data_start_idx + 3: em.powerFrequencyEFieldStrength4 = row[data_start_idx + 3]
                 if len(row) > data_start_idx + 4: em.powerFrequencyEFieldStrength5 = row[data_start_idx + 4]
-                if len(row) > data_start_idx + 5: em.avgPowerFrequencyEFieldStrength = row[data_start_idx + 5]
                 
-                # 磁感应强度（从data_start_idx + 6开始，共6列：1-5和均值）
-                magnetic_start_idx = data_start_idx + 6
+                # 电场强度均值：跳过可能的"均值"标签，找到下一个数值
+                avg_field_idx = data_start_idx + 5
+                while avg_field_idx < len(row) and (not row[avg_field_idx] or not row[avg_field_idx].strip() or row[avg_field_idx].strip() == "均值"):
+                    avg_field_idx += 1
+                if len(row) > avg_field_idx:
+                    # 检查是否是数值（可能是均值，也可能是磁感应强度的第一个值）
+                    avg_value = row[avg_field_idx].strip()
+                    # 如果看起来像电场强度值（较大的数字，如9.xxx），则使用它
+                    # 如果看起来像磁感应强度值（较小的数字，如0.xxx），则跳过，使用计算的平均值
+                    try:
+                        avg_float = float(avg_value)
+                        # 电场强度通常在1-1000范围内，磁感应强度通常在0-10范围内
+                        if avg_float > 1.0:  # 可能是电场强度均值
+                            em.avgPowerFrequencyEFieldStrength = avg_value
+                            magnetic_start_idx = avg_field_idx + 1
+                        else:  # 可能是磁感应强度的第一个值，跳过
+                            magnetic_start_idx = avg_field_idx
+                    except ValueError:
+                        # 不是数字，跳过
+                        magnetic_start_idx = avg_field_idx + 1
+                else:
+                    magnetic_start_idx = data_start_idx + 6
+                
+                # 磁感应强度均值：同样需要跳过"均值"标签
+                avg_magnetic_idx = magnetic_start_idx + 5
+                while avg_magnetic_idx < len(row) and (not row[avg_magnetic_idx] or not row[avg_magnetic_idx].strip() or row[avg_magnetic_idx].strip() == "均值"):
+                    avg_magnetic_idx += 1
+                
+                # 磁感应强度（从magnetic_start_idx开始，共6列：1-5和均值）
                 if len(row) > magnetic_start_idx: em.powerFrequencyMagneticDensity1 = row[magnetic_start_idx]
                 if len(row) > magnetic_start_idx + 1: em.powerFrequencyMagneticDensity2 = row[magnetic_start_idx + 1]
                 if len(row) > magnetic_start_idx + 2: em.powerFrequencyMagneticDensity3 = row[magnetic_start_idx + 2]
                 if len(row) > magnetic_start_idx + 3: em.powerFrequencyMagneticDensity4 = row[magnetic_start_idx + 3]
                 if len(row) > magnetic_start_idx + 4: em.powerFrequencyMagneticDensity5 = row[magnetic_start_idx + 4]
-                if len(row) > magnetic_start_idx + 5: em.avgPowerFrequencyMagneticDensity = row[magnetic_start_idx + 5]
+                if len(row) > avg_magnetic_idx: 
+                    em.avgPowerFrequencyMagneticDensity = row[avg_magnetic_idx]
+                elif len(row) > magnetic_start_idx + 5:
+                    em.avgPowerFrequencyMagneticDensity = row[magnetic_start_idx + 5]
                 
                 # 如果平均电场强度为空，则计算平均值
                 if not em.avgPowerFrequencyEFieldStrength or not em.avgPowerFrequencyEFieldStrength.strip():
