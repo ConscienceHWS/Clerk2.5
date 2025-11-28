@@ -300,16 +300,86 @@ def parse_electromagnetic_detection_record(markdown_content: str) -> Electromagn
                 logger.info(row)
                 em = ElectromagneticData()
                 em.code = code
-                em.address = row[1] if len(row) > 1 else ""
-                # 高度字段校验：可以为空，但不应包含冒号
-                height_value = row[2] if len(row) > 2 else ""
-                em.height = validate_height(height_value)
-                em.monitorAt = row[3] if len(row) > 3 else ""
                 
-                # 动态检测数据列位置：跳过空列，找到第一个数值列
-                # 从第4列开始查找（跳过编号、地址、高度、时间）
-                data_start_idx = 4
-                # 如果第4列为空，继续查找
+                # 智能识别列位置：由于表格可能有colspan，不能简单按索引
+                # 1. 地址列：在编号之后，通常是第一个或第二个非空列（如果地址为空则跳过）
+                # 2. 高度列：包含"m"单位的列（如"24m"）
+                # 3. 时间列：包含日期格式的列（如"2025.7.21 10:35"）
+                # 4. 数据列：时间列之后的所有数值列
+                
+                address_idx = -1
+                height_idx = -1
+                monitor_at_idx = -1
+                
+                # 从第1列开始查找（跳过编号列0）
+                for i in range(1, len(row)):
+                    cell = row[i].strip() if i < len(row) and row[i] else ""
+                    if not cell:
+                        continue
+                    
+                    # 先检查是否是时间列（包含日期格式）- 优先级最高，因为格式最明确
+                    if re.search(r'\d{4}[.\-]\d{1,2}[.\-]\d{1,2}', cell):
+                        if monitor_at_idx == -1:
+                            monitor_at_idx = i
+                            logger.debug(f"[电磁检测] 识别到时间列: 索引{i}, 值={cell}")
+                            continue
+                    
+                    # 检查是否是高度列（包含"m"单位，且不是时间格式）
+                    if "m" in cell and not re.search(r'\d{4}[.\-]\d{1,2}[.\-]\d{1,2}', cell):
+                        # 进一步确认：高度通常是数字+m（如"24m"），不包含日期
+                        if re.match(r'^\d+[.\d]*m', cell) and height_idx == -1:
+                            height_idx = i
+                            logger.debug(f"[电磁检测] 识别到高度列: 索引{i}, 值={cell}")
+                            continue
+                    
+                    # 如果既不是高度也不是时间，且地址索引未设置，可能是地址
+                    # 地址通常是中文地名（包含中文字符），且不是纯数字
+                    if address_idx == -1:
+                        # 检查是否是中文地名（包含中文字符）
+                        if re.search(r'[\u4e00-\u9fa5]', cell) and not re.match(r'^[\d.\-:\s]+$', cell):
+                            address_idx = i
+                            logger.debug(f"[电磁检测] 识别到地址列: 索引{i}, 值={cell}")
+                
+                # 如果通过智能识别没找到高度和时间，使用默认位置（向后兼容）
+                if height_idx == -1:
+                    # 尝试默认位置：第2列（索引2）
+                    if len(row) > 2 and row[2]:
+                        height_value = row[2].strip()
+                        if height_value:
+                            height_idx = 2
+                            logger.debug(f"[电磁检测] 使用默认高度列位置: 索引2")
+                
+                if monitor_at_idx == -1:
+                    # 尝试默认位置：第3列（索引3）
+                    if len(row) > 3 and row[3]:
+                        time_value = row[3].strip()
+                        if time_value:
+                            monitor_at_idx = 3
+                            logger.debug(f"[电磁检测] 使用默认时间列位置: 索引3")
+                
+                # 提取字段值
+                if address_idx >= 0 and address_idx < len(row):
+                    em.address = row[address_idx].strip()
+                
+                if height_idx >= 0 and height_idx < len(row):
+                    height_value = row[height_idx].strip()
+                    em.height = validate_height(height_value)
+                
+                if monitor_at_idx >= 0 and monitor_at_idx < len(row):
+                    em.monitorAt = row[monitor_at_idx].strip()
+                
+                # 数据列从时间列之后开始，如果时间列未找到，从高度列之后开始
+                # 如果高度列也未找到，从地址列之后开始，如果地址列也未找到，从第4列开始
+                if monitor_at_idx >= 0:
+                    data_start_idx = monitor_at_idx + 1
+                elif height_idx >= 0:
+                    data_start_idx = height_idx + 1
+                elif address_idx >= 0:
+                    data_start_idx = address_idx + 1
+                else:
+                    data_start_idx = 4
+                
+                # 跳过空列，找到第一个数值列
                 while data_start_idx < len(row) and (not row[data_start_idx] or not row[data_start_idx].strip()):
                     data_start_idx += 1
                 
