@@ -123,6 +123,10 @@ class GpuInfo(BaseModel):
     gpu_utilization_max: Optional[float] = None  # 最大GPU利用率（%）
     system_load_avg_1min: Optional[float] = None  # 平均1分钟系统负载
     system_load_max_1min: Optional[float] = None  # 最大1分钟系统负载
+    system_load_avg_5min: Optional[float] = None  # 平均5分钟系统负载
+    system_load_max_5min: Optional[float] = None  # 最大5分钟系统负载
+    system_load_avg_15min: Optional[float] = None  # 平均15分钟系统负载
+    system_load_max_15min: Optional[float] = None  # 最大15分钟系统负载
     sample_count: Optional[int] = None  # 采集的样本数量
     duration: Optional[float] = None  # 监控持续时间（秒）
 

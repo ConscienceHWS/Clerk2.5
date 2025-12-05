@@ -187,10 +187,18 @@ class ResourceMonitor:
             # 注意：这是采集期间的最大显存使用量，不是增量
             gpu_memory_used = int(memory_max)
             
-            # 计算系统负载统计
+            # 计算系统负载统计（1分钟、5分钟、15分钟）
             load_1min_values = [l.get("load_1min", 0) for l in load_samples if l]
             load_1min_avg = sum(load_1min_values) / len(load_1min_values) if load_1min_values else None
             load_1min_max = max(load_1min_values) if load_1min_values else None
+            
+            load_5min_values = [l.get("load_5min", 0) for l in load_samples if l]
+            load_5min_avg = sum(load_5min_values) / len(load_5min_values) if load_5min_values else None
+            load_5min_max = max(load_5min_values) if load_5min_values else None
+            
+            load_15min_values = [l.get("load_15min", 0) for l in load_samples if l]
+            load_15min_avg = sum(load_15min_values) / len(load_15min_values) if load_15min_values else None
+            load_15min_max = max(load_15min_values) if load_15min_values else None
             
             # 计算持续时间
             duration = self.samples[-1]["timestamp"] - self.samples[0]["timestamp"] if len(self.samples) > 1 else 0
@@ -207,6 +215,10 @@ class ResourceMonitor:
                 "gpu_utilization_max": utilization_max,
                 "system_load_avg_1min": load_1min_avg,
                 "system_load_max_1min": load_1min_max,
+                "system_load_avg_5min": load_5min_avg,
+                "system_load_max_5min": load_5min_max,
+                "system_load_avg_15min": load_15min_avg,
+                "system_load_max_15min": load_15min_max,
                 "sample_count": len(self.samples),
                 "duration": duration
             }
