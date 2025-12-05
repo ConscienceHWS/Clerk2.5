@@ -110,6 +110,15 @@ class ConversionResponse(BaseModel):
     document_type: Optional[str] = None
 
 
+class GpuInfo(BaseModel):
+    """GPU监控信息"""
+    gpu_index: Optional[int] = None
+    gpu_memory_used: Optional[int] = None  # 字节，OCR任务期间的显存增量
+    gpu_utilization: Optional[float] = None  # 百分比
+    gpu_memory_total: Optional[int] = None  # 总显存（字节）
+    gpu_name: Optional[str] = None
+
+
 class TaskStatus(BaseModel):
     """任务状态模型"""
     task_id: str
@@ -120,6 +129,7 @@ class TaskStatus(BaseModel):
     json_file: Optional[str] = None
     document_type: Optional[str] = None
     error: Optional[str] = None
+    gpu_info: Optional[GpuInfo] = None  # GPU监控信息
 
 
 class OCRRequest(BaseModel):
@@ -133,6 +143,7 @@ class OCRResponse(BaseModel):
     code: int  # 状态码：0表示成功，-1或其他表示错误
     message: str  # 消息
     data: Optional[dict] = None  # 数据，包含texts和full_text
+    gpu_info: Optional[GpuInfo] = None  # GPU监控信息
 
 
 @app.get("/")
@@ -178,6 +189,10 @@ async def process_conversion_task(
     
     注意：这个函数在响应返回给客户端之后才会执行
     """
+    # GPU监控：记录开始时的GPU状态
+    from ..utils.gpu_monitor import get_gpu_info, get_gpu_info_delta
+    start_gpu_info = get_gpu_info()
+    
     try:
         logger.info(f"[任务 {task_id}] 后台任务开始执行...")
         task_status[task_id]["status"] = "processing"
@@ -213,6 +228,12 @@ async def process_conversion_task(
             forced_document_type=request.doc_type
         )
         
+        # GPU监控：记录结束时的GPU状态
+        end_gpu_info = get_gpu_info()
+        gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
+        if gpu_info_delta:
+            task_status[task_id]["gpu_info"] = gpu_info_delta
+        
         if result:
             task_status[task_id]["status"] = "completed"
             task_status[task_id]["message"] = "转换成功"
@@ -230,6 +251,12 @@ async def process_conversion_task(
             logger.error(f"[任务 {task_id}] 转换失败")
             
     except Exception as e:
+        # GPU监控：即使异常也记录GPU信息
+        end_gpu_info = get_gpu_info()
+        gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
+        if gpu_info_delta:
+            task_status[task_id]["gpu_info"] = gpu_info_delta
+        
         task_status[task_id]["status"] = "failed"
         task_status[task_id]["message"] = f"处理出错: {str(e)}"
         task_status[task_id]["error"] = str(e)
@@ -421,6 +448,12 @@ async def get_task_status(task_id: str):
         raise HTTPException(status_code=404, detail="任务不存在")
     
     status_info = task_status[task_id]
+    
+    # 处理GPU信息
+    gpu_info_model = None
+    if "gpu_info" in status_info and status_info["gpu_info"]:
+        gpu_info_model = GpuInfo(**status_info["gpu_info"])
+    
     return TaskStatus(
         task_id=task_id,
         status=status_info["status"],
@@ -429,7 +462,8 @@ async def get_task_status(task_id: str):
         markdown_file=status_info.get("markdown_file"),
         json_file=status_info.get("json_file"),
         document_type=status_info.get("document_type"),
-        error=status_info.get("error")
+        error=status_info.get("error"),
+        gpu_info=gpu_info_model
     )
 
 
@@ -555,10 +589,14 @@ async def ocr_image(request: OCRRequest):
     - **image_base64**: base64编码的图片数据（可以包含data:image/xxx;base64,前缀）
     - **image_format**: 图片格式（png, jpg, jpeg），默认为png
     
-    返回识别出的文本列表
+    返回识别出的文本列表和GPU监控信息
     """
     temp_dir = None
     image_path = None
+    
+    # GPU监控：记录开始时的GPU状态
+    from ..utils.gpu_monitor import get_gpu_info, get_gpu_info_delta
+    start_gpu_info = get_gpu_info()
     
     try:
         # 创建临时目录
@@ -577,10 +615,15 @@ async def ocr_image(request: OCRRequest):
             logger.info(f"[OCR] Base64解码成功，图片大小: {len(image_bytes)} bytes")
         except Exception as e:
             logger.error(f"[OCR] Base64解码失败: {e}")
+            # GPU监控：即使失败也记录GPU信息
+            end_gpu_info = get_gpu_info()
+            gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
+            gpu_info_model = GpuInfo(**gpu_info_delta) if gpu_info_delta else None
             return OCRResponse(
                 code=-1,
                 message="无法解码base64图片数据",
-                data=None
+                data=None,
+                gpu_info=gpu_info_model
             )
         
         # 确定图片格式和扩展名
@@ -613,12 +656,18 @@ async def ocr_image(request: OCRRequest):
         logger.info(f"[OCR] 开始调用PaddleOCR识别: {image_path}")
         texts, md_file_path = call_paddleocr_ocr(image_path, ocr_save_path)
         
+        # GPU监控：记录结束时的GPU状态
+        end_gpu_info = get_gpu_info()
+        gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
+        gpu_info_model = GpuInfo(**gpu_info_delta) if gpu_info_delta else None
+        
         if texts is None:
             logger.warning("[OCR] PaddleOCR识别失败或未返回结果")
             return OCRResponse(
                 code=-1,
                 message="PaddleOCR未能识别出文本内容",
-                data=None
+                data=None,
+                gpu_info=gpu_info_model  # 即使失败也返回GPU信息
             )
         
         # 返回所有文本（已按Y坐标排序并合并，保持正确顺序）
@@ -642,15 +691,22 @@ async def ocr_image(request: OCRRequest):
             data={
                 "texts": texts,
                 "full_text": full_text
-            }
+            },
+            gpu_info=gpu_info_model  # 返回GPU监控信息
         )
         
     except Exception as e:
+        # GPU监控：即使异常也记录GPU信息
+        end_gpu_info = get_gpu_info()
+        gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
+        gpu_info_model = GpuInfo(**gpu_info_delta) if gpu_info_delta else None
+        
         logger.exception(f"[OCR] 处理失败: {e}")
         return OCRResponse(
             code=-1,
             message=f"OCR处理过程中发生错误: {str(e)}",
-            data=None
+            data=None,
+            gpu_info=gpu_info_model
         )
     # 注意：不再删除临时文件，保留上传的图片和生成的markdown文件
 
