@@ -146,7 +146,7 @@ class ResourceMonitor:
             - gpu_index: GPU索引
             - gpu_name: GPU名称
             - gpu_memory_total: 总显存（字节）
-            - gpu_memory_used: 显存增量（字节），任务期间增加的显存使用
+            - gpu_memory_used: 期间最大显存使用量（字节），任务期间采集到的最大显存使用
             - gpu_memory_used_avg: 平均显存使用（字节）
             - gpu_memory_used_max: 最大显存使用（字节）
             - gpu_utilization_avg: 平均GPU利用率（%）
@@ -174,12 +174,7 @@ class ResourceMonitor:
             first_gpu = gpu_samples[0]
             last_gpu = gpu_samples[-1]
             
-            # 显存增量 = 结束时的显存 - 开始时的显存
-            memory_start = first_gpu.get("gpu_memory_used", 0)
-            memory_end = last_gpu.get("gpu_memory_used", 0)
-            memory_delta = max(0, memory_end - memory_start)
-            
-            # 计算平均值和最大值
+            # 计算平均值和最大值（用于统计）
             memory_values = [g.get("gpu_memory_used", 0) for g in gpu_samples]
             utilization_values = [g.get("gpu_utilization", 0) for g in gpu_samples]
             
@@ -187,6 +182,10 @@ class ResourceMonitor:
             memory_max = max(memory_values) if memory_values else 0
             utilization_avg = sum(utilization_values) / len(utilization_values) if utilization_values else 0
             utilization_max = max(utilization_values) if utilization_values else 0
+            
+            # 使用期间最大显存值（不再计算增量）
+            # 注意：这是采集期间的最大显存使用量，不是增量
+            gpu_memory_used = int(memory_max)
             
             # 计算系统负载统计
             load_1min_values = [l.get("load_1min", 0) for l in load_samples if l]
@@ -200,7 +199,7 @@ class ResourceMonitor:
                 "gpu_index": first_gpu.get("gpu_index"),
                 "gpu_name": first_gpu.get("gpu_name"),
                 "gpu_memory_total": first_gpu.get("gpu_memory_total"),
-                "gpu_memory_used": memory_delta,  # 显存增量
+                "gpu_memory_used": gpu_memory_used,  # 期间最大显存使用量（不是增量）
                 "gpu_memory_used_avg": int(memory_avg),
                 "gpu_memory_used_max": int(memory_max),
                 "gpu_utilization": utilization_avg,  # 平均利用率
@@ -213,7 +212,8 @@ class ResourceMonitor:
             }
             
             logger.info(f"资源统计计算完成 - 样本数: {len(self.samples)}, 持续时间: {duration:.2f}秒, "
-                       f"显存增量: {memory_delta / 1024 / 1024:.2f}MB, 平均GPU利用率: {utilization_avg:.2f}%")
+                       f"最大显存使用: {gpu_memory_used / 1024 / 1024:.2f}MB (平均: {memory_avg / 1024 / 1024:.2f}MB), "
+                       f"平均GPU利用率: {utilization_avg:.2f}%, 最大GPU利用率: {utilization_max:.2f}%")
             
             return result
 

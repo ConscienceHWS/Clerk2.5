@@ -113,7 +113,7 @@ class ConversionResponse(BaseModel):
 class GpuInfo(BaseModel):
     """GPU监控信息（基于采集数据计算得出）"""
     gpu_index: Optional[int] = None
-    gpu_memory_used: Optional[int] = None  # 字节，任务期间的显存增量
+    gpu_memory_used: Optional[int] = None  # 字节，任务期间的最大显存使用量
     gpu_utilization: Optional[float] = None  # 百分比，平均GPU利用率
     gpu_memory_total: Optional[int] = None  # 总显存（字节）
     gpu_name: Optional[str] = None
