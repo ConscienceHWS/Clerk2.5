@@ -111,12 +111,20 @@ class ConversionResponse(BaseModel):
 
 
 class GpuInfo(BaseModel):
-    """GPU监控信息"""
+    """GPU监控信息（基于采集数据计算得出）"""
     gpu_index: Optional[int] = None
-    gpu_memory_used: Optional[int] = None  # 字节，OCR任务期间的显存增量
-    gpu_utilization: Optional[float] = None  # 百分比
+    gpu_memory_used: Optional[int] = None  # 字节，任务期间的显存增量
+    gpu_utilization: Optional[float] = None  # 百分比，平均GPU利用率
     gpu_memory_total: Optional[int] = None  # 总显存（字节）
     gpu_name: Optional[str] = None
+    # 以下为可选统计字段
+    gpu_memory_used_avg: Optional[int] = None  # 平均显存使用（字节）
+    gpu_memory_used_max: Optional[int] = None  # 最大显存使用（字节）
+    gpu_utilization_max: Optional[float] = None  # 最大GPU利用率（%）
+    system_load_avg_1min: Optional[float] = None  # 平均1分钟系统负载
+    system_load_max_1min: Optional[float] = None  # 最大1分钟系统负载
+    sample_count: Optional[int] = None  # 采集的样本数量
+    duration: Optional[float] = None  # 监控持续时间（秒）
 
 
 class TaskStatus(BaseModel):
@@ -189,9 +197,10 @@ async def process_conversion_task(
     
     注意：这个函数在响应返回给客户端之后才会执行
     """
-    # GPU监控：记录开始时的GPU状态
-    from ..utils.gpu_monitor import get_gpu_info, get_gpu_info_delta
-    start_gpu_info = get_gpu_info()
+    # 资源监控：启动后台采集线程（每0.5秒采集一次）
+    from ..utils.resource_monitor import ResourceMonitor
+    monitor = ResourceMonitor(interval=0.5)
+    monitor.start()
     
     try:
         logger.info(f"[任务 {task_id}] 后台任务开始执行...")
@@ -228,11 +237,11 @@ async def process_conversion_task(
             forced_document_type=request.doc_type
         )
         
-        # GPU监控：记录结束时的GPU状态
-        end_gpu_info = get_gpu_info()
-        gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
-        if gpu_info_delta:
-            task_status[task_id]["gpu_info"] = gpu_info_delta
+        # 停止监控并获取统计结果（基于采集的数据计算）
+        monitor.stop()
+        stats = monitor.get_statistics()
+        if stats:
+            task_status[task_id]["gpu_info"] = stats
         
         if result:
             task_status[task_id]["status"] = "completed"
@@ -251,11 +260,11 @@ async def process_conversion_task(
             logger.error(f"[任务 {task_id}] 转换失败")
             
     except Exception as e:
-        # GPU监控：即使异常也记录GPU信息
-        end_gpu_info = get_gpu_info()
-        gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
-        if gpu_info_delta:
-            task_status[task_id]["gpu_info"] = gpu_info_delta
+        # 停止监控并获取统计结果（即使异常也记录）
+        monitor.stop()
+        stats = monitor.get_statistics()
+        if stats:
+            task_status[task_id]["gpu_info"] = stats
         
         task_status[task_id]["status"] = "failed"
         task_status[task_id]["message"] = f"处理出错: {str(e)}"
@@ -594,9 +603,10 @@ async def ocr_image(request: OCRRequest):
     temp_dir = None
     image_path = None
     
-    # GPU监控：记录开始时的GPU状态
-    from ..utils.gpu_monitor import get_gpu_info, get_gpu_info_delta
-    start_gpu_info = get_gpu_info()
+    # 资源监控：启动后台采集线程（每0.5秒采集一次）
+    from ..utils.resource_monitor import ResourceMonitor
+    monitor = ResourceMonitor(interval=0.5)
+    monitor.start()
     
     try:
         # 创建临时目录
@@ -615,10 +625,10 @@ async def ocr_image(request: OCRRequest):
             logger.info(f"[OCR] Base64解码成功，图片大小: {len(image_bytes)} bytes")
         except Exception as e:
             logger.error(f"[OCR] Base64解码失败: {e}")
-            # GPU监控：即使失败也记录GPU信息
-            end_gpu_info = get_gpu_info()
-            gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
-            gpu_info_model = GpuInfo(**gpu_info_delta) if gpu_info_delta else None
+            # 停止监控并获取统计结果
+            monitor.stop()
+            stats = monitor.get_statistics()
+            gpu_info_model = GpuInfo(**stats) if stats else None
             return OCRResponse(
                 code=-1,
                 message="无法解码base64图片数据",
@@ -646,7 +656,7 @@ async def ocr_image(request: OCRRequest):
             f.write(image_bytes)
         logger.info(f"[OCR] 图片已保存: {image_path}")
         
-        # 调用PaddleOCR进行识别
+        # 调用PaddleOCR进行识别（监控线程在此期间持续采集数据）
         from ..utils.paddleocr_fallback import call_paddleocr_ocr
         
         # 创建保存OCR结果的目录
@@ -656,10 +666,10 @@ async def ocr_image(request: OCRRequest):
         logger.info(f"[OCR] 开始调用PaddleOCR识别: {image_path}")
         texts, md_file_path = call_paddleocr_ocr(image_path, ocr_save_path)
         
-        # GPU监控：记录结束时的GPU状态
-        end_gpu_info = get_gpu_info()
-        gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
-        gpu_info_model = GpuInfo(**gpu_info_delta) if gpu_info_delta else None
+        # 停止监控并获取统计结果（基于采集的数据计算）
+        monitor.stop()
+        stats = monitor.get_statistics()
+        gpu_info_model = GpuInfo(**stats) if stats else None
         
         if texts is None:
             logger.warning("[OCR] PaddleOCR识别失败或未返回结果")
@@ -696,10 +706,10 @@ async def ocr_image(request: OCRRequest):
         )
         
     except Exception as e:
-        # GPU监控：即使异常也记录GPU信息
-        end_gpu_info = get_gpu_info()
-        gpu_info_delta = get_gpu_info_delta(start_gpu_info, end_gpu_info)
-        gpu_info_model = GpuInfo(**gpu_info_delta) if gpu_info_delta else None
+        # 停止监控并获取统计结果（即使异常也记录）
+        monitor.stop()
+        stats = monitor.get_statistics()
+        gpu_info_model = GpuInfo(**stats) if stats else None
         
         logger.exception(f"[OCR] 处理失败: {e}")
         return OCRResponse(
