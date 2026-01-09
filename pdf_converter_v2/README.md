@@ -135,13 +135,125 @@ pdf_converter_v2/
     └── logging_config.py # 日志配置
 ```
 
+## 安装依赖
+
+### 确定使用的Python环境
+
+在安装依赖之前，需要确定服务使用的Python环境：
+
+**方法1：使用检查脚本（推荐）**
+```bash
+cd /home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2
+bash check_python_env.sh
+```
+
+**方法2：手动检查**
+```bash
+# 检查systemd服务使用的Python
+cat /etc/systemd/system/pdf-converter-v2.service | grep ExecStart
+
+# 检查运行中的进程
+ps aux | grep pdf-converter-v2 | grep python
+
+# 检查项目使用的Python（查看api_server.py第一行）
+head -1 api_server.py
+
+# 检查默认Python
+which python3
+python3 --version
+```
+
+**方法3：通过Python代码检查**
+```bash
+# 在Python中检查
+python3 -c "import sys; print('Python路径:', sys.executable); print('Python版本:', sys.version)"
+```
+
+### 快速安装（推荐）
+
+确定Python环境后，使用对应的pip安装：
+
+```bash
+# 如果使用 python3，使用 pip3
+pip3 install -r requirements.txt
+
+# 如果使用 python，使用 pip
+pip install -r requirements.txt
+
+# 如果不确定，使用 python -m pip（推荐）
+python3 -m pip install -r requirements.txt
+```
+
+### 手动安装
+
+**必需依赖：**
+```bash
+# 根据你的Python环境选择对应的pip命令
+pip3 install aiohttp aiofiles Pillow
+# 或
+python3 -m pip install aiohttp aiofiles Pillow
+```
+
+**PDF处理库（至少安装一个）：**
+```bash
+# 方案1：安装 pypdfium2（推荐，文件更小）
+pip3 install pypdfium2
+# 或
+python3 -m pip install pypdfium2
+
+# 方案2：安装 pdf2image（备用方案，需要系统安装 poppler）
+# Ubuntu/Debian: sudo apt-get install poppler-utils
+# CentOS/RHEL: sudo yum install poppler-utils
+# macOS: brew install poppler
+pip3 install pdf2image
+# 或
+python3 -m pip install pdf2image
+```
+
+**如果使用API服务：**
+```bash
+pip3 install fastapi uvicorn[standard] pydantic typing-extensions
+# 或
+python3 -m pip install fastapi uvicorn[standard] pydantic typing-extensions
+```
+
+**日志库（至少安装一个）：**
+```bash
+pip3 install loguru
+# 或
+python3 -m pip install loguru
+# 或使用 happy-python
+pip3 install happy-python
+```
+
+### 系统依赖
+
+如果使用 `pdf2image`，需要安装系统级的 `poppler` 工具：
+
+- **Ubuntu/Debian:**
+  ```bash
+  sudo apt-get update
+  sudo apt-get install poppler-utils
+  ```
+
+- **CentOS/RHEL:**
+  ```bash
+  sudo yum install poppler-utils
+  ```
+
+- **macOS:**
+  ```bash
+  brew install poppler
+  ```
+
 ## 依赖要求
 
-- aiohttp: 异步HTTP客户端
-- aiofiles: 异步文件操作
-- pdf2image: PDF转图片
-- PIL/Pillow: 图片处理
-- loguru或happy-python: 日志记录
+- **aiohttp**: 异步HTTP客户端
+- **aiofiles**: 异步文件操作
+- **Pillow**: 图片处理（必需）
+- **pypdfium2** 或 **pdf2image**: PDF转图片（至少安装一个，推荐 pypdfium2）
+- **loguru** 或 **happy-python**: 日志记录（至少安装一个）
+- **fastapi, uvicorn, pydantic**: Web框架（仅在使用API服务时需要）
 
 ## 与v1版本的区别
 

@@ -26,6 +26,13 @@ except ImportError:
     logger.warning("[PaddleOCR备用] pypdfium2未安装，无法从PDF提取图片")
 
 try:
+    from pdf2image import convert_from_path
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
+    logger.warning("[PaddleOCR备用] pdf2image未安装，无法使用备用方法从PDF提取图片")
+
+try:
     from PIL import Image
     PIL_AVAILABLE = True
 except ImportError:
@@ -579,6 +586,8 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
 def extract_first_page_from_pdf(pdf_path: str, output_dir: str) -> Optional[str]:
     """从PDF文件中提取第一页作为图片
     
+    优先使用pypdfium2，如果不可用则使用pdf2image作为后备方案。
+    
     Args:
         pdf_path: PDF文件路径
         output_dir: 输出目录，用于保存提取的图片
@@ -586,51 +595,85 @@ def extract_first_page_from_pdf(pdf_path: str, output_dir: str) -> Optional[str]
     Returns:
         提取的图片路径，如果失败返回None
     """
-    if not PDFIUM_AVAILABLE or not PIL_AVAILABLE:
-        logger.error("[PaddleOCR备用] 缺少必要的库（pypdfium2或PIL），无法从PDF提取图片")
+    if not PIL_AVAILABLE:
+        logger.error("[PaddleOCR备用] 缺少必要的库（PIL/Pillow），无法处理图片")
         return None
     
-    try:
-        if not os.path.exists(pdf_path):
-            logger.error(f"[PaddleOCR备用] PDF文件不存在: {pdf_path}")
-            return None
-        
-        # 打开PDF文件
-        pdf = pdfium.PdfDocument(pdf_path)
+    if not os.path.exists(pdf_path):
+        logger.error(f"[PaddleOCR备用] PDF文件不存在: {pdf_path}")
+        return None
+    
+    # 方法1: 尝试使用pypdfium2（优先方法，文件更小）
+    if PDFIUM_AVAILABLE:
         try:
-            if len(pdf) == 0:
-                logger.error("[PaddleOCR备用] PDF文件为空")
+            # 打开PDF文件
+            pdf = pdfium.PdfDocument(pdf_path)
+            try:
+                if len(pdf) == 0:
+                    logger.error("[PaddleOCR备用] PDF文件为空")
+                    return None
+                
+                # 获取第一页
+                page = pdf[0]
+                
+                # 渲染为图片（使用较低的DPI以减小文件大小，150 DPI通常足够OCR使用）
+                # 原始200 DPI会导致文件过大（4-5MB），降低到150 DPI可以显著减小文件大小
+                bitmap = page.render(scale=150/72)  # 150 DPI = 150/72 scale
+                
+                # 转换为PIL Image
+                pil_image = bitmap.to_pil()
+                
+                # 保存图片，使用压缩优化以减小文件大小
+                os.makedirs(output_dir, exist_ok=True)
+                image_filename = f"paddleocr_fallback_page0_{int(time.time() * 1000)}_{random.randint(1000, 9999)}.png"
+                image_path = os.path.join(output_dir, image_filename)
+                # 使用optimize=True和compress_level=6来平衡文件大小和质量
+                pil_image.save(image_path, "PNG", optimize=True, compress_level=6)
+                
+                logger.info(f"[PaddleOCR备用] 使用pypdfium2从PDF提取第一页图片: {image_path}")
+                
+                # 清理资源
+                bitmap.close()
+                return image_path
+                
+            finally:
+                pdf.close()
+                
+        except Exception as e:
+            logger.warning(f"[PaddleOCR备用] 使用pypdfium2提取图片失败，尝试使用pdf2image: {e}")
+            # 继续尝试pdf2image方法
+    
+    # 方法2: 使用pdf2image作为后备方案
+    if PDF2IMAGE_AVAILABLE:
+        try:
+            # 使用pdf2image提取第一页（150 DPI）
+            images = convert_from_path(pdf_path, dpi=150, first_page=1, last_page=1)
+            if not images:
+                logger.error("[PaddleOCR备用] pdf2image未能提取到图片")
                 return None
             
-            # 获取第一页
-            page = pdf[0]
-            
-            # 渲染为图片（使用较低的DPI以减小文件大小，150 DPI通常足够OCR使用）
-            # 原始200 DPI会导致文件过大（4-5MB），降低到150 DPI可以显著减小文件大小
-            bitmap = page.render(scale=150/72)  # 150 DPI = 150/72 scale
-            
-            # 转换为PIL Image
-            pil_image = bitmap.to_pil()
-            
-            # 保存图片，使用压缩优化以减小文件大小
+            # 保存第一页图片
             os.makedirs(output_dir, exist_ok=True)
             image_filename = f"paddleocr_fallback_page0_{int(time.time() * 1000)}_{random.randint(1000, 9999)}.png"
             image_path = os.path.join(output_dir, image_filename)
-            # 使用optimize=True和compress_level=6来平衡文件大小和质量
-            pil_image.save(image_path, "PNG", optimize=True, compress_level=6)
+            # 使用压缩优化以减小文件大小
+            images[0].save(image_path, "PNG", optimize=True, compress_level=6)
             
-            logger.info(f"[PaddleOCR备用] 从PDF提取第一页图片: {image_path}")
-            
-            # 清理资源
-            bitmap.close()
+            logger.info(f"[PaddleOCR备用] 使用pdf2image从PDF提取第一页图片: {image_path}")
             return image_path
             
-        finally:
-            pdf.close()
-            
-    except Exception as e:
-        logger.exception(f"[PaddleOCR备用] 从PDF提取图片失败: {e}")
-        return None
+        except Exception as e:
+            logger.exception(f"[PaddleOCR备用] 使用pdf2image提取图片失败: {e}")
+    
+    # 如果两种方法都不可用
+    missing_libs = []
+    if not PDFIUM_AVAILABLE:
+        missing_libs.append("pypdfium2")
+    if not PDF2IMAGE_AVAILABLE:
+        missing_libs.append("pdf2image")
+    
+    logger.error(f"[PaddleOCR备用] 缺少必要的库（{'或'.join(missing_libs)}），无法从PDF提取图片。请安装: pip install {' '.join(missing_libs)}")
+    return None
 
 
 def find_pdf_file(output_dir: str) -> Optional[str]:
@@ -1725,7 +1768,7 @@ def fallback_parse_with_paddleocr(
                 else:
                     # 文件类型未知，尝试按PDF处理（可能是PDF但没有正确识别）
                     logger.debug(f"[PaddleOCR备用] input_file类型未知（{file_type}），尝试按PDF处理: {input_file}")
-                    if PDFIUM_AVAILABLE:
+                    if PDFIUM_AVAILABLE or PDF2IMAGE_AVAILABLE:
                         try:
                             # 尝试打开为PDF
                             pdf_path = input_file
