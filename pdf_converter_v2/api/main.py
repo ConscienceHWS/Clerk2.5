@@ -222,8 +222,8 @@ async def process_conversion_task(
             # 延迟导入，避免启动时因 pandas/numpy 版本冲突导致服务无法启动
             from ..utils.table_extractor import extract_and_filter_tables_for_pdf
             
-            # 在线程池中执行表格提取（因为它是同步函数）
-            async def run_table_extraction():
+            # 在线程池中执行表格提取（因为它是同步函数，使用 to_thread 避免阻塞事件循环）
+            def run_table_extraction_sync():
                 try:
                     return extract_and_filter_tables_for_pdf(
                         pdf_path=file_path,
@@ -234,8 +234,8 @@ async def process_conversion_task(
                     logger.exception(f"[任务 {task_id}] 表格提取/筛选失败: {e}")
                     return None
             
-            # 创建并行任务
-            table_extraction_task = asyncio.create_task(run_table_extraction())
+            # 在线程池中执行同步函数，与外部 API 调用并行
+            table_extraction_task = asyncio.to_thread(run_table_extraction_sync)
         
         # 执行转换（v2 使用外部API）
         # v2 特有的参数通过配置或环境变量获取
