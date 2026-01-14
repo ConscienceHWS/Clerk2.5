@@ -273,8 +273,12 @@ async def process_conversion_task(
             task_status[task_id]["json_file"] = result.get("json_file")
             # 保存JSON数据内容，以便直接返回
             if result.get("json_data"):
-                task_status[task_id]["json_data"] = result["json_data"]
-                task_status[task_id]["document_type"] = result["json_data"].get("document_type")
+                json_data = result["json_data"].copy()
+                # 对于 designReview 类型，添加表格解析数据
+                if request.doc_type == "designReview" and tables_info and tables_info.get("parsed_data"):
+                    json_data["table_data"] = tables_info["parsed_data"]
+                task_status[task_id]["json_data"] = json_data
+                task_status[task_id]["document_type"] = json_data.get("document_type")
             logger.info(f"[任务 {task_id}] 转换成功")
         else:
             task_status[task_id]["status"] = "failed"
