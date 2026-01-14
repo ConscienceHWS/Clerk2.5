@@ -213,12 +213,12 @@ async def process_conversion_task(
         
         logger.info(f"[任务 {task_id}] 开始处理: {file_path}")
         
-        # 针对结算报告 / 初设评审类文档，并行执行表格提取与筛选逻辑
-        # 表格提取独立执行，不依赖外部 API 的结果，与外部 API 调用并行执行
+        result = None
         tables_info = None
-        table_extraction_task = None
+        
+        # 针对结算报告 / 初设评审类文档，直接执行表格提取，不调用外部 API
         if request.doc_type in ("settlementReport", "designReview"):
-            logger.info(f"[任务 {task_id}] 开始表格提取（并行执行），文档类型: {request.doc_type}")
+            logger.info(f"[任务 {task_id}] 文档类型 {request.doc_type}，跳过外部 API，直接执行表格提取")
             # 延迟导入，避免启动时因 pandas/numpy 版本冲突导致服务无法启动
             from ..utils.table_extractor import extract_and_filter_tables_for_pdf
             
@@ -234,16 +234,30 @@ async def process_conversion_task(
                     logger.exception(f"[任务 {task_id}] 表格提取/筛选失败: {e}")
                     return None
             
-            # 在线程池中执行同步函数，创建任务但不立即 await，与外部 API 调用并行
-            table_extraction_task = asyncio.create_task(
-                asyncio.to_thread(run_table_extraction_sync)
-            )
-        
-        # 执行转换（v2 使用外部API）
-        # v2 特有的参数通过配置或环境变量获取
-        # 与表格提取并行执行
-        conversion_task = asyncio.create_task(
-            convert_to_markdown(
+            # 执行表格提取
+            tables_info = await asyncio.to_thread(run_table_extraction_sync)
+            
+            # 构造一个简单的 result，包含必要的字段
+            if tables_info:
+                # 将表格信息挂到任务状态，方便后续调试或扩展
+                task_status[task_id]["tables"] = tables_info
+                logger.info(
+                    f"[任务 {task_id}] 表格提取完成，筛选目录: {tables_info.get('filtered_dir')}"
+                )
+                
+                # 构造 result，包含解析后的 JSON 数据
+                result = {
+                    "markdown_file": None,  # 这两个类型不需要 markdown
+                    "json_file": None,  # JSON 数据直接放在 json_data 中
+                    "json_data": {
+                        "document_type": request.doc_type,
+                        "data": tables_info.get("parsed_data", {}),
+                    }
+                }
+        else:
+            # 其他类型：执行转换（v2 使用外部API）
+            # v2 特有的参数通过配置或环境变量获取
+            result = await convert_to_markdown(
                 input_file=file_path,
                 output_dir=output_dir,
                 # v2: 去除max_pages、公式/表格等前端可调参数
@@ -267,34 +281,6 @@ async def process_conversion_task(
                 return_images=DEFAULT_RETURN_IMAGES,
                 return_content_list=DEFAULT_RETURN_CONTENT_LIST,
                 forced_document_type=request.doc_type
-            )
-        )
-        
-        # 等待两个任务完成（并行执行）
-        if table_extraction_task:
-            # 两个任务并行执行
-            result, tables_info = await asyncio.gather(
-                conversion_task,
-                table_extraction_task,
-                return_exceptions=True
-            )
-            # 处理异常
-            if isinstance(result, Exception):
-                logger.error(f"[任务 {task_id}] 外部 API 调用失败: {result}")
-                result = None
-            if isinstance(tables_info, Exception):
-                logger.error(f"[任务 {task_id}] 表格提取失败: {tables_info}")
-                tables_info = None
-        else:
-            # 只有外部 API 调用
-            result = await conversion_task
-        
-        # 处理表格提取结果
-        if tables_info:
-            # 将表格信息挂到任务状态，方便后续调试或扩展
-            task_status[task_id]["tables"] = tables_info
-            logger.info(
-                f"[任务 {task_id}] 表格提取完成，筛选目录: {tables_info.get('filtered_dir')}"
             )
         
         # 停止监控并获取统计结果（基于采集的数据计算）
