@@ -229,7 +229,24 @@ async def convert_to_markdown(
                 elif ext in {'.webp'}:
                     content_type = 'image/webp'
 
-                form_data.add_field('files', file_obj, filename=os.path.basename(input_file), content_type=content_type)
+                # 将上传文件名截断，避免对端服务在构造输出路径时触发 “File name too long”
+                original_name = os.path.basename(input_file)
+                max_name_len = 120
+                if len(original_name) > max_name_len:
+                    stem = Path(original_name).stem
+                    suffix = Path(original_name).suffix
+                    max_stem_len = max_name_len - len(suffix)
+                    safe_stem_name = stem[:max_stem_len]
+                    upload_name = f"{safe_stem_name}{suffix}"
+                else:
+                    upload_name = original_name
+
+                form_data.add_field(
+                    'files',
+                    file_obj,
+                    filename=upload_name,
+                    content_type=content_type
+                )
                 
                 # 发送API请求
                 async with aiohttp.ClientSession() as session:
