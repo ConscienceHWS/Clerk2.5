@@ -241,8 +241,9 @@ async def convert_to_markdown(
                     content_type=content_type
                 )
                 
-                # 发送API请求
-                async with aiohttp.ClientSession() as session:
+                # 发送API请求（设置超时时间：总超时300秒，连接超时30秒）
+                timeout = aiohttp.ClientTimeout(total=300, connect=30)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
                     logger.info(f"开始上传文件: {input_file}")
                     async with session.post(api_url, data=form_data) as response:
                         if response.status != 200:
