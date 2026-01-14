@@ -213,6 +213,30 @@ async def process_conversion_task(
         
         logger.info(f"[任务 {task_id}] 开始处理: {file_path}")
         
+        # 针对结算报告 / 初设评审类文档，并行执行表格提取与筛选逻辑
+        # 表格提取独立执行，不依赖外部 API 的结果，与外部 API 调用并行执行
+        tables_info = None
+        table_extraction_task = None
+        if request.doc_type in ("settlementReport", "designReview"):
+            logger.info(f"[任务 {task_id}] 开始表格提取（并行执行），文档类型: {request.doc_type}")
+            # 延迟导入，避免启动时因 pandas/numpy 版本冲突导致服务无法启动
+            from ..utils.table_extractor import extract_and_filter_tables_for_pdf
+            
+            # 在线程池中执行表格提取（因为它是同步函数）
+            async def run_table_extraction():
+                try:
+                    return extract_and_filter_tables_for_pdf(
+                        pdf_path=file_path,
+                        base_output_dir=output_dir,
+                        doc_type=request.doc_type,  # type: ignore[arg-type]
+                    )
+                except Exception as e:
+                    logger.exception(f"[任务 {task_id}] 表格提取/筛选失败: {e}")
+                    return None
+            
+            # 创建并行任务
+            table_extraction_task = asyncio.create_task(run_table_extraction())
+        
         # 执行转换（v2 使用外部API）
         # v2 特有的参数通过配置或环境变量获取
         result = await convert_to_markdown(
@@ -240,27 +264,16 @@ async def process_conversion_task(
             return_content_list=DEFAULT_RETURN_CONTENT_LIST,
             forced_document_type=request.doc_type
         )
-
-        # 针对结算报告 / 初设评审类文档，额外执行表格提取与筛选逻辑
-        # 表格提取独立执行，不依赖外部 API 的结果
-        tables_info = None
-        if request.doc_type in ("settlementReport", "designReview"):
-            try:
-                logger.info(f"[任务 {task_id}] 开始表格提取，文档类型: {request.doc_type}")
-                # 延迟导入，避免启动时因 pandas/numpy 版本冲突导致服务无法启动
-                from ..utils.table_extractor import extract_and_filter_tables_for_pdf
-                tables_info = extract_and_filter_tables_for_pdf(
-                    pdf_path=file_path,
-                    base_output_dir=output_dir,
-                    doc_type=request.doc_type,  # type: ignore[arg-type]
-                )
+        
+        # 等待表格提取完成（如果已启动）
+        if table_extraction_task:
+            tables_info = await table_extraction_task
+            if tables_info:
                 # 将表格信息挂到任务状态，方便后续调试或扩展
                 task_status[task_id]["tables"] = tables_info
                 logger.info(
                     f"[任务 {task_id}] 表格提取完成，筛选目录: {tables_info.get('filtered_dir')}"
                 )
-            except Exception as e:
-                logger.exception(f"[任务 {task_id}] 表格提取/筛选失败: {e}")
         
         # 停止监控并获取统计结果（基于采集的数据计算）
         monitor.stop()
