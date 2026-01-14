@@ -8,6 +8,7 @@ Pillow>=9.0.0           # 图片处理（PIL）
 # PDF处理（至少安装一个）
 pypdfium2>=4.0.0        # PDF处理库（推荐，文件更小）
 pdf2image>=1.16.0       # PDF转图片（备用方案，需要poppler）
+pdfplumber>=0.11.0      # PDF表格提取库（用于settlementReport和designReview类型）
 
 # Web框架（如果使用API服务）
 fastapi>=0.100.0        # FastAPI框架
