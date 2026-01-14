@@ -876,8 +876,6 @@ def parse_settlement_report_tables(
             # ...
         except Exception as e:
             # 如果解析失败，记录错误但不影响其他表格
-            import logging
-            logger = logging.getLogger(__name__)
             logger.warning(f"解析 {rule_name} 表格失败: {e}")
     
     return result
