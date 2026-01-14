@@ -374,14 +374,21 @@ async def convert_file(
                     logger.info(f"[任务 {task_id}] 通过文件内容检测到类型 {detected_type}，重命名为: {file_path}")
 
         # 如果原始文件名过长，在临时目录中重命名为较短的安全文件名，避免后续处理时路径过长
-        max_name_len = 120
+        # 使用80字符阈值，与converter.py保持一致
+        max_name_len = 80
         basename = os.path.basename(file_path)
         if len(basename) > max_name_len:
             suffix = Path(basename).suffix
             stem = Path(basename).stem
             max_stem_len = max_name_len - len(suffix)
-            safe_stem_name = stem[:max_stem_len]
-            safe_name = f"{safe_stem_name}{suffix}"
+            # 如果截断后太短，使用简化命名：保留前几个字符 + 哈希后缀
+            if max_stem_len < 10:
+                import hashlib
+                hash_suffix = hashlib.md5(basename.encode('utf-8')).hexdigest()[:8]
+                safe_name = f"file_{hash_suffix}{suffix}"
+            else:
+                safe_stem_name = stem[:max_stem_len]
+                safe_name = f"{safe_stem_name}{suffix}"
             safe_path = os.path.join(temp_dir, safe_name)
             os.rename(file_path, safe_path)
             logger.info(f"[任务 {task_id}] 原始文件名过长，已重命名为: {safe_path}")

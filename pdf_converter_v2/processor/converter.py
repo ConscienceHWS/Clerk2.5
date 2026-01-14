@@ -229,15 +229,22 @@ async def convert_to_markdown(
                 elif ext in {'.webp'}:
                     content_type = 'image/webp'
 
-                # 将上传文件名截断，避免对端服务在构造输出路径时触发 “File name too long”
+                # 将上传文件名截断为更短的安全文件名，避免对端服务在构造输出路径时触发 “File name too long”
+                # 使用更短的阈值（80字符），因为外部API可能会在路径中拼接其他部分
                 original_name = os.path.basename(input_file)
-                max_name_len = 120
+                max_name_len = 80  # 降低到80字符，留出更多安全余量
                 if len(original_name) > max_name_len:
                     stem = Path(original_name).stem
                     suffix = Path(original_name).suffix
                     max_stem_len = max_name_len - len(suffix)
-                    safe_stem_name = stem[:max_stem_len]
-                    upload_name = f"{safe_stem_name}{suffix}"
+                    # 如果截断后太短，使用简化命名：保留前几个字符 + 哈希后缀
+                    if max_stem_len < 10:
+                        import hashlib
+                        hash_suffix = hashlib.md5(original_name.encode('utf-8')).hexdigest()[:8]
+                        upload_name = f"file_{hash_suffix}{suffix}"
+                    else:
+                        safe_stem_name = stem[:max_stem_len]
+                        upload_name = f"{safe_stem_name}{suffix}"
                 else:
                     upload_name = original_name
 
