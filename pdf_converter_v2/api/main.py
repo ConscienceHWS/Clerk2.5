@@ -372,6 +372,20 @@ async def convert_file(
                     os.rename(file_path, new_file_path)
                     file_path = new_file_path
                     logger.info(f"[任务 {task_id}] 通过文件内容检测到类型 {detected_type}，重命名为: {file_path}")
+
+        # 如果原始文件名过长，在临时目录中重命名为较短的安全文件名，避免后续处理时路径过长
+        max_name_len = 120
+        basename = os.path.basename(file_path)
+        if len(basename) > max_name_len:
+            suffix = Path(basename).suffix
+            stem = Path(basename).stem
+            max_stem_len = max_name_len - len(suffix)
+            safe_stem_name = stem[:max_stem_len]
+            safe_name = f"{safe_stem_name}{suffix}"
+            safe_path = os.path.join(temp_dir, safe_name)
+            os.rename(file_path, safe_path)
+            logger.info(f"[任务 {task_id}] 原始文件名过长，已重命名为: {safe_path}")
+            file_path = safe_path
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
     
