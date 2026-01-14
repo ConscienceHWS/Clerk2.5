@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from typing_extensions import Annotated, Literal
 
 from ..processor.converter import convert_to_markdown
+from ..utils.table_extractor import extract_and_filter_tables_for_pdf
 from ..utils.logging_config import get_logger
 
 # 尝试导入配置，如果不存在则使用默认值
@@ -240,6 +241,23 @@ async def process_conversion_task(
             return_content_list=DEFAULT_RETURN_CONTENT_LIST,
             forced_document_type=request.doc_type
         )
+
+        # 针对结算报告 / 初设评审类文档，额外执行表格提取与筛选逻辑
+        tables_info = None
+        if result and request.doc_type in ("settlementReport", "designReview"):
+            try:
+                tables_info = extract_and_filter_tables_for_pdf(
+                    pdf_path=file_path,
+                    base_output_dir=output_dir,
+                    doc_type=request.doc_type,  # type: ignore[arg-type]
+                )
+                # 将表格信息挂到任务状态，方便后续调试或扩展
+                task_status[task_id]["tables"] = tables_info
+                logger.info(
+                    f"[任务 {task_id}] 表格提取完成，筛选目录: {tables_info.get('filtered_dir')}"
+                )
+            except Exception as e:
+                logger.exception(f"[任务 {task_id}] 表格提取/筛选失败: {e}")
         
         # 停止监控并获取统计结果（基于采集的数据计算）
         monitor.stop()
@@ -282,8 +300,11 @@ async def process_conversion_task(
 @app.post("/convert", response_model=ConversionResponse)
 async def convert_file(
     file: Annotated[UploadFile, File(description="上传的PDF或图片文件")],
-    # 新增：类型参数（英文传参） noiseRec | emRec | equipLog | opStatus
-    type: Annotated[Optional[Literal["noiseRec", "emRec", "opStatus"]], Form(description="文档类型：noiseRec | emRec | opStatus")] = None,
+    # 新增：类型参数（英文传参） noiseRec | emRec | opStatus | settlementReport | designReview
+    type: Annotated[
+        Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview"]],
+        Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview")
+    ] = None,
 ):
     """
     转换PDF/图片文件（异步处理）
@@ -295,7 +316,7 @@ async def convert_file(
     4. 客户端使用task_id轮询状态或直接获取结果
     
     - **file**: 上传的文件（PDF或图片）
-    - **type**: 文档类型（noiseRec | emRec | opStatus）
+    - **type**: 文档类型（noiseRec | emRec | opStatus | settlementReport | designReview）
     
     注意：v2 版本内部使用外部API进行转换，v2特有的配置参数（如API URL、backend等）
     通过环境变量或配置文件设置，不通过API参数传入。
@@ -403,6 +424,10 @@ async def convert_file(
         "noiseRec": "noiseMonitoringRecord",
         "emRec": "electromagneticTestRecord",
         "opStatus": "operatingConditionInfo",
+        # 结算报告类
+        "settlementReport": "settlementReport",
+        # 初设评审类
+        "designReview": "designReview",
     }
     doc_type = None
     if type:
