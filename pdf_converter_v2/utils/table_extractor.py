@@ -852,9 +852,13 @@ def parse_settlement_report_tables(
                 parsed_data = parse_settlement_summary_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
+            elif rule_name == "合同执行情况":
+                parsed_data = parse_contract_execution_table(df)
+                if parsed_data:
+                    result[rule_name] = parsed_data
             # 其他表暂时留空，后续实现
-            # elif rule_name == "合同执行情况":
-            #     result[rule_name] = parse_contract_execution_table(df)
+            # elif rule_name == "赔偿合同":
+            #     result[rule_name] = parse_compensation_contract_table(df)
             # ...
         except Exception as e:
             # 如果解析失败，记录错误但不影响其他表格
