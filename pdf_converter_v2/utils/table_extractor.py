@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Any, Optional, Literal
 
 import re
+import json
 
 import pandas as pd
 
@@ -389,6 +390,183 @@ def _merge_cross_page_tables(
     return merged
 
 
+def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    解析 designReview 类型的表格，提取数据并生成 JSON 格式。
+    
+    返回格式:
+    [{
+        "No": int,  # 序号
+        "name": str,  # 工程名称
+        "Level": int,  # 明细等级（根据缩进或层级判断，合计为0）
+        "staticInvestment": float,  # 静态投资（单位：元）
+        "dynamicInvestment": float,  # 动态投资（单位：元）
+    }, ...]
+    """
+    if df.empty:
+        return []
+    
+    # 尝试识别表头行（通常在前几行）
+    header_row_idx = None
+    for i in range(min(3, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        # 检查是否包含表头关键词
+        if any(kw in row_text for kw in ["序号", "工程名称", "建设规模", "静态投资", "动态投资"]):
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        # 如果没有找到明确的表头，假设第一行是表头
+        header_row_idx = 0
+    
+    # 从表头行识别列索引
+    header_row = df.iloc[header_row_idx].astype(str).str.strip()
+    
+    col_no = None  # 序号列
+    col_name = None  # 工程名称列
+    col_scale = None  # 建设规模列（用于判断层级）
+    col_static = None  # 静态投资列
+    col_dynamic = None  # 动态投资列
+    
+    for idx, cell in enumerate(header_row):
+        cell_lower = cell.lower()
+        if "序号" in cell or "no" in cell_lower:
+            col_no = idx
+        elif "工程名称" in cell or "name" in cell_lower:
+            col_name = idx
+        elif "建设规模" in cell or "规模" in cell:
+            col_scale = idx
+        elif "静态投资" in cell or "static" in cell_lower:
+            col_static = idx
+        elif "动态投资" in cell or "dynamic" in cell_lower:
+            col_dynamic = idx
+    
+    # 如果关键列未找到，尝试通过位置推断（通常顺序：序号、工程名称、建设规模、静态投资、动态投资）
+    if col_no is None:
+        col_no = 0
+    if col_name is None:
+        col_name = 1
+    if col_static is None:
+        # 从后往前找
+        for idx in range(len(df.columns) - 1, -1, -1):
+            if "投资" in str(df.iloc[header_row_idx, idx]) or "元" in str(df.iloc[header_row_idx, idx]):
+                if col_dynamic is None:
+                    col_dynamic = idx
+                elif col_static is None:
+                    col_static = idx
+                    break
+    
+    # 从数据行开始解析（跳过表头行）
+    data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    
+    result = []
+    total_static = 0.0
+    total_dynamic = 0.0
+    
+    def parse_number(value: Any) -> float:
+        """解析数字，支持中文数字格式"""
+        if pd.isna(value):
+            return 0.0
+        value_str = str(value).strip()
+        # 移除常见的非数字字符（保留小数点、负号）
+        value_str = re.sub(r'[^\d.\-]', '', value_str)
+        if not value_str or value_str == '-':
+            return 0.0
+        try:
+            return float(value_str)
+        except ValueError:
+            return 0.0
+    
+    def determine_level(name: str) -> int:
+        """根据工程名称的缩进或前缀判断明细等级"""
+        if not name or pd.isna(name):
+            return 1
+        name_str = str(name).strip()
+        # 如果包含"合计"、"总计"等关键词，返回0
+        if any(kw in name_str for kw in ["合计", "总计", "总计", "合计金额"]):
+            return 0
+        # 根据缩进判断（假设空格或特殊字符表示层级）
+        # 这里可以根据实际表格格式调整
+        if name_str.startswith("  ") or name_str.startswith("\t"):
+            return 2
+        return 1
+    
+    for idx, row in data_rows.iterrows():
+        # 跳过空行
+        if row.isna().all():
+            continue
+        
+        # 提取各列数据
+        no_val = row.iloc[col_no] if col_no is not None and col_no < len(row) else None
+        name_val = row.iloc[col_name] if col_name is not None and col_name < len(row) else None
+        static_val = row.iloc[col_static] if col_static is not None and col_static < len(row) else None
+        dynamic_val = row.iloc[col_dynamic] if col_dynamic is not None and col_dynamic < len(row) else None
+        
+        # 解析序号
+        no = None
+        if no_val is not None and not pd.isna(no_val):
+            try:
+                no = int(float(str(no_val).strip()))
+            except (ValueError, TypeError):
+                pass
+        
+        # 解析工程名称
+        name = str(name_val).strip() if name_val is not None and not pd.isna(name_val) else ""
+        
+        # 跳过空行或合计行（合计行会在最后单独添加）
+        if not name or name == "":
+            continue
+        
+        # 判断是否为合计行
+        is_total = any(kw in name for kw in ["合计", "总计", "总计", "合计金额"])
+        
+        # 解析投资金额
+        static_investment = parse_number(static_val)
+        dynamic_investment = parse_number(dynamic_val)
+        
+        # 判断明细等级
+        level = 0 if is_total else determine_level(name)
+        
+        # 如果是合计行，记录合计金额
+        if is_total:
+            total_static = static_investment
+            total_dynamic = dynamic_investment
+            # 合计行也添加到结果中，level=0
+            result.append({
+                "No": no if no is not None else 0,
+                "name": name,
+                "Level": 0,
+                "staticInvestment": static_investment,
+                "dynamicInvestment": dynamic_investment,
+            })
+        else:
+            # 普通数据行
+            result.append({
+                "No": no if no is not None else idx + 1,
+                "name": name,
+                "Level": level,
+                "staticInvestment": static_investment,
+                "dynamicInvestment": dynamic_investment,
+            })
+    
+    # 如果没有找到合计行，计算合计并添加
+    if not any(item["Level"] == 0 for item in result):
+        # 重新计算合计（从所有非合计行）
+        total_static = sum(item["staticInvestment"] for item in result if item["Level"] != 0)
+        total_dynamic = sum(item["dynamicInvestment"] for item in result if item["Level"] != 0)
+        
+        # 添加合计行（level=0）
+        result.append({
+            "No": 0,
+            "name": "合计",
+            "Level": 0,
+            "staticInvestment": total_static,
+            "dynamicInvestment": total_dynamic,
+        })
+    
+    return result
+
+
 def extract_and_filter_tables_for_pdf(
     pdf_path: str,
     base_output_dir: str,
@@ -518,6 +696,7 @@ def extract_and_filter_tables_for_pdf(
     filtered_page_table_count: Dict[int, int] = {}
     filtered_meta: List[Dict[str, Any]] = []
 
+    parsed_data = None
     for orig_idx, df, rule_name, page in merged_tables:
         filtered_page_table_count[page] = filtered_page_table_count.get(page, 0) + 1
         idx_on_page = filtered_page_table_count[page]
@@ -533,8 +712,18 @@ def extract_and_filter_tables_for_pdf(
                 "excel_path": str(excel_path),
             }
         )
+        
+        # 对于 designReview 类型，解析第一个匹配的表格生成 JSON 数据
+        if doc_type == "designReview" and parsed_data is None:
+            try:
+                parsed_data = parse_design_review_table(df)
+            except Exception as e:
+                # 如果解析失败，记录错误但不影响其他流程
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"解析 designReview 表格失败: {e}")
 
-    return {
+    result = {
         "tables_root": str(tables_root),
         "extracted_dir": str(extracted_dir),
         "merged_dir": str(merged_dir),
@@ -543,5 +732,12 @@ def extract_and_filter_tables_for_pdf(
         "merged_tables": merged_meta,
         "filtered_tables": filtered_meta,
     }
+    
+    # 对于 designReview 类型，添加解析后的 JSON 数据
+    if doc_type == "designReview" and parsed_data is not None:
+        result["parsed_data"] = parsed_data
+        result["parsed_data_json"] = json.dumps(parsed_data, ensure_ascii=False, indent=2)
+    
+    return result
 
 
