@@ -3,8 +3,11 @@ from typing import List, Tuple, Dict, Any, Optional, Literal
 
 import re
 import json
+import logging
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 try:
     import pdfplumber
@@ -104,9 +107,13 @@ def extract_tables_with_pdfplumber(
     tables_data: List[Tuple[int, pd.DataFrame, tuple]] = []
 
     with pdfplumber.open(pdf_path) as pdf:
+        total_pages = len(pdf.pages)
+        logger.info(f"[pdfplumber] 打开 PDF，共 {total_pages} 页")
+        
         # 确定要处理的页面
         if pages == "all":
             pages_to_process = pdf.pages
+            logger.info(f"[pdfplumber] 处理所有页面: 1-{total_pages}")
         else:
             # 解析页面范围（如 "1-5,7,9-10"）
             page_numbers: List[int] = []
@@ -122,6 +129,7 @@ def extract_tables_with_pdfplumber(
             pages_to_process = [
                 pdf.pages[i - 1] for i in page_numbers if 0 < i <= len(pdf.pages)
             ]
+            logger.info(f"[pdfplumber] 处理指定页面: {page_numbers}")
 
         # 提取每一页的表格
         for page in pages_to_process:
@@ -136,13 +144,19 @@ def extract_tables_with_pdfplumber(
             }
 
             tables = page.find_tables(table_settings=table_settings)
+            page_table_count = 0
             for table in tables:
                 table_data = table.extract()
                 if table_data and len(table_data) > 0:
                     df = pd.DataFrame(table_data)
                     bbox = table.bbox  # (x0, top, x1, bottom)
                     tables_data.append((page_num, df, bbox))
+                    page_table_count += 1
+            
+            if page_table_count > 0:
+                logger.debug(f"[pdfplumber] 页面 {page_num}: 提取到 {page_table_count} 个表格")
 
+    logger.info(f"[pdfplumber] 提取完成: 共提取到 {len(tables_data)} 个表格")
     return tables_data
 
 
@@ -906,10 +920,15 @@ def extract_and_filter_tables_for_pdf(
     merged_dir.mkdir(parents=True, exist_ok=True)
     filtered_dir.mkdir(parents=True, exist_ok=True)
 
+    logger.info(f"[表格提取] 开始处理 PDF: {pdf_path}, 文档类型: {doc_type}")
+
     # 1. 使用 pdfplumber 从 PDF 提取所有表格（不限制页数）
+    logger.info("[表格提取] 步骤1: 使用 pdfplumber 提取所有表格...")
     tables_data = extract_tables_with_pdfplumber(str(pdf_path_obj), pages="all")
+    logger.info(f"[表格提取] 步骤1完成: 共提取到 {len(tables_data)} 个表格")
 
     # 2. 保存所有原始表格为 xlsx，命名: table_page{page}_{index}.xlsx
+    logger.info("[表格提取] 步骤2: 保存所有原始表格到 extracted_tables...")
     page_table_count: Dict[int, int] = {}
     all_tables_meta: List[Dict[str, Any]] = []
 
@@ -930,13 +949,17 @@ def extract_and_filter_tables_for_pdf(
             }
         )
         all_tables.append((orig_idx, df.copy(), page))
+    logger.info(f"[表格提取] 步骤2完成: 已保存 {len(all_tables)} 个原始表格")
 
     # 3. 合并所有跨页表格（不进行过滤），保存到 merged_tables
+    logger.info("[表格提取] 步骤3: 合并跨页表格...")
     merged_all_tables = _merge_all_tables(all_tables)
+    logger.info(f"[表格提取] 步骤3完成: 从 {len(all_tables)} 个原始表格合并为 {len(merged_all_tables)} 个表格")
     
     merged_page_table_count: Dict[int, int] = {}
     merged_meta: List[Dict[str, Any]] = []
     
+    logger.info("[表格提取] 步骤3.1: 保存合并后的表格到 merged_tables...")
     for merged_idx, (orig_idx, df, page) in enumerate(merged_all_tables):
         merged_page_table_count[page] = merged_page_table_count.get(page, 0) + 1
         idx_on_page = merged_page_table_count[page]
@@ -951,12 +974,16 @@ def extract_and_filter_tables_for_pdf(
                 "excel_path": str(excel_path),
             }
         )
+    logger.info(f"[表格提取] 步骤3.1完成: 已保存 {len(merged_meta)} 个合并后的表格")
 
     # 4. 根据 doc_type 选择对应的表头规则
+    logger.info(f"[表格提取] 步骤4: 加载表头规则，文档类型: {doc_type}")
     header_rules = TABLE_TYPE_RULES.get(doc_type, [])
+    logger.info(f"[表格提取] 步骤4完成: 找到 {len(header_rules)} 个表头规则")
 
     # 如果没有规则，直接返回（保留 extracted_tables 和 merged_tables）
     if not header_rules:
+        logger.warning("[表格提取] 未找到表头规则，跳过筛选步骤")
         return {
             "tables_root": str(tables_root),
             "extracted_dir": str(extracted_dir),
@@ -968,6 +995,7 @@ def extract_and_filter_tables_for_pdf(
         }
 
     # 5. 从合并后的表格中过滤出匹配规则的表格
+    logger.info("[表格提取] 步骤5: 从合并后的表格中筛选匹配规则的表格...")
     matched_for_merge: List[Tuple[int, pd.DataFrame, str, int]] = []
     for merged_idx, (orig_idx, df, page) in enumerate(merged_all_tables):
         rule_name: Optional[str] = None
@@ -975,12 +1003,15 @@ def extract_and_filter_tables_for_pdf(
             is_match, rn = check_table_header(df, rule)
             if is_match:
                 rule_name = rn
+                logger.info(f"[表格提取] 表格 {merged_idx + 1} (页面 {page}) 匹配规则: {rule_name}")
                 break
         if rule_name:
             matched_for_merge.append((orig_idx, df.copy(), rule_name, page))
+    logger.info(f"[表格提取] 步骤5完成: 共匹配到 {len(matched_for_merge)} 个表格")
 
     # 如果没有匹配到表格，直接返回（保留 extracted_tables 和 merged_tables）
     if not matched_for_merge:
+        logger.warning("[表格提取] 未匹配到任何表格，跳过后续处理")
         return {
             "tables_root": str(tables_root),
             "extracted_dir": str(extracted_dir),
@@ -992,9 +1023,12 @@ def extract_and_filter_tables_for_pdf(
         }
 
     # 6. 对已匹配规则的表格再次进行跨页合并（处理规则匹配后的特殊情况）
+    logger.info("[表格提取] 步骤6: 对已匹配规则的表格进行跨页合并...")
     merged_tables = _merge_cross_page_tables(matched_for_merge, header_rules)
+    logger.info(f"[表格提取] 步骤6完成: 跨页合并后剩余 {len(merged_tables)} 个表格")
 
     # 7. 保存筛选+合并后的表格到 filtered_dir，命名仍然按 page + 序号
+    logger.info("[表格提取] 步骤7: 保存筛选+合并后的表格到 filtered_tables...")
     filtered_page_table_count: Dict[int, int] = {}
     filtered_meta: List[Dict[str, Any]] = []
 
@@ -1014,28 +1048,36 @@ def extract_and_filter_tables_for_pdf(
                 "excel_path": str(excel_path),
             }
         )
+    logger.info(f"[表格提取] 步骤7完成: 已保存 {len(filtered_meta)} 个筛选后的表格")
     
     # 8. 根据文档类型解析表格数据
+    logger.info(f"[表格提取] 步骤8: 解析表格数据，文档类型: {doc_type}...")
     if doc_type == "designReview":
         # 对于 designReview 类型，解析第一个匹配的表格生成 JSON 数据
         for orig_idx, df, rule_name, page in merged_tables:
             if parsed_data is None:
                 try:
+                    logger.info(f"[表格提取] 解析 designReview 表格: {rule_name} (页面 {page})")
                     parsed_data = parse_design_review_table(df)
+                    logger.info(f"[表格提取] 解析完成: 共 {len(parsed_data)} 条数据")
                     break
                 except Exception as e:
                     # 如果解析失败，记录错误但不影响其他流程
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"解析 designReview 表格失败: {e}")
+                    logger.warning(f"[表格提取] 解析 designReview 表格失败: {e}")
     elif doc_type == "settlementReport":
         # 对于 settlementReport 类型，解析所有匹配的表格，按表名组织
         try:
+            logger.info(f"[表格提取] 解析 settlementReport 表格，共 {len(merged_tables)} 个表格")
             parsed_data = parse_settlement_report_tables(merged_tables)
+            # 统计每个表的解析结果
+            for table_name, table_data in parsed_data.items():
+                if table_data:
+                    logger.info(f"[表格提取] {table_name}: 解析完成，共 {len(table_data)} 条数据")
+                else:
+                    logger.info(f"[表格提取] {table_name}: 未匹配到数据")
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"解析 settlementReport 表格失败: {e}")
+            logger.warning(f"[表格提取] 解析 settlementReport 表格失败: {e}")
+    logger.info("[表格提取] 步骤8完成: 表格数据解析完成")
 
     result = {
         "tables_root": str(tables_root),
@@ -1051,7 +1093,9 @@ def extract_and_filter_tables_for_pdf(
     if parsed_data is not None:
         result["parsed_data"] = parsed_data
         result["parsed_data_json"] = json.dumps(parsed_data, ensure_ascii=False, indent=2)
+        logger.info("[表格提取] JSON 数据已生成")
     
+    logger.info(f"[表格提取] 处理完成: 原始表格 {len(all_tables_meta)} 个, 合并后 {len(merged_meta)} 个, 筛选后 {len(filtered_meta)} 个")
     return result
 
 
