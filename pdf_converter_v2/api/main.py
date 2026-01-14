@@ -242,9 +242,11 @@ async def process_conversion_task(
         )
 
         # 针对结算报告 / 初设评审类文档，额外执行表格提取与筛选逻辑
+        # 表格提取独立执行，不依赖外部 API 的结果
         tables_info = None
-        if result and request.doc_type in ("settlementReport", "designReview"):
+        if request.doc_type in ("settlementReport", "designReview"):
             try:
+                logger.info(f"[任务 {task_id}] 开始表格提取，文档类型: {request.doc_type}")
                 # 延迟导入，避免启动时因 pandas/numpy 版本冲突导致服务无法启动
                 from ..utils.table_extractor import extract_and_filter_tables_for_pdf
                 tables_info = extract_and_filter_tables_for_pdf(
