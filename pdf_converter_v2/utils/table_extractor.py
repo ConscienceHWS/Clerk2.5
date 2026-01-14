@@ -504,64 +504,45 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         
         # 解析序号
         no = None
+        no_str = ""
         if no_val is not None and not pd.isna(no_val):
-            try:
-                no = int(float(str(no_val).strip()))
-            except (ValueError, TypeError):
-                pass
+            no_str = str(no_val).strip()
+            if no_str:
+                try:
+                    no = int(float(no_str))
+                except (ValueError, TypeError):
+                    pass
+        
+        # 跳过序号为空的行（这些通常是"其中："等说明行）
+        if not no_str or pd.isna(no_val):
+            continue
         
         # 解析工程名称
         name = str(name_val).strip() if name_val is not None and not pd.isna(name_val) else ""
         
-        # 跳过空行或合计行（合计行会在最后单独添加）
+        # 跳过空行
         if not name or name == "":
             continue
         
-        # 判断是否为合计行
+        # 判断是否为合计行（合计行需要跳过）
         is_total = any(kw in name for kw in ["合计", "总计", "总计", "合计金额"])
+        if is_total:
+            continue
         
         # 解析投资金额
         static_investment = parse_number(static_val)
         dynamic_investment = parse_number(dynamic_val)
         
         # 判断明细等级
-        level = 0 if is_total else determine_level(name)
+        level = determine_level(name)
         
-        # 如果是合计行，记录合计金额
-        if is_total:
-            total_static = static_investment
-            total_dynamic = dynamic_investment
-            # 合计行也添加到结果中，level=0
-            result.append({
-                "No": no if no is not None else 0,
-                "name": name,
-                "Level": 0,
-                "staticInvestment": static_investment,
-                "dynamicInvestment": dynamic_investment,
-            })
-        else:
-            # 普通数据行
-            result.append({
-                "No": no if no is not None else idx + 1,
-                "name": name,
-                "Level": level,
-                "staticInvestment": static_investment,
-                "dynamicInvestment": dynamic_investment,
-            })
-    
-    # 如果没有找到合计行，计算合计并添加
-    if not any(item["Level"] == 0 for item in result):
-        # 重新计算合计（从所有非合计行）
-        total_static = sum(item["staticInvestment"] for item in result if item["Level"] != 0)
-        total_dynamic = sum(item["dynamicInvestment"] for item in result if item["Level"] != 0)
-        
-        # 添加合计行（level=0）
+        # 普通数据行
         result.append({
-            "No": 0,
-            "name": "合计",
-            "Level": 0,
-            "staticInvestment": total_static,
-            "dynamicInvestment": total_dynamic,
+            "No": no if no is not None else idx + 1,
+            "name": name,
+            "Level": level,
+            "staticInvestment": static_investment,
+            "dynamicInvestment": dynamic_investment,
         })
     
     return result
