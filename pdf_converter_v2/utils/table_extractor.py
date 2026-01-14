@@ -6,10 +6,10 @@ import re
 import pandas as pd
 
 try:
-    import camelot
-    _CAMELOT_AVAILABLE = True
+    import pdfplumber
+    _PDFPLUMBER_AVAILABLE = True
 except ImportError:
-    _CAMELOT_AVAILABLE = False
+    _PDFPLUMBER_AVAILABLE = False
 
 
 # 文档类型 -> 表头规则
@@ -62,6 +62,64 @@ EXCLUDE_RULES: List[str] = []
 
 # 是否启用跨页合并
 ENABLE_MERGE_CROSS_PAGE_TABLES: bool = True
+
+
+def extract_tables_with_pdfplumber(
+    pdf_path: str,
+    pages: str = "all",
+) -> List[Tuple[int, pd.DataFrame, tuple]]:
+    """
+    使用 pdfplumber 提取 PDF 中的表格。
+
+    Returns:
+        List[Tuple[int, pd.DataFrame, tuple]]: [(页码, DataFrame, bbox), ...]
+    """
+    if not _PDFPLUMBER_AVAILABLE:
+        raise RuntimeError("pdfplumber 库未安装，无法提取表格（请安装 pdfplumber）")
+
+    tables_data: List[Tuple[int, pd.DataFrame, tuple]] = []
+
+    with pdfplumber.open(pdf_path) as pdf:
+        # 确定要处理的页面
+        if pages == "all":
+            pages_to_process = pdf.pages
+        else:
+            # 解析页面范围（如 "1-5,7,9-10"）
+            page_numbers: List[int] = []
+            for part in pages.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                if "-" in part:
+                    start, end = map(int, part.split("-"))
+                    page_numbers.extend(range(start, end + 1))
+                else:
+                    page_numbers.append(int(part))
+            pages_to_process = [
+                pdf.pages[i - 1] for i in page_numbers if 0 < i <= len(pdf.pages)
+            ]
+
+        # 提取每一页的表格
+        for page in pages_to_process:
+            page_num = page.page_number
+
+            table_settings = {
+                "vertical_strategy": "lines",
+                "horizontal_strategy": "lines",
+                "intersection_tolerance": 3,
+                "min_words_vertical": 1,
+                "min_words_horizontal": 1,
+            }
+
+            tables = page.find_tables(table_settings=table_settings)
+            for table in tables:
+                table_data = table.extract()
+                if table_data and len(table_data) > 0:
+                    df = pd.DataFrame(table_data)
+                    bbox = table.bbox  # (x0, top, x1, bottom)
+                    tables_data.append((page_num, df, bbox))
+
+    return tables_data
 
 
 def check_table_header(table_df: pd.DataFrame, rule: dict) -> Tuple[bool, str]:
@@ -273,23 +331,21 @@ def extract_and_filter_tables_for_pdf(
     extracted_dir.mkdir(parents=True, exist_ok=True)
     filtered_dir.mkdir(parents=True, exist_ok=True)
 
-    if not _CAMELOT_AVAILABLE:
-        raise RuntimeError("camelot 库未安装，无法提取表格（请安装 camelot-py）")
-
-    # 1. 使用 camelot 从 PDF 提取所有表格（不限制页数）
-    tables = camelot.read_pdf(str(pdf_path_obj), pages="all")
+    # 1. 使用 pdfplumber 从 PDF 提取所有表格（不限制页数）
+    tables_data = extract_tables_with_pdfplumber(str(pdf_path_obj), pages="all")
 
     # 2. 保存所有原始表格为 xlsx，命名: table_page{page}_{index}.xlsx
     page_table_count: Dict[int, int] = {}
     all_tables_meta: List[Dict[str, Any]] = []
 
-    for table in tables:
-        page = table.page
+    # 给每个表格一个全局索引，方便后续合并/去重
+    all_tables: List[Tuple[int, pd.DataFrame, int]] = []  # (orig_idx, df, page)
+    for orig_idx, (page, df, _bbox) in enumerate(tables_data):
         page_table_count[page] = page_table_count.get(page, 0) + 1
         idx_on_page = page_table_count[page]
 
         excel_path = extracted_dir / f"table_page{page}_{idx_on_page}.xlsx"
-        table.df.to_excel(str(excel_path), index=False, header=False)
+        df.to_excel(str(excel_path), index=False, header=False)
 
         all_tables_meta.append(
             {
@@ -298,21 +354,22 @@ def extract_and_filter_tables_for_pdf(
                 "excel_path": str(excel_path),
             }
         )
+        all_tables.append((orig_idx, df.copy(), page))
 
     # 3. 根据 doc_type 选择对应的表头规则
     header_rules = TABLE_TYPE_RULES.get(doc_type, [])
 
     # 4. 过滤出匹配规则的表格
     matched_for_merge: List[Tuple[int, pd.DataFrame, str, int]] = []
-    for i, table in enumerate(tables):
+    for orig_idx, df, page in all_tables:
         rule_name: Optional[str] = None
         for rule in header_rules:
-            is_match, rn = check_table_header(table.df, rule)
+            is_match, rn = check_table_header(df, rule)
             if is_match:
                 rule_name = rn
                 break
         if rule_name:
-            matched_for_merge.append((i, table.df.copy(), rule_name, table.page))
+            matched_for_merge.append((orig_idx, df.copy(), rule_name, page))
 
     # 如果没有规则或没有匹配到表格，直接返回（只保留 extracted_tables）
     if not header_rules or not matched_for_merge:
