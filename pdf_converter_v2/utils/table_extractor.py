@@ -390,6 +390,131 @@ def _merge_cross_page_tables(
     return merged
 
 
+def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    解析"审定结算汇总表"，提取数据并生成 JSON 格式。
+    
+    返回格式:
+    [{
+        "No": int,  # 序号
+        "name": str,  # 项目名称（审计内容）
+        "settledVerifiedTaxExclusiveInvestment": float,  # 结算审定不含税投资（元，两位小数）
+        "settledVerifiedTaxInclusiveInvestment": float,  # 结算审定含税投资（元，两位小数）
+    }, ...]
+    """
+    if df.empty:
+        return []
+    
+    # 尝试识别表头行（通常在前几行）
+    header_row_idx = None
+    for i in range(min(3, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        # 检查是否包含表头关键词
+        if any(kw in row_text for kw in ["序号", "审计内容", "审定金额（含税）", "审定金额（不含税）"]):
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        # 如果没有找到明确的表头，假设第一行是表头
+        header_row_idx = 0
+    
+    # 从表头行识别列索引
+    header_row = df.iloc[header_row_idx].astype(str).str.strip()
+    
+    col_no = None  # 序号列
+    col_name = None  # 审计内容列（项目名称）
+    col_tax_exclusive = None  # 审定金额（不含税）列
+    col_tax_inclusive = None  # 审定金额（含税）列
+    
+    for idx, cell in enumerate(header_row):
+        cell_lower = cell.lower()
+        if "序号" in cell or "no" in cell_lower:
+            col_no = idx
+        elif "审计内容" in cell or "项目名称" in cell or "name" in cell_lower:
+            col_name = idx
+        elif "审定金额（不含税）" in cell or "不含税" in cell:
+            col_tax_exclusive = idx
+        elif "审定金额（含税）" in cell or ("审定金额" in cell and "含税" in cell):
+            col_tax_inclusive = idx
+    
+    # 如果关键列未找到，尝试通过位置推断
+    if col_no is None:
+        col_no = 0
+    if col_name is None:
+        col_name = 1
+    
+    # 从数据行开始解析（跳过表头行）
+    data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    
+    result = []
+    
+    def parse_number(value: Any) -> float:
+        """解析数字，支持中文数字格式，保留两位小数"""
+        if pd.isna(value):
+            return 0.0
+        value_str = str(value).strip()
+        # 移除常见的非数字字符（保留小数点、负号）
+        value_str = re.sub(r'[^\d.\-]', '', value_str)
+        if not value_str or value_str == '-':
+            return 0.0
+        try:
+            return round(float(value_str), 2)
+        except ValueError:
+            return 0.0
+    
+    for idx, row in data_rows.iterrows():
+        # 跳过空行
+        if row.isna().all():
+            continue
+        
+        # 提取各列数据
+        no_val = row.iloc[col_no] if col_no is not None and col_no < len(row) else None
+        name_val = row.iloc[col_name] if col_name is not None and col_name < len(row) else None
+        tax_exclusive_val = row.iloc[col_tax_exclusive] if col_tax_exclusive is not None and col_tax_exclusive < len(row) else None
+        tax_inclusive_val = row.iloc[col_tax_inclusive] if col_tax_inclusive is not None and col_tax_inclusive < len(row) else None
+        
+        # 解析序号
+        no = None
+        no_str = ""
+        if no_val is not None and not pd.isna(no_val):
+            no_str = str(no_val).strip()
+            if no_str:
+                try:
+                    no = int(float(no_str))
+                except (ValueError, TypeError):
+                    pass
+        
+        # 跳过序号为空的行（这些通常是合计、其中等说明行）
+        if not no_str or pd.isna(no_val):
+            continue
+        
+        # 解析项目名称（审计内容）
+        name = str(name_val).strip() if name_val is not None and not pd.isna(name_val) else ""
+        
+        # 跳过空行
+        if not name or name == "":
+            continue
+        
+        # 判断是否为合计行（合计行需要跳过）
+        is_total = any(kw in name for kw in ["合计", "总计", "总计", "合计金额"])
+        if is_total:
+            continue
+        
+        # 解析投资金额
+        settled_verified_tax_exclusive = parse_number(tax_exclusive_val)
+        settled_verified_tax_inclusive = parse_number(tax_inclusive_val)
+        
+        # 添加到结果
+        result.append({
+            "No": no if no is not None else idx + 1,
+            "name": name,
+            "settledVerifiedTaxExclusiveInvestment": settled_verified_tax_exclusive,
+            "settledVerifiedTaxInclusiveInvestment": settled_verified_tax_inclusive,
+        })
+    
+    return result
+
+
 def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     解析 designReview 类型的表格，提取数据并生成 JSON 格式。
@@ -548,6 +673,50 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return result
 
 
+def parse_settlement_report_tables(
+    merged_tables: List[Tuple[int, pd.DataFrame, str, int]]
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    解析 settlementReport 类型的所有表格，按表名组织返回。
+    
+    返回格式:
+    {
+      "审定结算汇总表": [...],
+      "合同执行情况": [],
+      "赔偿合同": [],
+      "物资采购合同1": [],
+      "物资采购合同2": [],
+      "其他服务类合同": [],
+    }
+    """
+    result = {
+        "审定结算汇总表": [],
+        "合同执行情况": [],
+        "赔偿合同": [],
+        "物资采购合同1": [],
+        "物资采购合同2": [],
+        "其他服务类合同": [],
+    }
+    
+    for orig_idx, df, rule_name, page in merged_tables:
+        try:
+            if rule_name == "审定结算汇总表":
+                parsed_data = parse_settlement_summary_table(df)
+                if parsed_data:
+                    result[rule_name] = parsed_data
+            # 其他表暂时留空，后续实现
+            # elif rule_name == "合同执行情况":
+            #     result[rule_name] = parse_contract_execution_table(df)
+            # ...
+        except Exception as e:
+            # 如果解析失败，记录错误但不影响其他表格
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"解析 {rule_name} 表格失败: {e}")
+    
+    return result
+
+
 def extract_and_filter_tables_for_pdf(
     pdf_path: str,
     base_output_dir: str,
@@ -693,16 +862,28 @@ def extract_and_filter_tables_for_pdf(
                 "excel_path": str(excel_path),
             }
         )
-        
+    
+    # 8. 根据文档类型解析表格数据
+    if doc_type == "designReview":
         # 对于 designReview 类型，解析第一个匹配的表格生成 JSON 数据
-        if doc_type == "designReview" and parsed_data is None:
-            try:
-                parsed_data = parse_design_review_table(df)
-            except Exception as e:
-                # 如果解析失败，记录错误但不影响其他流程
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"解析 designReview 表格失败: {e}")
+        for orig_idx, df, rule_name, page in merged_tables:
+            if parsed_data is None:
+                try:
+                    parsed_data = parse_design_review_table(df)
+                    break
+                except Exception as e:
+                    # 如果解析失败，记录错误但不影响其他流程
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"解析 designReview 表格失败: {e}")
+    elif doc_type == "settlementReport":
+        # 对于 settlementReport 类型，解析所有匹配的表格，按表名组织
+        try:
+            parsed_data = parse_settlement_report_tables(merged_tables)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"解析 settlementReport 表格失败: {e}")
 
     result = {
         "tables_root": str(tables_root),
@@ -714,8 +895,8 @@ def extract_and_filter_tables_for_pdf(
         "filtered_tables": filtered_meta,
     }
     
-    # 对于 designReview 类型，添加解析后的 JSON 数据
-    if doc_type == "designReview" and parsed_data is not None:
+    # 添加解析后的 JSON 数据
+    if parsed_data is not None:
         result["parsed_data"] = parsed_data
         result["parsed_data_json"] = json.dumps(parsed_data, ensure_ascii=False, indent=2)
     
