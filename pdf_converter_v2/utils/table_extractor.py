@@ -515,6 +515,154 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return result
 
 
+def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    解析"合同执行情况"表，提取数据并生成 JSON 格式。
+    
+    返回格式:
+    [{
+        "No": int,  # 序号
+        "constructionUnit": str,  # 施工单位
+        "bidNoticeAmount": float,  # 中标通知书金额（元，两位小数）
+        "bidNoticeNo": str,  # 中标通知书编号
+        "contractAmount": float,  # 合同金额（元，两位小数）
+        "settlementSubmittedAmount": float,  # 结算送审金额（元，两位小数）
+        "differenceAmount": float,  # 差额（元，两位小数）
+    }, ...]
+    """
+    if df.empty:
+        return []
+    
+    # 尝试识别表头行（通常在前几行）
+    header_row_idx = None
+    for i in range(min(3, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        # 检查是否包含表头关键词
+        if any(kw in row_text for kw in ["序号", "施工单位", "中标通知书金额", "中标通知书编号", "合同金额", "结算送审金额", "差额"]):
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        # 如果没有找到明确的表头，假设第一行是表头
+        header_row_idx = 0
+    
+    # 从表头行识别列索引
+    header_row = df.iloc[header_row_idx].astype(str).str.strip()
+    
+    col_no = None  # 序号列
+    col_construction_unit = None  # 施工单位列
+    col_bid_notice_amount = None  # 中标通知书金额列
+    col_bid_notice_no = None  # 中标通知书编号列
+    col_contract_amount = None  # 合同金额列
+    col_settlement_submitted = None  # 结算送审金额列
+    col_difference = None  # 差额列
+    
+    for idx, cell in enumerate(header_row):
+        cell_lower = cell.lower()
+        if "序号" in cell or "no" in cell_lower:
+            col_no = idx
+        elif "施工单位" in cell:
+            col_construction_unit = idx
+        elif "中标通知书金额" in cell:
+            col_bid_notice_amount = idx
+        elif "中标通知书编号" in cell:
+            col_bid_notice_no = idx
+        elif "合同金额" in cell and "结算" not in cell:
+            col_contract_amount = idx
+        elif "结算送审金额" in cell:
+            col_settlement_submitted = idx
+        elif "差额" in cell:
+            col_difference = idx
+    
+    # 如果关键列未找到，尝试通过位置推断
+    if col_no is None:
+        col_no = 0
+    if col_construction_unit is None:
+        col_construction_unit = 1
+    
+    # 从数据行开始解析（跳过表头行）
+    data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    
+    result = []
+    
+    def parse_number(value: Any) -> float:
+        """解析数字，支持中文数字格式，保留两位小数"""
+        if pd.isna(value):
+            return 0.0
+        value_str = str(value).strip()
+        # 移除常见的非数字字符（保留小数点、负号）
+        value_str = re.sub(r'[^\d.\-]', '', value_str)
+        if not value_str or value_str == '-':
+            return 0.0
+        try:
+            return round(float(value_str), 2)
+        except ValueError:
+            return 0.0
+    
+    for idx, row in data_rows.iterrows():
+        # 跳过空行
+        if row.isna().all():
+            continue
+        
+        # 提取各列数据
+        no_val = row.iloc[col_no] if col_no is not None and col_no < len(row) else None
+        construction_unit_val = row.iloc[col_construction_unit] if col_construction_unit is not None and col_construction_unit < len(row) else None
+        bid_notice_amount_val = row.iloc[col_bid_notice_amount] if col_bid_notice_amount is not None and col_bid_notice_amount < len(row) else None
+        bid_notice_no_val = row.iloc[col_bid_notice_no] if col_bid_notice_no is not None and col_bid_notice_no < len(row) else None
+        contract_amount_val = row.iloc[col_contract_amount] if col_contract_amount is not None and col_contract_amount < len(row) else None
+        settlement_submitted_val = row.iloc[col_settlement_submitted] if col_settlement_submitted is not None and col_settlement_submitted < len(row) else None
+        difference_val = row.iloc[col_difference] if col_difference is not None and col_difference < len(row) else None
+        
+        # 解析序号
+        no = None
+        no_str = ""
+        if no_val is not None and not pd.isna(no_val):
+            no_str = str(no_val).strip()
+            if no_str:
+                try:
+                    no = int(float(no_str))
+                except (ValueError, TypeError):
+                    pass
+        
+        # 跳过序号为空的行（这些通常是合计、其中等说明行）
+        if not no_str or pd.isna(no_val):
+            continue
+        
+        # 解析施工单位
+        construction_unit = str(construction_unit_val).strip() if construction_unit_val is not None and not pd.isna(construction_unit_val) else ""
+        
+        # 跳过空行
+        if not construction_unit or construction_unit == "":
+            continue
+        
+        # 判断是否为合计行（合计行需要跳过）
+        is_total = any(kw in construction_unit for kw in ["合计", "总计", "总计", "合计金额"])
+        if is_total:
+            continue
+        
+        # 解析中标通知书编号
+        bid_notice_no = str(bid_notice_no_val).strip() if bid_notice_no_val is not None and not pd.isna(bid_notice_no_val) else ""
+        
+        # 解析金额（保留两位小数）
+        bid_notice_amount = parse_number(bid_notice_amount_val)
+        contract_amount = parse_number(contract_amount_val)
+        settlement_submitted_amount = parse_number(settlement_submitted_val)
+        difference_amount = parse_number(difference_val)
+        
+        # 添加到结果
+        result.append({
+            "No": no if no is not None else idx + 1,
+            "constructionUnit": construction_unit,
+            "bidNoticeAmount": bid_notice_amount,
+            "bidNoticeNo": bid_notice_no,
+            "contractAmount": contract_amount,
+            "settlementSubmittedAmount": settlement_submitted_amount,
+            "differenceAmount": difference_amount,
+        })
+    
+    return result
+
+
 def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     解析 designReview 类型的表格，提取数据并生成 JSON 格式。
