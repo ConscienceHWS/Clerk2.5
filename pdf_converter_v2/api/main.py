@@ -331,24 +331,27 @@ async def convert_file(
     os.makedirs(output_dir, exist_ok=True)
     
     # 保存上传的文件
-    # 获取原始文件名，如果没有则使用默认名称
-    original_filename = file.filename or "uploaded_file"
+    # 不使用原始文件名，直接使用简单的固定命名，避免文件名过长问题
+    # 先尝试从Content-Type推断扩展名
+    content_type = file.content_type or ""
+    extension_map = {
+        "application/pdf": ".pdf",
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+    }
+    ext = extension_map.get(content_type, "")
     
-    # 如果文件名没有扩展名，尝试从Content-Type推断
-    file_path = os.path.join(temp_dir, original_filename)
-    if not Path(original_filename).suffix:
-        # 尝试从Content-Type获取扩展名
-        content_type = file.content_type or ""
-        extension_map = {
-            "application/pdf": ".pdf",
-            "image/png": ".png",
-            "image/jpeg": ".jpg",
-            "image/jpg": ".jpg",
-        }
-        ext = extension_map.get(content_type)
-        if ext:
-            file_path = os.path.join(temp_dir, f"{original_filename}{ext}")
-            logger.info(f"[任务 {task_id}] 从Content-Type推断扩展名: {ext}")
+    # 如果没有从Content-Type获取到，尝试从原始文件名获取扩展名
+    if not ext and file.filename:
+        ext = Path(file.filename).suffix
+    
+    # 如果还是没有，使用默认扩展名
+    if not ext:
+        ext = ".pdf"  # 默认假设是PDF
+    
+    # 使用简单的固定文件名
+    file_path = os.path.join(temp_dir, f"file{ext}")
     
     try:
         with open(file_path, "wb") as f:
@@ -368,31 +371,10 @@ async def convert_file(
                 }
                 ext = ext_map.get(detected_type)
                 if ext:
-                    new_file_path = file_path + ext
+                    new_file_path = os.path.join(temp_dir, f"file{ext}")
                     os.rename(file_path, new_file_path)
                     file_path = new_file_path
                     logger.info(f"[任务 {task_id}] 通过文件内容检测到类型 {detected_type}，重命名为: {file_path}")
-
-        # 如果原始文件名过长，在临时目录中重命名为较短的安全文件名，避免后续处理时路径过长
-        # 使用80字符阈值，与converter.py保持一致
-        max_name_len = 80
-        basename = os.path.basename(file_path)
-        if len(basename) > max_name_len:
-            suffix = Path(basename).suffix
-            stem = Path(basename).stem
-            max_stem_len = max_name_len - len(suffix)
-            # 如果截断后太短，使用简化命名：保留前几个字符 + 哈希后缀
-            if max_stem_len < 10:
-                import hashlib
-                hash_suffix = hashlib.md5(basename.encode('utf-8')).hexdigest()[:8]
-                safe_name = f"file_{hash_suffix}{suffix}"
-            else:
-                safe_stem_name = stem[:max_stem_len]
-                safe_name = f"{safe_stem_name}{suffix}"
-            safe_path = os.path.join(temp_dir, safe_name)
-            os.rename(file_path, safe_path)
-            logger.info(f"[任务 {task_id}] 原始文件名过长，已重命名为: {safe_path}")
-            file_path = safe_path
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
     
