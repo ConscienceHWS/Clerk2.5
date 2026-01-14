@@ -231,13 +231,79 @@ def has_similar_structure(table1_df: pd.DataFrame, table2_df: pd.DataFrame, tole
     return abs(cols1 - cols2) <= tolerance
 
 
+def _merge_all_tables(
+    tables: List[Tuple[int, pd.DataFrame, int]],
+) -> List[Tuple[int, pd.DataFrame, int]]:
+    """
+    合并所有跨页表格（不进行过滤）：
+    - 只处理"表头在当前页，内容在下一页"的典型情况；
+    - 严格限制只合并相邻页，且列结构相似。
+    """
+    if not ENABLE_MERGE_CROSS_PAGE_TABLES or not tables:
+        return tables
+
+    # page -> [(idx, df)]
+    page_map: Dict[int, List[Tuple[int, pd.DataFrame]]] = {}
+    for orig_idx, df, page in tables:
+        page_map.setdefault(page, []).append((orig_idx, df))
+
+    merged: List[Tuple[int, pd.DataFrame, int]] = []
+    processed: set[int] = set()
+
+    sorted_pages = sorted(page_map.keys())
+
+    for page in sorted_pages:
+        current_list = page_map[page]
+        for orig_idx, df in current_list:
+            if orig_idx in processed:
+                continue
+
+            current_df = df
+            did_merge = False
+
+            # 情况：当前表格只有表头，尝试合并下一页
+            if is_likely_header_only(current_df):
+                next_page = page + 1
+                if next_page in page_map:
+                    for next_orig_idx, next_df in page_map[next_page]:
+                        if next_orig_idx in processed:
+                            continue
+
+                        if not has_similar_structure(current_df, next_df):
+                            continue
+
+                        # 合并：保留当前页表头，拼接下一页数据
+                        header_rows = min(3, len(current_df))
+                        header_df = current_df.iloc[:header_rows].copy()
+                        next_data_df = next_df.copy()
+
+                        # 对齐列数
+                        if len(header_df.columns) != len(next_data_df.columns):
+                            if len(next_data_df.columns) < len(header_df.columns):
+                                for _ in range(len(next_data_df.columns), len(header_df.columns)):
+                                    next_data_df[len(next_data_df.columns)] = ""
+
+                        merged_df = pd.concat([header_df, next_data_df], ignore_index=True)
+                        merged.append((orig_idx, merged_df, page))
+                        processed.add(orig_idx)
+                        processed.add(next_orig_idx)
+                        did_merge = True
+                        break
+
+            if not did_merge and orig_idx not in processed:
+                merged.append((orig_idx, current_df, page))
+                processed.add(orig_idx)
+
+    return merged
+
+
 def _merge_cross_page_tables(
     tables: List[Tuple[int, pd.DataFrame, str, int]],
     header_rules: List[dict],
 ) -> List[Tuple[int, pd.DataFrame, str, int]]:
     """
-    简化版跨页合并逻辑：
-    - 只处理“表头在当前页，内容在下一页”的典型情况；
+    简化版跨页合并逻辑（用于已匹配规则的表格）：
+    - 只处理"表头在当前页，内容在下一页"的典型情况；
     - 严格限制只合并相邻页，且列结构相似；
     - 如果下一页第一行看起来像新的表头，则不合并。
     """
@@ -329,14 +395,18 @@ def extract_and_filter_tables_for_pdf(
     doc_type: Literal["settlementReport", "designReview"],
 ) -> Dict[str, Any]:
     """
-    从指定 PDF 提取所有表格 + 筛选后的表格，全部落盘。
+    从指定 PDF 提取所有表格 + 合并后的表格 + 筛选后的表格，全部落盘。
 
     返回结构:
     {
       "tables_root": str,
       "extracted_dir": str,
+      "merged_dir": str,
       "filtered_dir": str,
       "all_tables": [
+        {"page": int, "index_on_page": int, "excel_path": str}
+      ],
+      "merged_tables": [
         {"page": int, "index_on_page": int, "excel_path": str}
       ],
       "filtered_tables": [
@@ -349,9 +419,11 @@ def extract_and_filter_tables_for_pdf(
 
     tables_root = base_output / "tables"
     extracted_dir = tables_root / "extracted_tables"
+    merged_dir = tables_root / "merged_tables"
     filtered_dir = tables_root / "filtered_tables"
 
     extracted_dir.mkdir(parents=True, exist_ok=True)
+    merged_dir.mkdir(parents=True, exist_ok=True)
     filtered_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. 使用 pdfplumber 从 PDF 提取所有表格（不限制页数）
@@ -379,12 +451,45 @@ def extract_and_filter_tables_for_pdf(
         )
         all_tables.append((orig_idx, df.copy(), page))
 
-    # 3. 根据 doc_type 选择对应的表头规则
+    # 3. 合并所有跨页表格（不进行过滤），保存到 merged_tables
+    merged_all_tables = _merge_all_tables(all_tables)
+    
+    merged_page_table_count: Dict[int, int] = {}
+    merged_meta: List[Dict[str, Any]] = []
+    
+    for merged_idx, (orig_idx, df, page) in enumerate(merged_all_tables):
+        merged_page_table_count[page] = merged_page_table_count.get(page, 0) + 1
+        idx_on_page = merged_page_table_count[page]
+        
+        excel_path = merged_dir / f"table_{merged_idx + 1}.xlsx"
+        df.to_excel(str(excel_path), index=False, header=False)
+        
+        merged_meta.append(
+            {
+                "page": page,
+                "index_on_page": idx_on_page,
+                "excel_path": str(excel_path),
+            }
+        )
+
+    # 4. 根据 doc_type 选择对应的表头规则
     header_rules = TABLE_TYPE_RULES.get(doc_type, [])
 
-    # 4. 过滤出匹配规则的表格
+    # 如果没有规则，直接返回（保留 extracted_tables 和 merged_tables）
+    if not header_rules:
+        return {
+            "tables_root": str(tables_root),
+            "extracted_dir": str(extracted_dir),
+            "merged_dir": str(merged_dir),
+            "filtered_dir": str(filtered_dir),
+            "all_tables": all_tables_meta,
+            "merged_tables": merged_meta,
+            "filtered_tables": [],
+        }
+
+    # 5. 从合并后的表格中过滤出匹配规则的表格
     matched_for_merge: List[Tuple[int, pd.DataFrame, str, int]] = []
-    for orig_idx, df, page in all_tables:
+    for merged_idx, (orig_idx, df, page) in enumerate(merged_all_tables):
         rule_name: Optional[str] = None
         for rule in header_rules:
             is_match, rn = check_table_header(df, rule)
@@ -394,20 +499,22 @@ def extract_and_filter_tables_for_pdf(
         if rule_name:
             matched_for_merge.append((orig_idx, df.copy(), rule_name, page))
 
-    # 如果没有规则或没有匹配到表格，直接返回（只保留 extracted_tables）
-    if not header_rules or not matched_for_merge:
+    # 如果没有匹配到表格，直接返回（保留 extracted_tables 和 merged_tables）
+    if not matched_for_merge:
         return {
             "tables_root": str(tables_root),
             "extracted_dir": str(extracted_dir),
+            "merged_dir": str(merged_dir),
             "filtered_dir": str(filtered_dir),
             "all_tables": all_tables_meta,
+            "merged_tables": merged_meta,
             "filtered_tables": [],
         }
 
-    # 5. 跨页合并（简化版，只处理典型相邻页情况）
+    # 6. 对已匹配规则的表格再次进行跨页合并（处理规则匹配后的特殊情况）
     merged_tables = _merge_cross_page_tables(matched_for_merge, header_rules)
 
-    # 6. 保存筛选+合并后的表格到 filtered_dir，命名仍然按 page + 序号
+    # 7. 保存筛选+合并后的表格到 filtered_dir，命名仍然按 page + 序号
     filtered_page_table_count: Dict[int, int] = {}
     filtered_meta: List[Dict[str, Any]] = []
 
@@ -430,8 +537,10 @@ def extract_and_filter_tables_for_pdf(
     return {
         "tables_root": str(tables_root),
         "extracted_dir": str(extracted_dir),
+        "merged_dir": str(merged_dir),
         "filtered_dir": str(filtered_dir),
         "all_tables": all_tables_meta,
+        "merged_tables": merged_meta,
         "filtered_tables": filtered_meta,
     }
 
