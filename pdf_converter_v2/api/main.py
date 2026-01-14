@@ -234,46 +234,68 @@ async def process_conversion_task(
                     logger.exception(f"[任务 {task_id}] 表格提取/筛选失败: {e}")
                     return None
             
-            # 在线程池中执行同步函数，与外部 API 调用并行
-            table_extraction_task = asyncio.to_thread(run_table_extraction_sync)
+            # 在线程池中执行同步函数，创建任务但不立即 await，与外部 API 调用并行
+            table_extraction_task = asyncio.create_task(
+                asyncio.to_thread(run_table_extraction_sync)
+            )
         
         # 执行转换（v2 使用外部API）
         # v2 特有的参数通过配置或环境变量获取
-        result = await convert_to_markdown(
-            input_file=file_path,
-            output_dir=output_dir,
-            # v2: 去除max_pages、公式/表格等前端可调参数
-            is_ocr=False,
-            formula_enable=True,
-            table_enable=True,
-            language=DEFAULT_LANGUAGE,
-            backend=DEFAULT_BACKEND,
-            url=DEFAULT_API_URL,
-            # v2: 固定为 False
-            embed_images=False,
-            output_json=True,
-            start_page_id=DEFAULT_START_PAGE_ID,
-            end_page_id=DEFAULT_END_PAGE_ID,
-            parse_method=DEFAULT_PARSE_METHOD,
-            server_url=DEFAULT_SERVER_URL,
-            response_format_zip=DEFAULT_RESPONSE_FORMAT_ZIP,
-            return_middle_json=DEFAULT_RETURN_MIDDLE_JSON,
-            return_model_output=DEFAULT_RETURN_MODEL_OUTPUT,
-            return_md=DEFAULT_RETURN_MD,
-            return_images=DEFAULT_RETURN_IMAGES,
-            return_content_list=DEFAULT_RETURN_CONTENT_LIST,
-            forced_document_type=request.doc_type
+        # 与表格提取并行执行
+        conversion_task = asyncio.create_task(
+            convert_to_markdown(
+                input_file=file_path,
+                output_dir=output_dir,
+                # v2: 去除max_pages、公式/表格等前端可调参数
+                is_ocr=False,
+                formula_enable=True,
+                table_enable=True,
+                language=DEFAULT_LANGUAGE,
+                backend=DEFAULT_BACKEND,
+                url=DEFAULT_API_URL,
+                # v2: 固定为 False
+                embed_images=False,
+                output_json=True,
+                start_page_id=DEFAULT_START_PAGE_ID,
+                end_page_id=DEFAULT_END_PAGE_ID,
+                parse_method=DEFAULT_PARSE_METHOD,
+                server_url=DEFAULT_SERVER_URL,
+                response_format_zip=DEFAULT_RESPONSE_FORMAT_ZIP,
+                return_middle_json=DEFAULT_RETURN_MIDDLE_JSON,
+                return_model_output=DEFAULT_RETURN_MODEL_OUTPUT,
+                return_md=DEFAULT_RETURN_MD,
+                return_images=DEFAULT_RETURN_IMAGES,
+                return_content_list=DEFAULT_RETURN_CONTENT_LIST,
+                forced_document_type=request.doc_type
+            )
         )
         
-        # 等待表格提取完成（如果已启动）
+        # 等待两个任务完成（并行执行）
         if table_extraction_task:
-            tables_info = await table_extraction_task
-            if tables_info:
-                # 将表格信息挂到任务状态，方便后续调试或扩展
-                task_status[task_id]["tables"] = tables_info
-                logger.info(
-                    f"[任务 {task_id}] 表格提取完成，筛选目录: {tables_info.get('filtered_dir')}"
-                )
+            # 两个任务并行执行
+            result, tables_info = await asyncio.gather(
+                conversion_task,
+                table_extraction_task,
+                return_exceptions=True
+            )
+            # 处理异常
+            if isinstance(result, Exception):
+                logger.error(f"[任务 {task_id}] 外部 API 调用失败: {result}")
+                result = None
+            if isinstance(tables_info, Exception):
+                logger.error(f"[任务 {task_id}] 表格提取失败: {tables_info}")
+                tables_info = None
+        else:
+            # 只有外部 API 调用
+            result = await conversion_task
+        
+        # 处理表格提取结果
+        if tables_info:
+            # 将表格信息挂到任务状态，方便后续调试或扩展
+            task_status[task_id]["tables"] = tables_info
+            logger.info(
+                f"[任务 {task_id}] 表格提取完成，筛选目录: {tables_info.get('filtered_dir')}"
+            )
         
         # 停止监控并获取统计结果（基于采集的数据计算）
         monitor.stop()
