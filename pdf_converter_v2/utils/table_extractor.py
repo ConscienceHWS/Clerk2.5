@@ -432,23 +432,37 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         # 如果没有找到明确的表头，假设第一行是表头
         header_row_idx = 0
     
-    # 从表头行识别列索引
-    header_row = df.iloc[header_row_idx].astype(str).str.strip()
+    # 合并前几行作为表头（处理多行表头的情况）
+    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_texts = []  # 每列的合并文本
+    num_cols = len(df.columns)
+    
+    for col_idx in range(num_cols):
+        col_text_parts = []
+        for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
+            if row_idx < len(df):
+                cell_val = str(df.iloc[row_idx, col_idx]).strip()
+                if cell_val and cell_val.lower() not in ['nan', 'none', '']:
+                    # 清理换行符
+                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
+                    col_text_parts.append(cell_val)
+        # 合并该列的所有表头文本
+        header_texts.append(' '.join(col_text_parts).strip())
     
     col_no = None  # 序号列
     col_name = None  # 审计内容列（项目名称）
     col_tax_exclusive = None  # 审定金额（不含税）列
     col_tax_inclusive = None  # 审定金额（含税）列
     
-    for idx, cell in enumerate(header_row):
-        cell_lower = cell.lower()
-        if "序号" in cell or "no" in cell_lower:
+    for idx, header_text in enumerate(header_texts):
+        cell_lower = header_text.lower()
+        if "序号" in header_text or "no" in cell_lower:
             col_no = idx
-        elif "审计内容" in cell or "项目名称" in cell or "name" in cell_lower:
+        elif "审计内容" in header_text or "项目名称" in header_text or "name" in cell_lower:
             col_name = idx
-        elif "审定金额（不含税）" in cell or "不含税" in cell:
+        elif "审定金额（不含税）" in header_text or ("不含税" in header_text and "审定" in header_text):
             col_tax_exclusive = idx
-        elif "审定金额（含税）" in cell or ("审定金额" in cell and "含税" in cell):
+        elif "审定金额（含税）" in header_text or ("审定金额" in header_text and "含税" in header_text):
             col_tax_inclusive = idx
     
     # 如果关键列未找到，尝试通过位置推断
@@ -456,6 +470,19 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         col_no = 0
     if col_name is None:
         col_name = 1
+    
+    # 如果金额列未找到，尝试从后往前找（通常金额列在表格右侧）
+    if col_tax_exclusive is None or col_tax_inclusive is None:
+        for idx in range(len(header_texts) - 1, -1, -1):
+            header_text = header_texts[idx]
+            if "不含税" in header_text and col_tax_exclusive is None:
+                col_tax_exclusive = idx
+            elif "含税" in header_text and "审定" in header_text and col_tax_inclusive is None:
+                col_tax_inclusive = idx
+            if col_tax_exclusive is not None and col_tax_inclusive is not None:
+                break
+    
+    logger.debug(f"[审定结算汇总表] 列识别: 序号={col_no}, 项目名称={col_name}, 不含税={col_tax_exclusive}, 含税={col_tax_inclusive}")
     
     # 从数据行开始解析（跳过表头行）
     data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
@@ -502,8 +529,12 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         if not no_str or pd.isna(no_val):
             continue
         
-        # 解析项目名称（审计内容）
+        # 解析项目名称（审计内容），清理换行符
         name = str(name_val).strip() if name_val is not None and not pd.isna(name_val) else ""
+        # 清理换行符，替换为空格
+        name = name.replace('\n', ' ').replace('\r', ' ')
+        # 清理多余空格
+        name = re.sub(r'\s+', ' ', name).strip()
         
         # 跳过空行
         if not name or name == "":
@@ -560,8 +591,22 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         # 如果没有找到明确的表头，假设第一行是表头
         header_row_idx = 0
     
-    # 从表头行识别列索引
-    header_row = df.iloc[header_row_idx].astype(str).str.strip()
+    # 合并前几行作为表头（处理多行表头的情况）
+    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_texts = []  # 每列的合并文本
+    num_cols = len(df.columns)
+    
+    for col_idx in range(num_cols):
+        col_text_parts = []
+        for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
+            if row_idx < len(df):
+                cell_val = str(df.iloc[row_idx, col_idx]).strip()
+                if cell_val and cell_val.lower() not in ['nan', 'none', '']:
+                    # 清理换行符
+                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
+                    col_text_parts.append(cell_val)
+        # 合并该列的所有表头文本
+        header_texts.append(' '.join(col_text_parts).strip())
     
     col_no = None  # 序号列
     col_construction_unit = None  # 施工单位列
@@ -571,21 +616,21 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     col_settlement_submitted = None  # 结算送审金额列
     col_difference = None  # 差额列
     
-    for idx, cell in enumerate(header_row):
-        cell_lower = cell.lower()
-        if "序号" in cell or "no" in cell_lower:
+    for idx, header_text in enumerate(header_texts):
+        cell_lower = header_text.lower()
+        if "序号" in header_text or "no" in cell_lower:
             col_no = idx
-        elif "施工单位" in cell:
+        elif "施工单位" in header_text:
             col_construction_unit = idx
-        elif "中标通知书金额" in cell:
+        elif "中标通知书金额" in header_text:
             col_bid_notice_amount = idx
-        elif "中标通知书编号" in cell:
+        elif "中标通知书编号" in header_text:
             col_bid_notice_no = idx
-        elif "合同金额" in cell and "结算" not in cell:
+        elif "合同金额" in header_text and "结算" not in header_text:
             col_contract_amount = idx
-        elif "结算送审金额" in cell:
+        elif "结算送审金额" in header_text or ("送审金额" in header_text and "结算" in header_text):
             col_settlement_submitted = idx
-        elif "差额" in cell:
+        elif "差额" in header_text:
             col_difference = idx
     
     # 如果关键列未找到，尝试通过位置推断
@@ -593,6 +638,42 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         col_no = 0
     if col_construction_unit is None:
         col_construction_unit = 1
+    
+    # 如果金额列未找到，尝试从后往前找（通常金额列在表格右侧）
+    # 同时检查列名中是否包含关键词的部分匹配
+    if col_bid_notice_amount is None:
+        for idx, header_text in enumerate(header_texts):
+            if "中标" in header_text and "金额" in header_text:
+                col_bid_notice_amount = idx
+                break
+    
+    if col_bid_notice_no is None:
+        for idx, header_text in enumerate(header_texts):
+            if "中标" in header_text and "编号" in header_text:
+                col_bid_notice_no = idx
+                break
+    
+    if col_contract_amount is None:
+        for idx, header_text in enumerate(header_texts):
+            if "合同" in header_text and "金额" in header_text and "结算" not in header_text:
+                col_contract_amount = idx
+                break
+    
+    if col_settlement_submitted is None:
+        for idx, header_text in enumerate(header_texts):
+            if "送审" in header_text and "金额" in header_text:
+                col_settlement_submitted = idx
+                break
+    
+    if col_difference is None:
+        for idx, header_text in enumerate(header_texts):
+            if "差额" in header_text:
+                col_difference = idx
+                break
+    
+    logger.debug(f"[合同执行情况] 列识别: 序号={col_no}, 施工单位={col_construction_unit}, "
+                f"中标金额={col_bid_notice_amount}, 中标编号={col_bid_notice_no}, "
+                f"合同金额={col_contract_amount}, 送审金额={col_settlement_submitted}, 差额={col_difference}")
     
     # 从数据行开始解析（跳过表头行）
     data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
@@ -642,8 +723,12 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         if not no_str or pd.isna(no_val):
             continue
         
-        # 解析施工单位
+        # 解析施工单位，清理换行符
         construction_unit = str(construction_unit_val).strip() if construction_unit_val is not None and not pd.isna(construction_unit_val) else ""
+        # 清理换行符，替换为空格
+        construction_unit = construction_unit.replace('\n', ' ').replace('\r', ' ')
+        # 清理多余空格
+        construction_unit = re.sub(r'\s+', ' ', construction_unit).strip()
         
         # 跳过空行
         if not construction_unit or construction_unit == "":
@@ -654,8 +739,10 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         if is_total:
             continue
         
-        # 解析中标通知书编号
+        # 解析中标通知书编号，清理换行符
         bid_notice_no = str(bid_notice_no_val).strip() if bid_notice_no_val is not None and not pd.isna(bid_notice_no_val) else ""
+        bid_notice_no = bid_notice_no.replace('\n', ' ').replace('\r', ' ')
+        bid_notice_no = re.sub(r'\s+', ' ', bid_notice_no).strip()
         
         # 解析金额（保留两位小数）
         bid_notice_amount = parse_number(bid_notice_amount_val)
