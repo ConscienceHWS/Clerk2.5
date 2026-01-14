@@ -21,7 +21,6 @@ from pydantic import BaseModel
 from typing_extensions import Annotated, Literal
 
 from ..processor.converter import convert_to_markdown
-from ..utils.table_extractor import extract_and_filter_tables_for_pdf
 from ..utils.logging_config import get_logger
 
 # 尝试导入配置，如果不存在则使用默认值
@@ -246,6 +245,8 @@ async def process_conversion_task(
         tables_info = None
         if result and request.doc_type in ("settlementReport", "designReview"):
             try:
+                # 延迟导入，避免启动时因 pandas/numpy 版本冲突导致服务无法启动
+                from ..utils.table_extractor import extract_and_filter_tables_for_pdf
                 tables_info = extract_and_filter_tables_for_pdf(
                     pdf_path=file_path,
                     base_output_dir=output_dir,
