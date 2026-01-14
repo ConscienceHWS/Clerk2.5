@@ -8,8 +8,15 @@ import pandas as pd
 try:
     import pdfplumber
     _PDFPLUMBER_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     _PDFPLUMBER_AVAILABLE = False
+    _PDFPLUMBER_IMPORT_ERROR = str(e)
+except Exception as e:
+    # 捕获其他可能的导入错误
+    _PDFPLUMBER_AVAILABLE = False
+    _PDFPLUMBER_IMPORT_ERROR = str(e)
+else:
+    _PDFPLUMBER_IMPORT_ERROR = None
 
 
 # 文档类型 -> 表头规则
@@ -74,8 +81,24 @@ def extract_tables_with_pdfplumber(
     Returns:
         List[Tuple[int, pd.DataFrame, tuple]]: [(页码, DataFrame, bbox), ...]
     """
+    # 运行时再次尝试导入，因为模块加载时可能失败但运行时环境可能不同
+    global _PDFPLUMBER_AVAILABLE, pdfplumber, _PDFPLUMBER_IMPORT_ERROR
     if not _PDFPLUMBER_AVAILABLE:
-        raise RuntimeError("pdfplumber 库未安装，无法提取表格（请安装 pdfplumber）")
+        try:
+            import pdfplumber
+            _PDFPLUMBER_AVAILABLE = True
+            _PDFPLUMBER_IMPORT_ERROR = None
+        except ImportError as e:
+            error_msg = f"pdfplumber 库未安装，无法提取表格（请安装 pdfplumber）"
+            if _PDFPLUMBER_IMPORT_ERROR:
+                error_msg += f"\n模块加载时导入错误: {_PDFPLUMBER_IMPORT_ERROR}"
+            error_msg += f"\n运行时导入错误: {e}"
+            raise RuntimeError(error_msg)
+        except Exception as e:
+            error_msg = f"pdfplumber 库导入失败: {e}"
+            if _PDFPLUMBER_IMPORT_ERROR:
+                error_msg += f"\n模块加载时导入错误: {_PDFPLUMBER_IMPORT_ERROR}"
+            raise RuntimeError(error_msg)
 
     tables_data: List[Tuple[int, pd.DataFrame, tuple]] = []
 
