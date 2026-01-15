@@ -417,6 +417,57 @@ def _merge_cross_page_tables(
     return merged
 
 
+def _fix_broken_cells(table_df: pd.DataFrame, header_row_count: int = 1) -> pd.DataFrame:
+    """
+    修复被错误分割的单元格（一个单元格的内容被识别成多行）
+    
+    检测规则：
+    1. 如果某一行的第一列有内容，但其他列全部为空
+    2. 则认为当前行是上一行第一列内容的延续，需要合并
+    
+    Args:
+        table_df: 表格DataFrame
+        header_row_count: 表头行数，跳过表头不处理
+    
+    Returns:
+        pd.DataFrame: 修复后的表格
+    """
+    if table_df.empty or len(table_df) <= header_row_count:
+        return table_df
+    
+    df = table_df.copy()
+    rows_to_remove = []
+    
+    # 从表头后开始检查
+    for i in range(header_row_count, len(df)):
+        # 获取当前行
+        current_row = df.iloc[i]
+        
+        # 检查第一列是否有内容
+        first_col = str(current_row.iloc[0]).strip()
+        if not first_col or first_col.lower() in ['nan', 'none', '']:
+            continue
+        
+        # 检查其他列是否全部为空
+        other_cols = current_row.iloc[1:]
+        all_empty = all(str(val).strip() in ['', 'nan', 'None', 'NaN', '0', '0.0'] for val in other_cols)
+        
+        if all_empty and i > header_row_count:
+            # 其他列全部为空，合并到上一行的第一列
+            prev_first_col = str(df.iloc[i-1, 0]).strip()
+            if prev_first_col and prev_first_col.lower() not in ['nan', 'none', '']:
+                # 合并到上一行的第一列（移除换行符）
+                df.iloc[i-1, 0] = prev_first_col + first_col.replace('\n', '').replace('\r', '')
+                rows_to_remove.append(i)
+    
+    # 删除已合并的行
+    if rows_to_remove:
+        df = df.drop(rows_to_remove).reset_index(drop=True)
+        logger.debug(f"[跨行合并] 修复了 {len(rows_to_remove)} 个被错误分割的单元格（跨行）")
+    
+    return df
+
+
 def _detect_header_rows(df: pd.DataFrame, header_row_idx: int, header_keywords: List[str]) -> int:
     """
     智能检测表头行数，避免把数据行当作表头。
@@ -430,19 +481,36 @@ def _detect_header_rows(df: pd.DataFrame, header_row_idx: int, header_keywords: 
         表头行数（从 header_row_idx 开始）
     """
     header_rows_to_check = 1
+    
+    # 检查后续行是否是表头的延续
     for i in range(header_row_idx + 1, min(header_row_idx + 3, len(df))):
         row = df.iloc[i]
         row_text = " ".join(row.astype(str).str.strip().tolist())
-        has_keywords = any(kw in row_text for kw in header_keywords)
         
-        if has_keywords:
+        # 检查是否包含表头关键词
+        keyword_count = sum(1 for kw in header_keywords if kw in row_text)
+        
+        # 如果包含关键词，进一步判断
+        if keyword_count >= 2:  # 至少包含2个关键词才可能是表头
             # 检查是否主要是数字（如果是，则不是表头）
             numeric_count = sum(1 for cell in row if str(cell).strip().replace('.', '').replace('-', '').isdigit())
-            if numeric_count < len(row) * 0.5:  # 如果数字占比小于50%，可能是表头
+            numeric_ratio = numeric_count / len(row) if len(row) > 0 else 0
+            
+            # 检查是否包含明显的公司名称、人名等（如果是，则不是表头）
+            has_company_name = any(
+                '公司' in str(cell) or '有限' in str(cell) or '股份' in str(cell) or 
+                '工程' in str(cell) or '集团' in str(cell) or '局' in str(cell)
+                for cell in row
+            )
+            
+            # 如果数字占比小于30%且不包含公司名称，可能是表头
+            if numeric_ratio < 0.3 and not has_company_name:
                 header_rows_to_check += 1
             else:
+                # 包含公司名称或数字占比高，是数据行，停止
                 break
         else:
+            # 关键词太少，不是表头，停止
             break
     
     return header_rows_to_check
@@ -475,6 +543,9 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if header_row_idx is None:
         # 如果没有找到明确的表头，假设第一行是表头
         header_row_idx = 0
+    
+    # 先修复跨行单元格（在识别表头之前）
+    df = _fix_broken_cells(df, header_row_count=header_row_idx + 1)
     
     # 合并前几行作为表头（处理多行表头的情况）
     header_keywords = ["序号", "审计内容", "送审金额", "审定金额", "增减金额", "备注"]
@@ -647,6 +718,9 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if header_row_idx is None:
         # 如果没有找到明确的表头，假设第一行是表头
         header_row_idx = 0
+    
+    # 先修复跨行单元格（在识别表头之前）
+    df = _fix_broken_cells(df, header_row_count=header_row_idx + 1)
     
     # 合并前几行作为表头（处理多行表头的情况）
     # 智能判断表头行数：表头行通常不包含纯数字（除了序号列）
@@ -880,8 +954,12 @@ def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         # 如果没有找到明确的表头，假设第一行是表头
         header_row_idx = 0
     
+    # 先修复跨行单元格（在识别表头之前）
+    df = _fix_broken_cells(df, header_row_count=header_row_idx + 1)
+    
     # 合并前几行作为表头（处理多行表头的情况）
-    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_keywords = ["序号", "合同对方", "赔偿事项", "合同金额", "结算送审金额", "差额"]
+    header_rows_to_check = _detect_header_rows(df, header_row_idx, header_keywords)
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
@@ -1066,8 +1144,12 @@ def parse_material_purchase_contract1_table(df: pd.DataFrame) -> List[Dict[str, 
         # 如果没有找到明确的表头，假设第一行是表头
         header_row_idx = 0
     
+    # 先修复跨行单元格（在识别表头之前）
+    df = _fix_broken_cells(df, header_row_count=header_row_idx + 1)
+    
     # 合并前几行作为表头（处理多行表头的情况）
-    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_keywords = ["序号", "物料名称", "合同数量", "施工图数量", "单价", "差额"]
+    header_rows_to_check = _detect_header_rows(df, header_row_idx, header_keywords)
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
@@ -1261,8 +1343,12 @@ def parse_material_purchase_contract2_table(df: pd.DataFrame) -> List[Dict[str, 
         # 如果没有找到明确的表头，假设第一行是表头
         header_row_idx = 0
     
+    # 先修复跨行单元格（在识别表头之前）
+    df = _fix_broken_cells(df, header_row_count=header_row_idx + 1)
+    
     # 合并前几行作为表头（处理多行表头的情况）
-    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_keywords = ["序号", "物料名称", "合同金额", "入账金额", "差额", "备注"]
+    header_rows_to_check = _detect_header_rows(df, header_row_idx, header_keywords)
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
@@ -1459,8 +1545,12 @@ def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]
         # 如果没有找到明确的表头，假设第一行是表头
         header_row_idx = 0
     
+    # 先修复跨行单元格（在识别表头之前）
+    df = _fix_broken_cells(df, header_row_count=header_row_idx + 1)
+    
     # 合并前几行作为表头（处理多行表头的情况）
-    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_keywords = ["序号", "服务商", "中标通知书", "合同金额", "送审金额", "结算金额"]
+    header_rows_to_check = _detect_header_rows(df, header_row_idx, header_keywords)
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
