@@ -1829,9 +1829,6 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if df.empty:
         return []
     
-    # 定义大类关键词（用于识别总计/大类行，作为备选方案）
-    CATEGORY_KEYWORDS = ["变电工程", "线路工程", "通信工程", "其他工程"]
-    
     # 中文数字映射（用于识别序号格式）
     CHINESE_NUMBERS = {
         '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
@@ -1863,13 +1860,6 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 return True
         
         return False
-    
-    def is_category_by_keyword(name: str) -> bool:
-        """通过关键词判断是否为大类（备选方案）"""
-        if not name or pd.isna(name):
-            return False
-        name_str = str(name).strip()
-        return any(kw in name_str for kw in CATEGORY_KEYWORDS)
     
     # 尝试识别表头行（通常在前几行）
     header_row_idx = None
@@ -1994,8 +1984,8 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         static_investment = parse_number(static_val)
         dynamic_investment = parse_number(dynamic_val)
         
-        # 判断是否为大类：优先使用序号格式，其次使用关键词
-        is_category = is_category_by_serial(no_str) or is_category_by_keyword(name)
+        # 判断是否为大类：通过序号格式识别
+        is_category = is_category_by_serial(no_str)
         
         all_items.append({
             "No": no if no is not None else idx + 1,
