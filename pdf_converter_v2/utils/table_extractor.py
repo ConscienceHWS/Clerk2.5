@@ -764,6 +764,184 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return result
 
 
+def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    解析"赔偿合同"表，提取数据并生成 JSON 格式。
+    
+    返回格式:
+    [{
+        "No": int,  # 序号
+        "contractCounterpartyName": str,  # 合同对方名称
+        "compensationItem": str,  # 赔偿事项
+        "contractAmount": float,  # 合同金额（元，两位小数）
+        "settlementSubmittedAmount": float,  # 结算送审金额（元，两位小数）
+        "differenceAmount": float,  # 差额（元，两位小数）
+    }, ...]
+    """
+    if df.empty:
+        return []
+    
+    # 尝试识别表头行（通常在前几行）
+    header_row_idx = None
+    for i in range(min(3, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        # 检查是否包含表头关键词
+        if any(kw in row_text for kw in ["序号", "合同对方", "赔偿事项", "合同金额", "结算送审金额", "差额"]):
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        # 如果没有找到明确的表头，假设第一行是表头
+        header_row_idx = 0
+    
+    # 合并前几行作为表头（处理多行表头的情况）
+    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_texts = []  # 每列的合并文本
+    num_cols = len(df.columns)
+    
+    for col_idx in range(num_cols):
+        col_text_parts = []
+        for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
+            if row_idx < len(df):
+                cell_val = str(df.iloc[row_idx, col_idx]).strip()
+                if cell_val and cell_val.lower() not in ['nan', 'none', '']:
+                    # 清理换行符
+                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
+                    col_text_parts.append(cell_val)
+        # 合并该列的所有表头文本
+        header_texts.append(' '.join(col_text_parts).strip())
+    
+    col_no = None  # 序号列
+    col_counterparty_name = None  # 合同对方名称列
+    col_compensation_item = None  # 赔偿事项列
+    col_contract_amount = None  # 合同金额列
+    col_settlement_submitted = None  # 结算送审金额列
+    col_difference = None  # 差额列
+    
+    for idx, header_text in enumerate(header_texts):
+        cell_lower = header_text.lower()
+        if "序号" in header_text or "no" in cell_lower:
+            col_no = idx
+        elif "合同对方" in header_text:
+            col_counterparty_name = idx
+        elif "赔偿事项" in header_text:
+            col_compensation_item = idx
+        elif "合同金额" in header_text and "结算" not in header_text:
+            col_contract_amount = idx
+        elif "结算送审金额" in header_text or ("送审金额" in header_text and "结算" in header_text):
+            col_settlement_submitted = idx
+        elif "差额" in header_text:
+            col_difference = idx
+    
+    # 如果关键列未找到，尝试通过位置推断
+    if col_no is None:
+        col_no = 0
+    if col_counterparty_name is None:
+        col_counterparty_name = 1
+    if col_compensation_item is None:
+        col_compensation_item = 2
+    
+    # 如果金额列未找到，尝试从后往前找（通常金额列在表格右侧）
+    if col_contract_amount is None or col_settlement_submitted is None or col_difference is None:
+        for idx in range(len(header_texts) - 1, -1, -1):
+            header_text = header_texts[idx]
+            if "差额" in header_text and col_difference is None:
+                col_difference = idx
+            elif "送审" in header_text and "金额" in header_text and col_settlement_submitted is None:
+                col_settlement_submitted = idx
+            elif "合同金额" in header_text and col_contract_amount is None:
+                col_contract_amount = idx
+            if col_contract_amount is not None and col_settlement_submitted is not None and col_difference is not None:
+                break
+    
+    logger.debug(f"[赔偿合同] 列识别: 序号={col_no}, 合同对方={col_counterparty_name}, "
+                f"赔偿事项={col_compensation_item}, 合同金额={col_contract_amount}, "
+                f"送审金额={col_settlement_submitted}, 差额={col_difference}")
+    
+    # 从数据行开始解析（跳过表头行）
+    data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    
+    result = []
+    
+    def parse_number(value: Any) -> float:
+        """解析数字，支持中文数字格式，保留两位小数"""
+        if pd.isna(value):
+            return 0.0
+        value_str = str(value).strip()
+        # 移除常见的非数字字符（保留小数点、负号）
+        value_str = re.sub(r'[^\d.\-]', '', value_str)
+        if not value_str or value_str == '-':
+            return 0.0
+        try:
+            return round(float(value_str), 2)
+        except ValueError:
+            return 0.0
+    
+    for idx, row in data_rows.iterrows():
+        # 跳过空行
+        if row.isna().all():
+            continue
+        
+        # 提取各列数据
+        no_val = row.iloc[col_no] if col_no is not None and col_no < len(row) else None
+        counterparty_name_val = row.iloc[col_counterparty_name] if col_counterparty_name is not None and col_counterparty_name < len(row) else None
+        compensation_item_val = row.iloc[col_compensation_item] if col_compensation_item is not None and col_compensation_item < len(row) else None
+        contract_amount_val = row.iloc[col_contract_amount] if col_contract_amount is not None and col_contract_amount < len(row) else None
+        settlement_submitted_val = row.iloc[col_settlement_submitted] if col_settlement_submitted is not None and col_settlement_submitted < len(row) else None
+        difference_val = row.iloc[col_difference] if col_difference is not None and col_difference < len(row) else None
+        
+        # 解析序号
+        no = None
+        no_str = ""
+        if no_val is not None and not pd.isna(no_val):
+            no_str = str(no_val).strip()
+            if no_str:
+                try:
+                    no = int(float(no_str))
+                except (ValueError, TypeError):
+                    pass
+        
+        # 跳过序号为空的行（这些通常是合计、其中等说明行）
+        if not no_str or pd.isna(no_val):
+            continue
+        
+        # 解析合同对方名称，清理换行符
+        counterparty_name = str(counterparty_name_val).strip() if counterparty_name_val is not None and not pd.isna(counterparty_name_val) else ""
+        counterparty_name = counterparty_name.replace('\n', ' ').replace('\r', ' ')
+        counterparty_name = re.sub(r'\s+', ' ', counterparty_name).strip()
+        
+        # 跳过空行
+        if not counterparty_name or counterparty_name == "":
+            continue
+        
+        # 判断是否为合计行（合计行需要跳过）
+        is_total = any(kw in counterparty_name for kw in ["合计", "总计", "总计", "合计金额"])
+        if is_total:
+            continue
+        
+        # 解析赔偿事项，清理换行符
+        compensation_item = str(compensation_item_val).strip() if compensation_item_val is not None and not pd.isna(compensation_item_val) else ""
+        compensation_item = compensation_item.replace('\n', ' ').replace('\r', ' ')
+        compensation_item = re.sub(r'\s+', ' ', compensation_item).strip()
+        
+        # 解析金额（保留两位小数）
+        contract_amount = parse_number(contract_amount_val)
+        settlement_submitted_amount = parse_number(settlement_submitted_val)
+        difference_amount = parse_number(difference_val)
+        
+        # 添加到结果
+        result.append({
+            "No": no if no is not None else idx + 1,
+            "contractCounterpartyName": counterparty_name,
+            "compensationItem": compensation_item,
+            "contractAmount": contract_amount,
+            "settlementSubmittedAmount": settlement_submitted_amount,
+            "differenceAmount": difference_amount,
+        })
+    
+    return result
+
+
 def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     解析 designReview 类型的表格，提取数据并生成 JSON 格式。
@@ -957,9 +1135,13 @@ def parse_settlement_report_tables(
                 parsed_data = parse_contract_execution_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
+            elif rule_name == "赔偿合同":
+                parsed_data = parse_compensation_contract_table(df)
+                if parsed_data:
+                    result[rule_name] = parsed_data
             # 其他表暂时留空，后续实现
-            # elif rule_name == "赔偿合同":
-            #     result[rule_name] = parse_compensation_contract_table(df)
+            # elif rule_name == "物资采购合同1":
+            #     result[rule_name] = parse_material_purchase_contract1_table(df)
             # ...
         except Exception as e:
             # 如果解析失败，记录错误但不影响其他表格
