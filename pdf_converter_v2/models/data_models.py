@@ -223,3 +223,71 @@ class ElectromagneticDetectionRecord:
             "electricMagnetic": [em.to_dict() for em in self.electricMagnetic]
         }
 
+
+class InvestmentItem:
+    """投资项目数据模型"""
+    def __init__(self):
+        self.no: str = ""  # 序号
+        self.name: str = ""  # 工程或费用名称
+        self.level: str = ""  # 明细等级
+        self.constructionScaleOverheadLine: str = ""  # 建设规模-架空线（仅可研批复）
+        self.constructionScaleBay: str = ""  # 建设规模-间隔（仅可研批复）
+        self.constructionScaleSubstation: str = ""  # 建设规模-变电（仅可研批复）
+        self.constructionScaleOpticalCable: str = ""  # 建设规模-光缆（仅可研批复）
+        self.staticInvestment: str = ""  # 静态投资（元）
+        self.dynamicInvestment: str = ""  # 动态投资（元）
+    
+    def to_dict(self, include_construction_scale: bool = False):
+        """
+        转换为字典
+        
+        Args:
+            include_construction_scale: 是否包含建设规模字段（可研批复需要）
+        """
+        result = {
+            "No": self.no,
+            "name": self.name,
+            "Level": self.level,
+            "staticInvestment": self.staticInvestment,
+            "dynamicInvestment": self.dynamicInvestment
+        }
+        
+        # 如果需要建设规模字段，添加到输出（用于可研批复）
+        if include_construction_scale:
+            result["constructionScaleOverheadLine"] = self.constructionScaleOverheadLine
+            result["constructionScaleBay"] = self.constructionScaleBay
+            result["constructionScaleSubstation"] = self.constructionScaleSubstation
+            result["constructionScaleOpticalCable"] = self.constructionScaleOpticalCable
+        
+        return result
+
+
+class FeasibilityApprovalInvestment:
+    """可研批复投资估算数据模型"""
+    def __init__(self):
+        self.items: List[InvestmentItem] = []
+    
+    def to_dict(self):
+        # 可研批复需要包含建设规模字段
+        return [item.to_dict(include_construction_scale=True) for item in self.items]
+
+
+class FeasibilityReviewInvestment:
+    """可研评审投资估算数据模型"""
+    def __init__(self):
+        self.items: List[InvestmentItem] = []
+    
+    def to_dict(self):
+        # 可研评审不需要建设规模字段
+        return [item.to_dict(include_construction_scale=False) for item in self.items]
+
+
+class PreliminaryApprovalInvestment:
+    """初设批复概算投资数据模型"""
+    def __init__(self):
+        self.items: List[InvestmentItem] = []
+    
+    def to_dict(self):
+        # 初设批复不需要建设规模字段
+        return [item.to_dict(include_construction_scale=False) for item in self.items]
+

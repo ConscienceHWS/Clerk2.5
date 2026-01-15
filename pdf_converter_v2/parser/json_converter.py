@@ -13,6 +13,7 @@ from ..utils.paddleocr_fallback import fallback_parse_with_paddleocr, call_paddl
 from .document_type import detect_document_type
 from .noise_parser import parse_noise_detection_record
 from .electromagnetic_parser import parse_electromagnetic_detection_record
+from .investment_parser import parse_investment_record
 from .table_parser import parse_operational_conditions, parse_operational_conditions_v2, parse_operational_conditions_opstatus, parse_operational_conditions_format3_5
 
 logger = get_logger("pdf_converter_v2.parser.json")
@@ -379,15 +380,24 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
     auto_weather_default = False
     doc_type = detect_document_type(markdown_content)
     
-    if doc_type == "noise_detection":
+    if doc_type == "noiseRec":
         # v2版本不依赖OCR，first_page_image参数会被忽略
         noise_record = parse_noise_detection_record(markdown_content, first_page_image=None, output_dir=output_dir)
         auto_weather_default = getattr(noise_record, "_auto_weather_default_used", False)
         data = noise_record.to_dict()
         result = {"document_type": doc_type, "data": data}
-    elif doc_type == "electromagnetic_detection":
+    elif doc_type == "emRec":
         data = parse_electromagnetic_detection_record(markdown_content).to_dict()
         result = {"document_type": doc_type, "data": data}
+    elif doc_type in ["feasibilityApprovalInvestment", "feasibilityReviewInvestment", "preliminaryApprovalInvestment"]:
+        # 新增：投资估算类型
+        logger.info(f"[JSON转换] 检测到投资估算类型: {doc_type}")
+        investment_record = parse_investment_record(markdown_content, doc_type)
+        if investment_record:
+            data = investment_record.to_dict()
+            result = {"document_type": doc_type, "data": data}
+        else:
+            result = {"document_type": doc_type, "data": [], "error": "投资估算解析失败"}
     else:
         result = {"document_type": "unknown", "data": {}, "error": "无法识别的文档类型"}
     
