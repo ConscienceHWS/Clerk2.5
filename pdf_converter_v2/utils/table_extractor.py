@@ -1829,8 +1829,47 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if df.empty:
         return []
     
-    # 定义大类关键词（用于识别总计/大类行）
+    # 定义大类关键词（用于识别总计/大类行，作为备选方案）
     CATEGORY_KEYWORDS = ["变电工程", "线路工程", "通信工程", "其他工程"]
+    
+    # 中文数字映射（用于识别序号格式）
+    CHINESE_NUMBERS = {
+        '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+        '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15, '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20
+    }
+    
+    def is_category_by_serial(no_str: str) -> bool:
+        """
+        通过序号格式判断是否为大类
+        大类：序号为中文数字，如"一"、"二"、"三"（不含括号）
+        子类：序号为带括号的中文数字，如"（一）"、"（二）"、"（三）"
+        """
+        if not no_str:
+            return False
+        
+        no_str = str(no_str).strip()
+        
+        # 如果包含括号，是子类
+        if '（' in no_str or '(' in no_str or '）' in no_str or ')' in no_str:
+            return False
+        
+        # 检查是否是中文数字（大类）
+        # 移除可能的空格和标点
+        cleaned = no_str.replace(' ', '').replace('、', '').replace('.', '').replace('。', '')
+        
+        # 检查是否以中文数字开头
+        for chinese_num in CHINESE_NUMBERS.keys():
+            if cleaned.startswith(chinese_num):
+                return True
+        
+        return False
+    
+    def is_category_by_keyword(name: str) -> bool:
+        """通过关键词判断是否为大类（备选方案）"""
+        if not name or pd.isna(name):
+            return False
+        name_str = str(name).strip()
+        return any(kw in name_str for kw in CATEGORY_KEYWORDS)
     
     # 尝试识别表头行（通常在前几行）
     header_row_idx = None
@@ -1899,13 +1938,6 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         except ValueError:
             return 0.0
     
-    def is_category(name: str) -> bool:
-        """判断是否为大类"""
-        if not name or pd.isna(name):
-            return False
-        name_str = str(name).strip()
-        return any(kw in name_str for kw in CATEGORY_KEYWORDS)
-    
     # 先解析所有行
     all_items = []
     for idx, row in data_rows.iterrows():
@@ -1919,16 +1951,28 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         static_val = row.iloc[col_static] if col_static is not None and col_static < len(row) else None
         dynamic_val = row.iloc[col_dynamic] if col_dynamic is not None and col_dynamic < len(row) else None
         
-        # 解析序号
+        # 解析序号（保留原始字符串）
         no = None
         no_str = ""
         if no_val is not None and not pd.isna(no_val):
             no_str = str(no_val).strip()
             if no_str:
+                # 先尝试解析为数字
                 try:
                     no = int(float(no_str))
                 except (ValueError, TypeError):
-                    pass
+                    # 如果不是数字，尝试解析中文数字
+                    cleaned = no_str.replace(' ', '').replace('、', '').replace('.', '').replace('。', '')
+                    # 移除括号
+                    cleaned_no_brackets = cleaned.replace('（', '').replace('(', '').replace('）', '').replace(')', '')
+                    if cleaned_no_brackets in CHINESE_NUMBERS:
+                        no = CHINESE_NUMBERS[cleaned_no_brackets]
+                    else:
+                        # 尝试匹配中文数字前缀
+                        for chinese_num, num_val in CHINESE_NUMBERS.items():
+                            if cleaned_no_brackets.startswith(chinese_num):
+                                no = num_val
+                                break
         
         # 跳过序号为空的行（这些通常是"其中："等说明行）
         if not no_str or pd.isna(no_val):
@@ -1950,10 +1994,13 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         static_investment = parse_number(static_val)
         dynamic_investment = parse_number(dynamic_val)
         
+        # 判断是否为大类：优先使用序号格式，其次使用关键词
+        is_category = is_category_by_serial(no_str) or is_category_by_keyword(name)
+        
         all_items.append({
             "No": no if no is not None else idx + 1,
             "name": name,
-            "isCategory": is_category(name),
+            "isCategory": is_category,
             "staticInvestment": static_investment,
             "dynamicInvestment": dynamic_investment,
         })
