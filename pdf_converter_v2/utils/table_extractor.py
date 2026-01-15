@@ -1319,6 +1319,195 @@ def parse_material_purchase_contract2_table(df: pd.DataFrame) -> List[Dict[str, 
     return result
 
 
+def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    解析"其他服务类合同"表，提取数据并生成 JSON 格式。
+    
+    返回格式:
+    [{
+        "No": int,  # 序号
+        "serviceProvider": str,  # 服务商
+        "bidNotice": str,  # 中标通知书
+        "contractAmount": float,  # 合同金额（元，两位小数）
+        "submittedAmount": float,  # 送审金额（元，两位小数）
+        "settlementAmount": float,  # 结算金额（元，两位小数）
+    }, ...]
+    """
+    if df.empty:
+        return []
+    
+    # 尝试识别表头行（通常在前几行）
+    header_row_idx = None
+    for i in range(min(3, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        # 检查是否包含表头关键词
+        if any(kw in row_text for kw in ["序号", "服务商", "中标通知书", "合同金额", "送审金额", "结算金额"]):
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        # 如果没有找到明确的表头，假设第一行是表头
+        header_row_idx = 0
+    
+    # 合并前几行作为表头（处理多行表头的情况）
+    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_texts = []  # 每列的合并文本
+    num_cols = len(df.columns)
+    
+    for col_idx in range(num_cols):
+        col_text_parts = []
+        for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
+            if row_idx < len(df):
+                cell_val = str(df.iloc[row_idx, col_idx]).strip()
+                if cell_val and cell_val.lower() not in ['nan', 'none', '']:
+                    # 清理换行符
+                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
+                    col_text_parts.append(cell_val)
+        # 合并该列的所有表头文本
+        header_texts.append(' '.join(col_text_parts).strip())
+    
+    col_no = None  # 序号列
+    col_service_provider = None  # 服务商列
+    col_bid_notice = None  # 中标通知书列
+    col_contract_amount = None  # 合同金额列
+    col_submitted_amount = None  # 送审金额列
+    col_settlement_amount = None  # 结算金额列
+    
+    for idx, header_text in enumerate(header_texts):
+        cell_lower = header_text.lower()
+        if "序号" in header_text or "no" in cell_lower:
+            col_no = idx
+        elif "服务商" in header_text:
+            col_service_provider = idx
+        elif "中标通知书" in header_text:
+            col_bid_notice = idx
+        elif "合同金额" in header_text and "送审" not in header_text and "结算" not in header_text:
+            col_contract_amount = idx
+        elif "送审金额" in header_text:
+            col_submitted_amount = idx
+        elif "结算金额" in header_text:
+            col_settlement_amount = idx
+    
+    # 如果关键列未找到，尝试通过位置推断
+    if col_no is None:
+        col_no = 0
+    if col_service_provider is None:
+        col_service_provider = 1
+    
+    # 如果金额列未找到，尝试查找
+    if col_contract_amount is None:
+        for idx, header_text in enumerate(header_texts):
+            if "合同" in header_text and "金额" in header_text:
+                col_contract_amount = idx
+                break
+    
+    if col_submitted_amount is None:
+        for idx, header_text in enumerate(header_texts):
+            if "送审" in header_text and "金额" in header_text:
+                col_submitted_amount = idx
+                break
+    
+    if col_settlement_amount is None:
+        for idx, header_text in enumerate(header_texts):
+            if "结算" in header_text and "金额" in header_text:
+                col_settlement_amount = idx
+                break
+    
+    # 如果中标通知书列未找到，尝试查找
+    if col_bid_notice is None:
+        for idx, header_text in enumerate(header_texts):
+            if "中标" in header_text and "通知" in header_text:
+                col_bid_notice = idx
+                break
+    
+    logger.debug(f"[其他服务类合同] 列识别: 序号={col_no}, 服务商={col_service_provider}, "
+                f"中标通知书={col_bid_notice}, 合同金额={col_contract_amount}, "
+                f"送审金额={col_submitted_amount}, 结算金额={col_settlement_amount}")
+    
+    # 从数据行开始解析（跳过表头行）
+    data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    
+    result = []
+    
+    def parse_number(value: Any) -> float:
+        """解析数字，支持中文数字格式，保留两位小数"""
+        if pd.isna(value):
+            return 0.0
+        value_str = str(value).strip()
+        # 移除常见的非数字字符（保留小数点、负号）
+        value_str = re.sub(r'[^\d.\-]', '', value_str)
+        if not value_str or value_str == '-':
+            return 0.0
+        try:
+            return round(float(value_str), 2)
+        except ValueError:
+            return 0.0
+    
+    for idx, row in data_rows.iterrows():
+        # 跳过空行
+        if row.isna().all():
+            continue
+        
+        # 提取各列数据
+        no_val = row.iloc[col_no] if col_no is not None and col_no < len(row) else None
+        service_provider_val = row.iloc[col_service_provider] if col_service_provider is not None and col_service_provider < len(row) else None
+        bid_notice_val = row.iloc[col_bid_notice] if col_bid_notice is not None and col_bid_notice < len(row) else None
+        contract_amount_val = row.iloc[col_contract_amount] if col_contract_amount is not None and col_contract_amount < len(row) else None
+        submitted_amount_val = row.iloc[col_submitted_amount] if col_submitted_amount is not None and col_submitted_amount < len(row) else None
+        settlement_amount_val = row.iloc[col_settlement_amount] if col_settlement_amount is not None and col_settlement_amount < len(row) else None
+        
+        # 解析序号
+        no = None
+        no_str = ""
+        if no_val is not None and not pd.isna(no_val):
+            no_str = str(no_val).strip()
+            if no_str:
+                try:
+                    no = int(float(no_str))
+                except (ValueError, TypeError):
+                    pass
+        
+        # 跳过序号为空的行（这些通常是合计、其中等说明行）
+        if not no_str or pd.isna(no_val):
+            continue
+        
+        # 解析服务商，清理换行符
+        service_provider = str(service_provider_val).strip() if service_provider_val is not None and not pd.isna(service_provider_val) else ""
+        service_provider = service_provider.replace('\n', ' ').replace('\r', ' ')
+        service_provider = re.sub(r'\s+', ' ', service_provider).strip()
+        
+        # 跳过空行
+        if not service_provider or service_provider == "":
+            continue
+        
+        # 判断是否为合计行（合计行需要跳过）
+        is_total = any(kw in service_provider for kw in ["合计", "总计", "总计", "合计金额"])
+        if is_total:
+            continue
+        
+        # 解析中标通知书，清理换行符
+        bid_notice = str(bid_notice_val).strip() if bid_notice_val is not None and not pd.isna(bid_notice_val) else ""
+        bid_notice = bid_notice.replace('\n', ' ').replace('\r', ' ')
+        bid_notice = re.sub(r'\s+', ' ', bid_notice).strip()
+        
+        # 解析金额（保留两位小数）
+        contract_amount = parse_number(contract_amount_val)
+        submitted_amount = parse_number(submitted_amount_val)
+        settlement_amount = parse_number(settlement_amount_val)
+        
+        # 添加到结果
+        result.append({
+            "No": no if no is not None else idx + 1,
+            "serviceProvider": service_provider,
+            "bidNotice": bid_notice,
+            "contractAmount": contract_amount,
+            "submittedAmount": submitted_amount,
+            "settlementAmount": settlement_amount,
+        })
+    
+    return result
+
+
 def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     解析 designReview 类型的表格，提取数据并生成 JSON 格式。
@@ -1524,10 +1713,10 @@ def parse_settlement_report_tables(
                 parsed_data = parse_material_purchase_contract2_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
-            # 其他表暂时留空，后续实现
-            # elif rule_name == "其他服务类合同":
-            #     result[rule_name] = parse_other_service_contract_table(df)
-            # ...
+            elif rule_name == "其他服务类合同":
+                parsed_data = parse_other_service_contract_table(df)
+                if parsed_data:
+                    result[rule_name] = parsed_data
         except Exception as e:
             # 如果解析失败，记录错误但不影响其他表格
             logger.warning(f"解析 {rule_name} 表格失败: {e}")
