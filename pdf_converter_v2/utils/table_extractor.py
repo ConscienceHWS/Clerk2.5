@@ -1806,19 +1806,31 @@ def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]
 
 def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
-    解析 designReview 类型的表格，提取数据并生成 JSON 格式。
+    解析 designReview 类型的表格，提取数据并生成结构化的 JSON 格式。
     
     返回格式:
     [{
-        "No": int,  # 序号
-        "name": str,  # 工程名称
-        "Level": int,  # 明细等级（根据缩进或层级判断，合计为0）
-        "staticInvestment": float,  # 静态投资（单位：元）
-        "dynamicInvestment": float,  # 动态投资（单位：元）
+        "name": str,  # 大类名称（如"变电工程"、"线路工程"）
+        "Level": 0,  # 大类层级
+        "staticInvestment": float,  # 静态投资总计
+        "dynamicInvestment": float,  # 动态投资总计
+        "items": [  # 子项列表
+            {
+                "No": int,  # 序号
+                "name": str,  # 工程名称
+                "Level": 1,  # 子项层级
+                "staticInvestment": float,  # 静态投资
+                "dynamicInvestment": float,  # 动态投资
+            },
+            ...
+        ]
     }, ...]
     """
     if df.empty:
         return []
+    
+    # 定义大类关键词（用于识别总计/大类行）
+    CATEGORY_KEYWORDS = ["变电工程", "线路工程", "通信工程", "其他工程"]
     
     # 尝试识别表头行（通常在前几行）
     header_row_idx = None
@@ -1873,10 +1885,6 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     # 从数据行开始解析（跳过表头行）
     data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
     
-    result = []
-    total_static = 0.0
-    total_dynamic = 0.0
-    
     def parse_number(value: Any) -> float:
         """解析数字，支持中文数字格式"""
         if pd.isna(value):
@@ -1891,20 +1899,15 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         except ValueError:
             return 0.0
     
-    def determine_level(name: str) -> int:
-        """根据工程名称的缩进或前缀判断明细等级"""
+    def is_category(name: str) -> bool:
+        """判断是否为大类"""
         if not name or pd.isna(name):
-            return 1
+            return False
         name_str = str(name).strip()
-        # 如果包含"合计"、"总计"等关键词，返回0
-        if any(kw in name_str for kw in ["合计", "总计", "总计", "合计金额"]):
-            return 0
-        # 根据缩进判断（假设空格或特殊字符表示层级）
-        # 这里可以根据实际表格格式调整
-        if name_str.startswith("  ") or name_str.startswith("\t"):
-            return 2
-        return 1
+        return any(kw in name_str for kw in CATEGORY_KEYWORDS)
     
+    # 先解析所有行
+    all_items = []
     for idx, row in data_rows.iterrows():
         # 跳过空行
         if row.isna().all():
@@ -1947,17 +1950,54 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         static_investment = parse_number(static_val)
         dynamic_investment = parse_number(dynamic_val)
         
-        # 判断明细等级
-        level = determine_level(name)
-        
-        # 普通数据行
-        result.append({
+        all_items.append({
             "No": no if no is not None else idx + 1,
             "name": name,
-            "Level": level,
+            "isCategory": is_category(name),
             "staticInvestment": static_investment,
             "dynamicInvestment": dynamic_investment,
         })
+    
+    # 构建层级结构
+    result = []
+    current_category = None
+    
+    for item in all_items:
+        if item["isCategory"]:
+            # 如果遇到新的大类，先保存之前的大类（如果有）
+            if current_category is not None:
+                result.append(current_category)
+            # 创建新的大类
+            current_category = {
+                "name": item["name"],
+                "Level": 0,
+                "staticInvestment": item["staticInvestment"],
+                "dynamicInvestment": item["dynamicInvestment"],
+                "items": []
+            }
+        else:
+            # 子项，添加到当前大类
+            if current_category is not None:
+                current_category["items"].append({
+                    "No": item["No"],
+                    "name": item["name"],
+                    "Level": 1,
+                    "staticInvestment": item["staticInvestment"],
+                    "dynamicInvestment": item["dynamicInvestment"],
+                })
+            else:
+                # 如果没有大类，作为独立项（不应该发生，但容错处理）
+                result.append({
+                    "name": item["name"],
+                    "Level": 1,
+                    "staticInvestment": item["staticInvestment"],
+                    "dynamicInvestment": item["dynamicInvestment"],
+                    "items": []
+                })
+    
+    # 保存最后一个大类
+    if current_category is not None:
+        result.append(current_category)
     
     return result
 
