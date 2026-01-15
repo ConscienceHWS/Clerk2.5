@@ -422,8 +422,8 @@ def _fix_broken_cells(table_df: pd.DataFrame, header_row_count: int = 1) -> pd.D
     修复被错误分割的单元格（一个单元格的内容被识别成多行）
     
     检测规则：
-    1. 如果某一行的第一列有内容，但其他列全部为空
-    2. 则认为当前行是上一行第一列内容的延续，需要合并
+    1. 如果某一行的前N列有内容，但后面的列大部分为空（超过50%）
+    2. 且上一行对应列有内容，则认为当前行是上一行的延续，需要合并
     
     Args:
         table_df: 表格DataFrame
@@ -440,30 +440,80 @@ def _fix_broken_cells(table_df: pd.DataFrame, header_row_count: int = 1) -> pd.D
     
     # 从表头后开始检查
     for i in range(header_row_count, len(df)):
+        if i <= header_row_count:
+            continue  # 跳过第一行数据
+        
         # 获取当前行
         current_row = df.iloc[i]
+        prev_row = df.iloc[i-1]
         
-        # 检查第一列是否有内容
-        first_col = str(current_row.iloc[0]).strip()
-        if not first_col or first_col.lower() in ['nan', 'none', '']:
+        # 统计有内容的列和空列
+        non_empty_cols = []
+        empty_cols = []
+        
+        for j in range(len(df.columns)):
+            val = current_row.iloc[j]
+            val_str = str(val).strip()
+            is_empty = (val is None or pd.isna(val) or not val_str or 
+                       val_str.lower() in ['nan', 'none', '', '0', '0.0'])
+            
+            if is_empty:
+                empty_cols.append(j)
+            else:
+                non_empty_cols.append(j)
+        
+        # 如果没有非空列，跳过
+        if not non_empty_cols:
             continue
         
-        # 检查其他列是否全部为空
-        other_cols = current_row.iloc[1:]
-        all_empty = all(str(val).strip() in ['', 'nan', 'None', 'NaN', '0', '0.0'] for val in other_cols)
+        # 计算空列比例
+        empty_ratio = len(empty_cols) / len(df.columns) if len(df.columns) > 0 else 0
         
-        if all_empty and i > header_row_count:
-            # 其他列全部为空，合并到上一行的第一列
-            prev_first_col = str(df.iloc[i-1, 0]).strip()
-            if prev_first_col and prev_first_col.lower() not in ['nan', 'none', '']:
-                # 合并到上一行的第一列（移除换行符）
-                df.iloc[i-1, 0] = prev_first_col + first_col.replace('\n', '').replace('\r', '')
+        # 如果空列超过50%，可能是被截断的行
+        if empty_ratio > 0.5:
+            # 检查上一行对应位置是否有内容
+            can_merge = True
+            merge_cols = []
+            
+            for col_idx in non_empty_cols:
+                prev_val = prev_row.iloc[col_idx]
+                prev_val_str = str(prev_val).strip()
+                curr_val = current_row.iloc[col_idx]
+                curr_val_str = str(curr_val).strip()
+                
+                # 如果上一行对应列有内容，可以合并
+                if prev_val_str and prev_val_str.lower() not in ['nan', 'none', '', '0', '0.0']:
+                    merge_cols.append(col_idx)
+                else:
+                    # 如果上一行对应列为空，但当前行有内容，可能是新行，不合并
+                    # 但如果只有前几列有内容，且都是文本（不是数字），可能是延续
+                    if col_idx < len(df.columns) * 0.5:  # 前50%的列
+                        # 检查是否是文本（不是纯数字）
+                        if not curr_val_str.replace('.', '').replace('-', '').isdigit():
+                            merge_cols.append(col_idx)
+                        else:
+                            can_merge = False
+                            break
+                    else:
+                        can_merge = False
+                        break
+            
+            if can_merge and merge_cols:
+                # 合并每个非空列到上一行对应的列
+                for col_idx in merge_cols:
+                    prev_val = str(prev_row.iloc[col_idx]).strip()
+                    curr_val = str(current_row.iloc[col_idx]).strip()
+                    # 合并（移除换行符）
+                    merged_val = prev_val + curr_val.replace('\n', '').replace('\r', '')
+                    df.iloc[i-1, col_idx] = merged_val
+                
                 rows_to_remove.append(i)
+                logger.debug(f"[跨行合并] 合并行 {i} 到行 {i-1}，列: {merge_cols}")
     
     # 删除已合并的行
     if rows_to_remove:
         df = df.drop(rows_to_remove).reset_index(drop=True)
-        logger.debug(f"[跨行合并] 修复了 {len(rows_to_remove)} 个被错误分割的单元格（跨行）")
+        logger.info(f"[跨行合并] 修复了 {len(rows_to_remove)} 个被错误分割的单元格（跨行）")
     
     return df
 
