@@ -482,7 +482,7 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             if col_tax_exclusive is not None and col_tax_inclusive is not None:
                 break
     
-    logger.debug(f"[审定结算汇总表] 列识别: 序号={col_no}, 项目名称={col_name}, 不含税={col_tax_exclusive}, 含税={col_tax_inclusive}")
+    logger.info(f"[审定结算汇总表] 列识别: 序号={col_no}, 项目名称={col_name}, 不含税={col_tax_exclusive}, 含税={col_tax_inclusive}")
     
     # 从数据行开始解析（跳过表头行）
     data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
@@ -671,7 +671,7 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
                 col_difference = idx
                 break
     
-    logger.debug(f"[合同执行情况] 列识别: 序号={col_no}, 施工单位={col_construction_unit}, "
+    logger.info(f"[合同执行情况] 列识别: 序号={col_no}, 施工单位={col_construction_unit}, "
                 f"中标金额={col_bid_notice_amount}, 中标编号={col_bid_notice_no}, "
                 f"合同金额={col_contract_amount}, 送审金额={col_settlement_submitted}, 差额={col_difference}")
     
@@ -854,7 +854,7 @@ def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             if col_contract_amount is not None and col_settlement_submitted is not None and col_difference is not None:
                 break
     
-    logger.debug(f"[赔偿合同] 列识别: 序号={col_no}, 合同对方={col_counterparty_name}, "
+    logger.info(f"[赔偿合同] 列识别: 序号={col_no}, 合同对方={col_counterparty_name}, "
                 f"赔偿事项={col_compensation_item}, 合同金额={col_contract_amount}, "
                 f"送审金额={col_settlement_submitted}, 差额={col_difference}")
     
@@ -1043,7 +1043,7 @@ def parse_material_purchase_contract1_table(df: pd.DataFrame) -> List[Dict[str, 
                 col_difference = idx
                 break
     
-    logger.debug(f"[物资采购合同1] 列识别: 序号={col_no}, 物料名称={col_material_name}, "
+    logger.info(f"[物资采购合同1] 列识别: 序号={col_no}, 物料名称={col_material_name}, "
                 f"合同数量={col_contract_quantity}, 施工图数量={col_drawing_quantity}, "
                 f"单价={col_unit_price}, 差额={col_difference}")
     
@@ -1231,7 +1231,7 @@ def parse_material_purchase_contract2_table(df: pd.DataFrame) -> List[Dict[str, 
                 col_remark = idx
                 break
     
-    logger.debug(f"[物资采购合同2] 列识别: 序号={col_no}, 物料名称={col_material_name}, "
+    logger.info(f"[物资采购合同2] 列识别: 序号={col_no}, 物料名称={col_material_name}, "
                 f"合同金额={col_contract_amount}, 入账金额={col_booked_amount}, "
                 f"差额={col_difference}, 备注={col_remark}")
     
@@ -1420,7 +1420,7 @@ def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]
                 col_bid_notice = idx
                 break
     
-    logger.debug(f"[其他服务类合同] 列识别: 序号={col_no}, 服务商={col_service_provider}, "
+    logger.info(f"[其他服务类合同] 列识别: 序号={col_no}, 服务商={col_service_provider}, "
                 f"中标通知书={col_bid_notice}, 合同金额={col_contract_amount}, "
                 f"送审金额={col_submitted_amount}, 结算金额={col_settlement_amount}")
     
@@ -1693,33 +1693,42 @@ def parse_settlement_report_tables(
     
     for orig_idx, df, rule_name, page in merged_tables:
         try:
+            logger.info(f"[表格解析] 开始解析表格: {rule_name} (页面 {page}, 行数: {len(df)})")
             if rule_name == "审定结算汇总表":
                 parsed_data = parse_settlement_summary_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
+                    logger.info(f"[表格解析] {rule_name}: 解析成功，共 {len(parsed_data)} 条数据")
             elif rule_name == "合同执行情况":
                 parsed_data = parse_contract_execution_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
+                    logger.info(f"[表格解析] {rule_name}: 解析成功，共 {len(parsed_data)} 条数据")
             elif rule_name == "赔偿合同":
                 parsed_data = parse_compensation_contract_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
+                    logger.info(f"[表格解析] {rule_name}: 解析成功，共 {len(parsed_data)} 条数据")
             elif rule_name == "物资采购合同1":
                 parsed_data = parse_material_purchase_contract1_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
+                    logger.info(f"[表格解析] {rule_name}: 解析成功，共 {len(parsed_data)} 条数据")
             elif rule_name == "物资采购合同2":
                 parsed_data = parse_material_purchase_contract2_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
+                    logger.info(f"[表格解析] {rule_name}: 解析成功，共 {len(parsed_data)} 条数据")
             elif rule_name == "其他服务类合同":
                 parsed_data = parse_other_service_contract_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
+                    logger.info(f"[表格解析] {rule_name}: 解析成功，共 {len(parsed_data)} 条数据")
+            else:
+                logger.warning(f"[表格解析] 未知的表格类型: {rule_name}")
         except Exception as e:
             # 如果解析失败，记录错误但不影响其他表格
-            logger.warning(f"解析 {rule_name} 表格失败: {e}")
+            logger.warning(f"[表格解析] 解析 {rule_name} 表格失败: {e}", exc_info=True)
     
     return result
 
@@ -1893,31 +1902,37 @@ def extract_and_filter_tables_for_pdf(
     
     # 8. 根据文档类型解析表格数据
     logger.info(f"[表格提取] 步骤8: 解析表格数据，文档类型: {doc_type}...")
+    logger.info(f"[表格提取] 待解析的表格列表: {[(rule_name, page) for _, _, rule_name, page in merged_tables]}")
     if doc_type == "designReview":
         # 对于 designReview 类型，解析第一个匹配的表格生成 JSON 数据
         for orig_idx, df, rule_name, page in merged_tables:
             if parsed_data is None:
                 try:
-                    logger.info(f"[表格提取] 解析 designReview 表格: {rule_name} (页面 {page})")
+                    logger.info(f"[表格提取] 解析 designReview 表格: {rule_name} (页面 {page}, 行数: {len(df)})")
                     parsed_data = parse_design_review_table(df)
                     logger.info(f"[表格提取] 解析完成: 共 {len(parsed_data)} 条数据")
                     break
                 except Exception as e:
                     # 如果解析失败，记录错误但不影响其他流程
-                    logger.warning(f"[表格提取] 解析 designReview 表格失败: {e}")
+                    logger.warning(f"[表格提取] 解析 designReview 表格失败: {e}", exc_info=True)
     elif doc_type == "settlementReport":
         # 对于 settlementReport 类型，解析所有匹配的表格，按表名组织
         try:
             logger.info(f"[表格提取] 解析 settlementReport 表格，共 {len(merged_tables)} 个表格")
             parsed_data = parse_settlement_report_tables(merged_tables)
             # 统计每个表的解析结果
+            logger.info(f"[表格提取] 解析结果统计:")
+            total_records = 0
             for table_name, table_data in parsed_data.items():
                 if table_data:
-                    logger.info(f"[表格提取] {table_name}: 解析完成，共 {len(table_data)} 条数据")
+                    record_count = len(table_data)
+                    total_records += record_count
+                    logger.info(f"[表格提取]   - {table_name}: {record_count} 条数据")
                 else:
-                    logger.info(f"[表格提取] {table_name}: 未匹配到数据")
+                    logger.info(f"[表格提取]   - {table_name}: 未匹配到数据")
+            logger.info(f"[表格提取] 总计: {total_records} 条数据")
         except Exception as e:
-            logger.warning(f"[表格提取] 解析 settlementReport 表格失败: {e}")
+            logger.warning(f"[表格提取] 解析 settlementReport 表格失败: {e}", exc_info=True)
     logger.info("[表格提取] 步骤8完成: 表格数据解析完成")
 
     result = {
