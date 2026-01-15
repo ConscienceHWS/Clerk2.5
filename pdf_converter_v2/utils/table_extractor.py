@@ -437,6 +437,12 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
+    # 打印原始表头行（用于调试）
+    logger.info(f"[审定结算汇总表] 原始表头行 (从第 {header_row_idx + 1} 行开始，共检查 {header_rows_to_check} 行):")
+    for row_idx in range(header_row_idx, min(header_row_idx + header_rows_to_check, len(df))):
+        row_data = [str(df.iloc[row_idx, col_idx]).strip() for col_idx in range(num_cols)]
+        logger.info(f"[审定结算汇总表]   第 {row_idx + 1} 行: {row_data}")
+    
     for col_idx in range(num_cols):
         col_text_parts = []
         for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
@@ -448,6 +454,8 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     col_text_parts.append(cell_val)
         # 合并该列的所有表头文本
         header_texts.append(' '.join(col_text_parts).strip())
+    
+    logger.info(f"[审定结算汇总表] 合并后的表头文本: {header_texts}")
     
     col_no = None  # 序号列
     col_name = None  # 审计内容列（项目名称）
@@ -596,6 +604,12 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
+    # 打印原始表头行（用于调试）
+    logger.info(f"[合同执行情况] 原始表头行 (从第 {header_row_idx + 1} 行开始，共检查 {header_rows_to_check} 行):")
+    for row_idx in range(header_row_idx, min(header_row_idx + header_rows_to_check, len(df))):
+        row_data = [str(df.iloc[row_idx, col_idx]).strip() for col_idx in range(num_cols)]
+        logger.info(f"[合同执行情况]   第 {row_idx + 1} 行: {row_data}")
+    
     for col_idx in range(num_cols):
         col_text_parts = []
         for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
@@ -607,6 +621,8 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     col_text_parts.append(cell_val)
         # 合并该列的所有表头文本
         header_texts.append(' '.join(col_text_parts).strip())
+    
+    logger.info(f"[合同执行情况] 合并后的表头文本: {header_texts}")
     
     col_no = None  # 序号列
     col_construction_unit = None  # 施工单位列
@@ -799,6 +815,12 @@ def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
+    # 打印原始表头行（用于调试）
+    logger.info(f"[赔偿合同] 原始表头行 (从第 {header_row_idx + 1} 行开始，共检查 {header_rows_to_check} 行):")
+    for row_idx in range(header_row_idx, min(header_row_idx + header_rows_to_check, len(df))):
+        row_data = [str(df.iloc[row_idx, col_idx]).strip() for col_idx in range(num_cols)]
+        logger.info(f"[赔偿合同]   第 {row_idx + 1} 行: {row_data}")
+    
     for col_idx in range(num_cols):
         col_text_parts = []
         for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
@@ -810,6 +832,8 @@ def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
                     col_text_parts.append(cell_val)
         # 合并该列的所有表头文本
         header_texts.append(' '.join(col_text_parts).strip())
+    
+    logger.info(f"[赔偿合同] 合并后的表头文本: {header_texts}")
     
     col_no = None  # 序号列
     col_counterparty_name = None  # 合同对方名称列
@@ -977,6 +1001,12 @@ def parse_material_purchase_contract1_table(df: pd.DataFrame) -> List[Dict[str, 
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
+    # 打印原始表头行（用于调试）
+    logger.info(f"[物资采购合同1] 原始表头行 (从第 {header_row_idx + 1} 行开始，共检查 {header_rows_to_check} 行):")
+    for row_idx in range(header_row_idx, min(header_row_idx + header_rows_to_check, len(df))):
+        row_data = [str(df.iloc[row_idx, col_idx]).strip() for col_idx in range(num_cols)]
+        logger.info(f"[物资采购合同1]   第 {row_idx + 1} 行: {row_data}")
+    
     for col_idx in range(num_cols):
         col_text_parts = []
         for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
@@ -988,6 +1018,8 @@ def parse_material_purchase_contract1_table(df: pd.DataFrame) -> List[Dict[str, 
                     col_text_parts.append(cell_val)
         # 合并该列的所有表头文本
         header_texts.append(' '.join(col_text_parts).strip())
+    
+    logger.info(f"[物资采购合同1] 合并后的表头文本: {header_texts}")
     
     col_no = None  # 序号列
     col_material_name = None  # 物料名称列
@@ -1164,6 +1196,12 @@ def parse_material_purchase_contract2_table(df: pd.DataFrame) -> List[Dict[str, 
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
+    # 打印原始表头行（用于调试）
+    logger.info(f"[物资采购合同2] 原始表头行 (从第 {header_row_idx + 1} 行开始，共检查 {header_rows_to_check} 行):")
+    for row_idx in range(header_row_idx, min(header_row_idx + header_rows_to_check, len(df))):
+        row_data = [str(df.iloc[row_idx, col_idx]).strip() for col_idx in range(num_cols)]
+        logger.info(f"[物资采购合同2]   第 {row_idx + 1} 行: {row_data}")
+    
     for col_idx in range(num_cols):
         col_text_parts = []
         for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
@@ -1175,6 +1213,8 @@ def parse_material_purchase_contract2_table(df: pd.DataFrame) -> List[Dict[str, 
                     col_text_parts.append(cell_val)
         # 合并该列的所有表头文本
         header_texts.append(' '.join(col_text_parts).strip())
+    
+    logger.info(f"[物资采购合同2] 合并后的表头文本: {header_texts}")
     
     col_no = None  # 序号列
     col_material_name = None  # 物料名称列
@@ -1354,6 +1394,12 @@ def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
+    # 打印原始表头行（用于调试）
+    logger.info(f"[其他服务类合同] 原始表头行 (从第 {header_row_idx + 1} 行开始，共检查 {header_rows_to_check} 行):")
+    for row_idx in range(header_row_idx, min(header_row_idx + header_rows_to_check, len(df))):
+        row_data = [str(df.iloc[row_idx, col_idx]).strip() for col_idx in range(num_cols)]
+        logger.info(f"[其他服务类合同]   第 {row_idx + 1} 行: {row_data}")
+    
     for col_idx in range(num_cols):
         col_text_parts = []
         for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
@@ -1365,6 +1411,8 @@ def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]
                     col_text_parts.append(cell_val)
         # 合并该列的所有表头文本
         header_texts.append(' '.join(col_text_parts).strip())
+    
+    logger.info(f"[其他服务类合同] 合并后的表头文本: {header_texts}")
     
     col_no = None  # 序号列
     col_service_provider = None  # 服务商列
