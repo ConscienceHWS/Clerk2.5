@@ -828,6 +828,9 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     
     for idx, header_text in enumerate(header_texts):
         cell_lower = header_text.lower()
+        # 移除空格以便匹配（处理换行导致的空间问题）
+        header_text_no_space = re.sub(r'\s+', '', header_text)
+        
         if "序号" in header_text or "no" in cell_lower:
             col_no = idx
         elif "施工单位" in header_text:
@@ -836,9 +839,14 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             col_bid_notice_amount = idx
         elif "中标" in header_text and "编号" in header_text:
             col_bid_notice_no = idx
-        elif "合同金额" in header_text or ("合同" in header_text and "金额" in header_text and "结算" not in header_text and "送审" not in header_text):
+        elif ("合同金额" in header_text_no_space or 
+              ("合同" in header_text and "金额" in header_text and 
+               "结算" not in header_text and "送审" not in header_text)):
             col_contract_amount = idx
-        elif "结算送审金额" in header_text or ("送审金额" in header_text and "结算" in header_text) or ("结算" in header_text and "送审" in header_text and "金额" in header_text):
+        elif ("结算送审金额" in header_text_no_space or 
+              ("送审" in header_text and "金额" in header_text) or
+              ("结算" in header_text and "送审" in header_text) or
+              ("结算" in header_text and "送审" in header_text and "金额" in header_text)):
             col_settlement_submitted = idx
         elif "差额" in header_text:
             col_difference = idx
@@ -866,27 +874,26 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if col_contract_amount is None:
         # 尝试更灵活的匹配：合同金额可能在"合同"和"金额"分开的列中
         for idx, header_text in enumerate(header_texts):
+            # 移除空格以便匹配
+            header_text_no_space = re.sub(r'\s+', '', header_text)
             # 检查是否包含"合同"和"金额"，且不包含"结算"、"送审"等
-            if ("合同" in header_text and "金额" in header_text and 
-                "结算" not in header_text and "送审" not in header_text):
-                col_contract_amount = idx
-                break
-        # 如果还是没找到，尝试只匹配"合同"（可能是"合同金\n额"被分割了）
-        if col_contract_amount is None:
-            for idx, header_text in enumerate(header_texts):
-                if "合同" in header_text and "金额" in header_text:
-                    # 检查是否不是结算送审金额
-                    if "结算" not in header_text or "送审" not in header_text:
-                        col_contract_amount = idx
-                        break
+            if (("合同" in header_text and "金额" in header_text) or 
+                "合同金额" in header_text_no_space):
+                # 确保不是结算送审金额
+                if "结算" not in header_text and "送审" not in header_text:
+                    col_contract_amount = idx
+                    break
     
     if col_settlement_submitted is None:
         # 尝试更灵活的匹配：结算送审金额可能在"结算"、"送审"、"金额"分开的列中
         for idx, header_text in enumerate(header_texts):
+            # 移除空格以便匹配
+            header_text_no_space = re.sub(r'\s+', '', header_text)
             # 检查是否包含"送审"和"金额"，或者"结算"和"送审"
             if (("送审" in header_text and "金额" in header_text) or
                 ("结算" in header_text and "送审" in header_text) or
-                ("结算送审" in header_text)):
+                ("结算送审" in header_text_no_space) or
+                ("结算送审金额" in header_text_no_space)):
                 col_settlement_submitted = idx
                 break
     
