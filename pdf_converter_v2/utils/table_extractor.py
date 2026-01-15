@@ -942,6 +942,193 @@ def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return result
 
 
+def parse_material_purchase_contract1_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    解析"物资采购合同1"表，提取数据并生成 JSON 格式。
+    
+    返回格式:
+    [{
+        "No": int,  # 序号
+        "materialName": str,  # 物料名称
+        "contractQuantity": float,  # 合同数量
+        "drawingQuantity": float,  # 施工图数量
+        "unitPriceExcludingTax": float,  # 单价（不含税）（元，两位小数）
+        "differenceAmount": float,  # 差额（元，两位小数）
+    }, ...]
+    """
+    if df.empty:
+        return []
+    
+    # 尝试识别表头行（通常在前几行）
+    header_row_idx = None
+    for i in range(min(3, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        # 检查是否包含表头关键词
+        if any(kw in row_text for kw in ["序号", "物料名称", "合同数量", "施工图数量", "单价（不含税）", "差额"]):
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        # 如果没有找到明确的表头，假设第一行是表头
+        header_row_idx = 0
+    
+    # 合并前几行作为表头（处理多行表头的情况）
+    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_texts = []  # 每列的合并文本
+    num_cols = len(df.columns)
+    
+    for col_idx in range(num_cols):
+        col_text_parts = []
+        for row_idx in range(header_row_idx, header_row_idx + header_rows_to_check):
+            if row_idx < len(df):
+                cell_val = str(df.iloc[row_idx, col_idx]).strip()
+                if cell_val and cell_val.lower() not in ['nan', 'none', '']:
+                    # 清理换行符
+                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
+                    col_text_parts.append(cell_val)
+        # 合并该列的所有表头文本
+        header_texts.append(' '.join(col_text_parts).strip())
+    
+    col_no = None  # 序号列
+    col_material_name = None  # 物料名称列
+    col_contract_quantity = None  # 合同数量列
+    col_drawing_quantity = None  # 施工图数量列
+    col_unit_price = None  # 单价（不含税）列
+    col_difference = None  # 差额列
+    
+    for idx, header_text in enumerate(header_texts):
+        cell_lower = header_text.lower()
+        if "序号" in header_text or "no" in cell_lower:
+            col_no = idx
+        elif "物料名称" in header_text:
+            col_material_name = idx
+        elif "合同数量" in header_text:
+            col_contract_quantity = idx
+        elif "施工图数量" in header_text:
+            col_drawing_quantity = idx
+        elif "单价" in header_text and "不含税" in header_text:
+            col_unit_price = idx
+        elif "差额" in header_text:
+            col_difference = idx
+    
+    # 如果关键列未找到，尝试通过位置推断
+    if col_no is None:
+        col_no = 0
+    if col_material_name is None:
+        col_material_name = 1
+    
+    # 如果数量列未找到，尝试查找
+    if col_contract_quantity is None:
+        for idx, header_text in enumerate(header_texts):
+            if "合同" in header_text and "数量" in header_text:
+                col_contract_quantity = idx
+                break
+    
+    if col_drawing_quantity is None:
+        for idx, header_text in enumerate(header_texts):
+            if "施工图" in header_text and "数量" in header_text:
+                col_drawing_quantity = idx
+                break
+    
+    # 如果金额列未找到，尝试从后往前找（通常金额列在表格右侧）
+    if col_unit_price is None:
+        for idx, header_text in enumerate(header_texts):
+            if "单价" in header_text:
+                col_unit_price = idx
+                break
+    
+    if col_difference is None:
+        for idx in range(len(header_texts) - 1, -1, -1):
+            if "差额" in header_texts[idx]:
+                col_difference = idx
+                break
+    
+    logger.debug(f"[物资采购合同1] 列识别: 序号={col_no}, 物料名称={col_material_name}, "
+                f"合同数量={col_contract_quantity}, 施工图数量={col_drawing_quantity}, "
+                f"单价={col_unit_price}, 差额={col_difference}")
+    
+    # 从数据行开始解析（跳过表头行）
+    data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    
+    result = []
+    
+    def parse_number(value: Any) -> float:
+        """解析数字，支持中文数字格式，保留两位小数"""
+        if pd.isna(value):
+            return 0.0
+        value_str = str(value).strip()
+        # 移除常见的非数字字符（保留小数点、负号）
+        value_str = re.sub(r'[^\d.\-]', '', value_str)
+        if not value_str or value_str == '-':
+            return 0.0
+        try:
+            return round(float(value_str), 2)
+        except ValueError:
+            return 0.0
+    
+    for idx, row in data_rows.iterrows():
+        # 跳过空行
+        if row.isna().all():
+            continue
+        
+        # 提取各列数据
+        no_val = row.iloc[col_no] if col_no is not None and col_no < len(row) else None
+        material_name_val = row.iloc[col_material_name] if col_material_name is not None and col_material_name < len(row) else None
+        contract_quantity_val = row.iloc[col_contract_quantity] if col_contract_quantity is not None and col_contract_quantity < len(row) else None
+        drawing_quantity_val = row.iloc[col_drawing_quantity] if col_drawing_quantity is not None and col_drawing_quantity < len(row) else None
+        unit_price_val = row.iloc[col_unit_price] if col_unit_price is not None and col_unit_price < len(row) else None
+        difference_val = row.iloc[col_difference] if col_difference is not None and col_difference < len(row) else None
+        
+        # 解析序号
+        no = None
+        no_str = ""
+        if no_val is not None and not pd.isna(no_val):
+            no_str = str(no_val).strip()
+            if no_str:
+                try:
+                    no = int(float(no_str))
+                except (ValueError, TypeError):
+                    pass
+        
+        # 跳过序号为空的行（这些通常是合计、其中等说明行）
+        if not no_str or pd.isna(no_val):
+            continue
+        
+        # 解析物料名称，清理换行符
+        material_name = str(material_name_val).strip() if material_name_val is not None and not pd.isna(material_name_val) else ""
+        material_name = material_name.replace('\n', ' ').replace('\r', ' ')
+        material_name = re.sub(r'\s+', ' ', material_name).strip()
+        
+        # 跳过空行
+        if not material_name or material_name == "":
+            continue
+        
+        # 判断是否为合计行（合计行需要跳过）
+        is_total = any(kw in material_name for kw in ["合计", "总计", "总计", "合计金额"])
+        if is_total:
+            continue
+        
+        # 解析数量（合同数量和施工图数量可能是整数或小数）
+        contract_quantity = parse_number(contract_quantity_val)
+        drawing_quantity = parse_number(drawing_quantity_val)
+        
+        # 解析金额（保留两位小数）
+        unit_price_excluding_tax = parse_number(unit_price_val)
+        difference_amount = parse_number(difference_val)
+        
+        # 添加到结果
+        result.append({
+            "No": no if no is not None else idx + 1,
+            "materialName": material_name,
+            "contractQuantity": contract_quantity,
+            "drawingQuantity": drawing_quantity,
+            "unitPriceExcludingTax": unit_price_excluding_tax,
+            "differenceAmount": difference_amount,
+        })
+    
+    return result
+
+
 def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     解析 designReview 类型的表格，提取数据并生成 JSON 格式。
@@ -1139,9 +1326,13 @@ def parse_settlement_report_tables(
                 parsed_data = parse_compensation_contract_table(df)
                 if parsed_data:
                     result[rule_name] = parsed_data
+            elif rule_name == "物资采购合同1":
+                parsed_data = parse_material_purchase_contract1_table(df)
+                if parsed_data:
+                    result[rule_name] = parsed_data
             # 其他表暂时留空，后续实现
-            # elif rule_name == "物资采购合同1":
-            #     result[rule_name] = parse_material_purchase_contract1_table(df)
+            # elif rule_name == "物资采购合同2":
+            #     result[rule_name] = parse_material_purchase_contract2_table(df)
             # ...
         except Exception as e:
             # 如果解析失败，记录错误但不影响其他表格
