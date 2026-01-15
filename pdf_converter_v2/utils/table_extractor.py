@@ -518,6 +518,25 @@ def _fix_broken_cells(table_df: pd.DataFrame, header_row_count: int = 1) -> pd.D
     return df
 
 
+def _format_header_text(cell_val: str) -> str:
+    """
+    格式化表头文本：移除换行符和多余空格，用于匹配。
+    
+    Args:
+        cell_val: 原始单元格值
+    
+    Returns:
+        格式化后的文本（移除所有空格，用于精确匹配）
+    """
+    if not cell_val or str(cell_val).lower() in ['nan', 'none', '']:
+        return ""
+    # 清理换行符，直接移除
+    text = str(cell_val).strip().replace('\n', '').replace('\r', '')
+    # 移除所有空格，用于匹配
+    text = re.sub(r'\s+', '', text)
+    return text
+
+
 def _detect_header_rows(df: pd.DataFrame, header_row_idx: int, header_keywords: List[str]) -> int:
     """
     智能检测表头行数，避免把数据行当作表头。
@@ -615,17 +634,15 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             if row_idx < len(df):
                 cell_val = str(df.iloc[row_idx, col_idx]).strip()
                 if cell_val and cell_val.lower() not in ['nan', 'none', '']:
-                    # 清理换行符，替换为空格
-                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
-                    # 清理多余空格
-                    cell_val = re.sub(r'\s+', ' ', cell_val).strip()
-                    col_text_parts.append(cell_val)
-        # 合并该列的所有表头文本，清理多余空格
-        merged_text = ' '.join(col_text_parts).strip()
-        merged_text = re.sub(r'\s+', ' ', merged_text).strip()
+                    # 格式化表头文本（移除换行符和空格）
+                    formatted_text = _format_header_text(cell_val)
+                    if formatted_text:
+                        col_text_parts.append(formatted_text)
+        # 合并该列的所有表头文本（已经是格式化后的，无空格）
+        merged_text = ''.join(col_text_parts)
         header_texts.append(merged_text)
     
-    logger.info(f"[审定结算汇总表] 合并后的表头文本: {header_texts}")
+    logger.info(f"[审定结算汇总表] 合并后的表头文本（已格式化）: {header_texts}")
     
     col_no = None  # 序号列
     col_name = None  # 审计内容列（项目名称）
@@ -806,17 +823,15 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             if row_idx < len(df):
                 cell_val = str(df.iloc[row_idx, col_idx]).strip()
                 if cell_val and cell_val.lower() not in ['nan', 'none', '']:
-                    # 清理换行符，替换为空格
-                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
-                    # 清理多余空格
-                    cell_val = re.sub(r'\s+', ' ', cell_val).strip()
-                    col_text_parts.append(cell_val)
-        # 合并该列的所有表头文本，清理多余空格
-        merged_text = ' '.join(col_text_parts).strip()
-        merged_text = re.sub(r'\s+', ' ', merged_text).strip()
+                    # 格式化表头文本（移除换行符和空格）
+                    formatted_text = _format_header_text(cell_val)
+                    if formatted_text:
+                        col_text_parts.append(formatted_text)
+        # 合并该列的所有表头文本（已经是格式化后的，无空格）
+        merged_text = ''.join(col_text_parts)
         header_texts.append(merged_text)
     
-    logger.info(f"[合同执行情况] 合并后的表头文本: {header_texts}")
+    logger.info(f"[合同执行情况] 合并后的表头文本（已格式化）: {header_texts}")
     
     col_no = None  # 序号列
     col_construction_unit = None  # 施工单位列
@@ -828,8 +843,7 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     
     for idx, header_text in enumerate(header_texts):
         cell_lower = header_text.lower()
-        # 移除空格以便匹配（处理换行导致的空间问题）
-        header_text_no_space = re.sub(r'\s+', '', header_text)
+        # header_text 已经是格式化后的（无空格），直接使用
         
         if "序号" in header_text or "no" in cell_lower:
             col_no = idx
@@ -839,14 +853,13 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             col_bid_notice_amount = idx
         elif "中标" in header_text and "编号" in header_text:
             col_bid_notice_no = idx
-        elif ("合同金额" in header_text_no_space or 
+        elif ("合同金额" in header_text or 
               ("合同" in header_text and "金额" in header_text and 
                "结算" not in header_text and "送审" not in header_text)):
             col_contract_amount = idx
-        elif ("结算送审金额" in header_text_no_space or 
+        elif ("结算送审金额" in header_text or 
               ("送审" in header_text and "金额" in header_text) or
-              ("结算" in header_text and "送审" in header_text) or
-              ("结算" in header_text and "送审" in header_text and "金额" in header_text)):
+              ("结算" in header_text and "送审" in header_text)):
             col_settlement_submitted = idx
         elif "差额" in header_text:
             col_difference = idx
@@ -874,26 +887,21 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     if col_contract_amount is None:
         # 尝试更灵活的匹配：合同金额可能在"合同"和"金额"分开的列中
         for idx, header_text in enumerate(header_texts):
-            # 移除空格以便匹配
-            header_text_no_space = re.sub(r'\s+', '', header_text)
+            # header_text 已经是格式化后的（无空格），直接使用
             # 检查是否包含"合同"和"金额"，且不包含"结算"、"送审"等
-            if (("合同" in header_text and "金额" in header_text) or 
-                "合同金额" in header_text_no_space):
-                # 确保不是结算送审金额
-                if "结算" not in header_text and "送审" not in header_text:
-                    col_contract_amount = idx
-                    break
+            if ("合同" in header_text and "金额" in header_text and
+                "结算" not in header_text and "送审" not in header_text):
+                col_contract_amount = idx
+                break
     
     if col_settlement_submitted is None:
         # 尝试更灵活的匹配：结算送审金额可能在"结算"、"送审"、"金额"分开的列中
         for idx, header_text in enumerate(header_texts):
-            # 移除空格以便匹配
-            header_text_no_space = re.sub(r'\s+', '', header_text)
+            # header_text 已经是格式化后的（无空格），直接使用
             # 检查是否包含"送审"和"金额"，或者"结算"和"送审"
             if (("送审" in header_text and "金额" in header_text) or
                 ("结算" in header_text and "送审" in header_text) or
-                ("结算送审" in header_text_no_space) or
-                ("结算送审金额" in header_text_no_space)):
+                "结算送审金额" in header_text):
                 col_settlement_submitted = idx
                 break
     
@@ -1047,13 +1055,15 @@ def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             if row_idx < len(df):
                 cell_val = str(df.iloc[row_idx, col_idx]).strip()
                 if cell_val and cell_val.lower() not in ['nan', 'none', '']:
-                    # 清理换行符
-                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
-                    col_text_parts.append(cell_val)
-        # 合并该列的所有表头文本
-        header_texts.append(' '.join(col_text_parts).strip())
+                    # 格式化表头文本（移除换行符和空格）
+                    formatted_text = _format_header_text(cell_val)
+                    if formatted_text:
+                        col_text_parts.append(formatted_text)
+        # 合并该列的所有表头文本（已经是格式化后的，无空格）
+        merged_text = ''.join(col_text_parts)
+        header_texts.append(merged_text)
     
-    logger.info(f"[赔偿合同] 合并后的表头文本: {header_texts}")
+    logger.info(f"[赔偿合同] 合并后的表头文本（已格式化）: {header_texts}")
     
     col_no = None  # 序号列
     col_counterparty_name = None  # 合同对方名称列
@@ -1237,13 +1247,15 @@ def parse_material_purchase_contract1_table(df: pd.DataFrame) -> List[Dict[str, 
             if row_idx < len(df):
                 cell_val = str(df.iloc[row_idx, col_idx]).strip()
                 if cell_val and cell_val.lower() not in ['nan', 'none', '']:
-                    # 清理换行符
-                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
-                    col_text_parts.append(cell_val)
-        # 合并该列的所有表头文本
-        header_texts.append(' '.join(col_text_parts).strip())
+                    # 格式化表头文本（移除换行符和空格）
+                    formatted_text = _format_header_text(cell_val)
+                    if formatted_text:
+                        col_text_parts.append(formatted_text)
+        # 合并该列的所有表头文本（已经是格式化后的，无空格）
+        merged_text = ''.join(col_text_parts)
+        header_texts.append(merged_text)
     
-    logger.info(f"[物资采购合同1] 合并后的表头文本: {header_texts}")
+    logger.info(f"[物资采购合同1] 合并后的表头文本（已格式化）: {header_texts}")
     
     col_no = None  # 序号列
     col_material_name = None  # 物料名称列
@@ -1436,13 +1448,15 @@ def parse_material_purchase_contract2_table(df: pd.DataFrame) -> List[Dict[str, 
             if row_idx < len(df):
                 cell_val = str(df.iloc[row_idx, col_idx]).strip()
                 if cell_val and cell_val.lower() not in ['nan', 'none', '']:
-                    # 清理换行符
-                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
-                    col_text_parts.append(cell_val)
-        # 合并该列的所有表头文本
-        header_texts.append(' '.join(col_text_parts).strip())
+                    # 格式化表头文本（移除换行符和空格）
+                    formatted_text = _format_header_text(cell_val)
+                    if formatted_text:
+                        col_text_parts.append(formatted_text)
+        # 合并该列的所有表头文本（已经是格式化后的，无空格）
+        merged_text = ''.join(col_text_parts)
+        header_texts.append(merged_text)
     
-    logger.info(f"[物资采购合同2] 合并后的表头文本: {header_texts}")
+    logger.info(f"[物资采购合同2] 合并后的表头文本（已格式化）: {header_texts}")
     
     col_no = None  # 序号列
     col_material_name = None  # 物料名称列
@@ -1638,13 +1652,15 @@ def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]
             if row_idx < len(df):
                 cell_val = str(df.iloc[row_idx, col_idx]).strip()
                 if cell_val and cell_val.lower() not in ['nan', 'none', '']:
-                    # 清理换行符
-                    cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
-                    col_text_parts.append(cell_val)
-        # 合并该列的所有表头文本
-        header_texts.append(' '.join(col_text_parts).strip())
+                    # 格式化表头文本（移除换行符和空格）
+                    formatted_text = _format_header_text(cell_val)
+                    if formatted_text:
+                        col_text_parts.append(formatted_text)
+        # 合并该列的所有表头文本（已经是格式化后的，无空格）
+        merged_text = ''.join(col_text_parts)
+        header_texts.append(merged_text)
     
-    logger.info(f"[其他服务类合同] 合并后的表头文本: {header_texts}")
+    logger.info(f"[其他服务类合同] 合并后的表头文本（已格式化）: {header_texts}")
     
     col_no = None  # 序号列
     col_service_provider = None  # 服务商列
