@@ -553,7 +553,7 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         # 解析项目名称（审计内容），清理换行符
         name = str(name_val).strip() if name_val is not None and not pd.isna(name_val) else ""
         # 清理换行符，替换为空格
-        name = name.replace('\n', ' ').replace('\r', ' ')
+        name = name.replace('\n', '').replace('\r', '')  # 直接移除换行符，不替换为空格
         # 清理多余空格
         name = re.sub(r'\s+', ' ', name).strip()
         
@@ -613,7 +613,24 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         header_row_idx = 0
     
     # 合并前几行作为表头（处理多行表头的情况）
-    header_rows_to_check = min(3, len(df) - header_row_idx)
+    # 智能判断表头行数：表头行通常不包含纯数字（除了序号列）
+    header_rows_to_check = 1
+    for i in range(header_row_idx + 1, min(header_row_idx + 3, len(df))):
+        row = df.iloc[i]
+        # 检查这一行是否像表头（包含关键词且不全是数字）
+        row_text = " ".join(row.astype(str).str.strip().tolist())
+        has_keywords = any(kw in row_text for kw in ["施工单位", "中标", "合同", "结算", "送审", "差额"])
+        # 如果包含关键词且看起来不像数据行（不全是数字），则可能是表头的一部分
+        if has_keywords:
+            # 检查是否主要是数字（如果是，则不是表头）
+            numeric_count = sum(1 for cell in row if str(cell).strip().replace('.', '').replace('-', '').isdigit())
+            if numeric_count < len(row) * 0.5:  # 如果数字占比小于50%，可能是表头
+                header_rows_to_check += 1
+            else:
+                break
+        else:
+            break
+    
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
@@ -629,11 +646,15 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             if row_idx < len(df):
                 cell_val = str(df.iloc[row_idx, col_idx]).strip()
                 if cell_val and cell_val.lower() not in ['nan', 'none', '']:
-                    # 清理换行符
+                    # 清理换行符，替换为空格
                     cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
+                    # 清理多余空格
+                    cell_val = re.sub(r'\s+', ' ', cell_val).strip()
                     col_text_parts.append(cell_val)
-        # 合并该列的所有表头文本
-        header_texts.append(' '.join(col_text_parts).strip())
+        # 合并该列的所有表头文本，清理多余空格
+        merged_text = ' '.join(col_text_parts).strip()
+        merged_text = re.sub(r'\s+', ' ', merged_text).strip()
+        header_texts.append(merged_text)
     
     logger.info(f"[合同执行情况] 合并后的表头文本: {header_texts}")
     
@@ -651,13 +672,13 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             col_no = idx
         elif "施工单位" in header_text:
             col_construction_unit = idx
-        elif "中标通知书金额" in header_text:
+        elif "中标" in header_text and "金额" in header_text:
             col_bid_notice_amount = idx
-        elif "中标通知书编号" in header_text:
+        elif "中标" in header_text and "编号" in header_text:
             col_bid_notice_no = idx
-        elif "合同金额" in header_text and "结算" not in header_text:
+        elif "合同金额" in header_text or ("合同" in header_text and "金额" in header_text and "结算" not in header_text and "送审" not in header_text):
             col_contract_amount = idx
-        elif "结算送审金额" in header_text or ("送审金额" in header_text and "结算" in header_text):
+        elif "结算送审金额" in header_text or ("送审金额" in header_text and "结算" in header_text) or ("结算" in header_text and "送审" in header_text and "金额" in header_text):
             col_settlement_submitted = idx
         elif "差额" in header_text:
             col_difference = idx
@@ -754,8 +775,8 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         
         # 解析施工单位，清理换行符
         construction_unit = str(construction_unit_val).strip() if construction_unit_val is not None and not pd.isna(construction_unit_val) else ""
-        # 清理换行符，替换为空格
-        construction_unit = construction_unit.replace('\n', ' ').replace('\r', ' ')
+        # 清理换行符，直接移除
+        construction_unit = construction_unit.replace('\n', '').replace('\r', '')
         # 清理多余空格
         construction_unit = re.sub(r'\s+', ' ', construction_unit).strip()
         
@@ -770,7 +791,7 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         
         # 解析中标通知书编号，清理换行符
         bid_notice_no = str(bid_notice_no_val).strip() if bid_notice_no_val is not None and not pd.isna(bid_notice_no_val) else ""
-        bid_notice_no = bid_notice_no.replace('\n', ' ').replace('\r', ' ')
+        bid_notice_no = bid_notice_no.replace('\n', '').replace('\r', '')
         bid_notice_no = re.sub(r'\s+', ' ', bid_notice_no).strip()
         
         # 解析金额（保留两位小数）
@@ -944,7 +965,7 @@ def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         
         # 解析合同对方名称，清理换行符
         counterparty_name = str(counterparty_name_val).strip() if counterparty_name_val is not None and not pd.isna(counterparty_name_val) else ""
-        counterparty_name = counterparty_name.replace('\n', ' ').replace('\r', ' ')
+        counterparty_name = counterparty_name.replace('\n', '').replace('\r', '')
         counterparty_name = re.sub(r'\s+', ' ', counterparty_name).strip()
         
         # 跳过空行
@@ -958,7 +979,7 @@ def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         
         # 解析赔偿事项，清理换行符
         compensation_item = str(compensation_item_val).strip() if compensation_item_val is not None and not pd.isna(compensation_item_val) else ""
-        compensation_item = compensation_item.replace('\n', ' ').replace('\r', ' ')
+        compensation_item = compensation_item.replace('\n', '').replace('\r', '')
         compensation_item = re.sub(r'\s+', ' ', compensation_item).strip()
         
         # 解析金额（保留两位小数）
@@ -1141,7 +1162,7 @@ def parse_material_purchase_contract1_table(df: pd.DataFrame) -> List[Dict[str, 
         
         # 解析物料名称，清理换行符
         material_name = str(material_name_val).strip() if material_name_val is not None and not pd.isna(material_name_val) else ""
-        material_name = material_name.replace('\n', ' ').replace('\r', ' ')
+        material_name = material_name.replace('\n', '').replace('\r', '')
         material_name = re.sub(r'\s+', ' ', material_name).strip()
         
         # 跳过空行
@@ -1337,7 +1358,7 @@ def parse_material_purchase_contract2_table(df: pd.DataFrame) -> List[Dict[str, 
         
         # 解析物料名称，清理换行符
         material_name = str(material_name_val).strip() if material_name_val is not None and not pd.isna(material_name_val) else ""
-        material_name = material_name.replace('\n', ' ').replace('\r', ' ')
+        material_name = material_name.replace('\n', '').replace('\r', '')
         material_name = re.sub(r'\s+', ' ', material_name).strip()
         
         # 跳过空行
@@ -1356,7 +1377,7 @@ def parse_material_purchase_contract2_table(df: pd.DataFrame) -> List[Dict[str, 
         
         # 解析备注，清理换行符
         remark = str(remark_val).strip() if remark_val is not None and not pd.isna(remark_val) else ""
-        remark = remark.replace('\n', ' ').replace('\r', ' ')
+        remark = remark.replace('\n', '').replace('\r', '')
         remark = re.sub(r'\s+', ' ', remark).strip()
         
         # 添加到结果
@@ -1534,7 +1555,7 @@ def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]
         
         # 解析服务商，清理换行符
         service_provider = str(service_provider_val).strip() if service_provider_val is not None and not pd.isna(service_provider_val) else ""
-        service_provider = service_provider.replace('\n', ' ').replace('\r', ' ')
+        service_provider = service_provider.replace('\n', '').replace('\r', '')
         service_provider = re.sub(r'\s+', ' ', service_provider).strip()
         
         # 跳过空行
@@ -1548,7 +1569,7 @@ def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]
         
         # 解析中标通知书，清理换行符
         bid_notice = str(bid_notice_val).strip() if bid_notice_val is not None and not pd.isna(bid_notice_val) else ""
-        bid_notice = bid_notice.replace('\n', ' ').replace('\r', ' ')
+        bid_notice = bid_notice.replace('\n', '').replace('\r', '')
         bid_notice = re.sub(r'\s+', ' ', bid_notice).strip()
         
         # 解析金额（保留两位小数）
