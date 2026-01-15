@@ -417,6 +417,37 @@ def _merge_cross_page_tables(
     return merged
 
 
+def _detect_header_rows(df: pd.DataFrame, header_row_idx: int, header_keywords: List[str]) -> int:
+    """
+    智能检测表头行数，避免把数据行当作表头。
+    
+    Args:
+        df: 数据框
+        header_row_idx: 已识别的表头行索引
+        header_keywords: 表头关键词列表
+    
+    Returns:
+        表头行数（从 header_row_idx 开始）
+    """
+    header_rows_to_check = 1
+    for i in range(header_row_idx + 1, min(header_row_idx + 3, len(df))):
+        row = df.iloc[i]
+        row_text = " ".join(row.astype(str).str.strip().tolist())
+        has_keywords = any(kw in row_text for kw in header_keywords)
+        
+        if has_keywords:
+            # 检查是否主要是数字（如果是，则不是表头）
+            numeric_count = sum(1 for cell in row if str(cell).strip().replace('.', '').replace('-', '').isdigit())
+            if numeric_count < len(row) * 0.5:  # 如果数字占比小于50%，可能是表头
+                header_rows_to_check += 1
+            else:
+                break
+        else:
+            break
+    
+    return header_rows_to_check
+
+
 def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     解析"审定结算汇总表"，提取数据并生成 JSON 格式。
@@ -446,7 +477,8 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
         header_row_idx = 0
     
     # 合并前几行作为表头（处理多行表头的情况）
-    header_rows_to_check = min(3, len(df) - header_row_idx)
+    header_keywords = ["序号", "审计内容", "送审金额", "审定金额", "增减金额", "备注"]
+    header_rows_to_check = _detect_header_rows(df, header_row_idx, header_keywords)
     header_texts = []  # 每列的合并文本
     num_cols = len(df.columns)
     
@@ -462,11 +494,15 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
             if row_idx < len(df):
                 cell_val = str(df.iloc[row_idx, col_idx]).strip()
                 if cell_val and cell_val.lower() not in ['nan', 'none', '']:
-                    # 清理换行符
+                    # 清理换行符，替换为空格
                     cell_val = cell_val.replace('\n', ' ').replace('\r', ' ')
+                    # 清理多余空格
+                    cell_val = re.sub(r'\s+', ' ', cell_val).strip()
                     col_text_parts.append(cell_val)
-        # 合并该列的所有表头文本
-        header_texts.append(' '.join(col_text_parts).strip())
+        # 合并该列的所有表头文本，清理多余空格
+        merged_text = ' '.join(col_text_parts).strip()
+        merged_text = re.sub(r'\s+', ' ', merged_text).strip()
+        header_texts.append(merged_text)
     
     logger.info(f"[审定结算汇总表] 合并后的表头文本: {header_texts}")
     
