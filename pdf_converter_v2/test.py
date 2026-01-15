@@ -26,7 +26,7 @@ except ImportError:
     print("  安装命令: pip install PyMuPDF")
 
 # ==================== 配置区域 ====================
-pdf_path = '/home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2/2-数据源/5-（初设批复）晋电建设〔2019〕566号　国网山西省电力公司关于晋城周村220kV输变电工程初步设计的批复 .ceb'
+pdf_path = '/home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2/2-数据源/5-（初设批复）晋电建设〔2019〕566号　国网山西省电力公司关于晋城周村220kV输变电工程初步设计的批复 .pdf'
 output_dir = Path('extracted_tables')  # 原始表格输出目录（包含表格前文本）
 merged_output_dir = Path('merged_tables')  # 合并后的表格输出目录（已剔除表格前文本）
 filtered_output_dir = Path('filtered_tables')  # 筛选后的表格输出目录

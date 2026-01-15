@@ -225,11 +225,15 @@ async def process_conversion_task(
             # 在线程池中执行表格提取（因为它是同步函数，使用 to_thread 避免阻塞事件循环）
             def run_table_extraction_sync():
                 try:
-                    return extract_and_filter_tables_for_pdf(
+                    logger.info(f"[任务 {task_id}] 开始执行表格提取函数...")
+                    logger.info(f"[任务 {task_id}] 参数: pdf_path={file_path}, output_dir={output_dir}, doc_type={request.doc_type}")
+                    result = extract_and_filter_tables_for_pdf(
                         pdf_path=file_path,
                         base_output_dir=output_dir,
                         doc_type=request.doc_type,  # type: ignore[arg-type]
                     )
+                    logger.info(f"[任务 {task_id}] 表格提取函数执行完成，返回结果: {result is not None}")
+                    return result
                 except Exception as e:
                     logger.exception(f"[任务 {task_id}] 表格提取/筛选失败: {e}")
                     return None

@@ -4,10 +4,23 @@ from typing import List, Tuple, Dict, Any, Optional, Literal
 import re
 import json
 import logging
+import sys
 
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+# 尝试使用统一的日志系统
+try:
+    from ..utils.logging_config import get_logger
+    logger = get_logger("pdf_converter_v2.utils.table_extractor")
+except (ImportError, ValueError):
+    # 如果无法导入，使用标准 logging
+    logger = logging.getLogger(__name__)
+    # 确保日志系统正确配置
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter('%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d - %(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
 
 try:
     import pdfplumber
@@ -1818,7 +1831,14 @@ def extract_and_filter_tables_for_pdf(
     merged_dir.mkdir(parents=True, exist_ok=True)
     filtered_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"[表格提取] 开始处理 PDF: {pdf_path}, 文档类型: {doc_type}")
+    # 立即输出日志，确保日志系统正常工作
+    logger.info(f"[表格提取] ========== 开始处理 PDF ==========")
+    logger.info(f"[表格提取] PDF 路径: {pdf_path}")
+    logger.info(f"[表格提取] 文档类型: {doc_type}")
+    logger.info(f"[表格提取] PDF 文件存在: {Path(pdf_path).exists()}")
+    if Path(pdf_path).exists():
+        logger.info(f"[表格提取] PDF 文件大小: {Path(pdf_path).stat().st_size} bytes")
+    logger.info(f"[表格提取] 输出目录: {base_output_dir}")
 
     # 1. 使用 pdfplumber 从 PDF 提取所有表格（不限制页数）
     logger.info("[表格提取] 步骤1: 使用 pdfplumber 提取所有表格...")
