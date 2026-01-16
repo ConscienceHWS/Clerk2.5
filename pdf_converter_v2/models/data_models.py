@@ -283,11 +283,101 @@ class FeasibilityReviewInvestment:
 
 
 class PreliminaryApprovalInvestment:
-    """初设批复概算投资数据模型"""
+    """初设批复概算投资数据模型
+    
+    返回结构与 designReview 保持一致：
+    [{
+        "name": str,  # 大类名称（如"变电工程"、"线路工程"）
+        "Level": 0,   # 大类层级
+        "staticInvestment": float,  # 静态投资总计
+        "dynamicInvestment": float,  # 动态投资总计
+        "items": [  # 子项列表
+            {
+                "No": int,  # 序号
+                "name": str,  # 工程名称
+                "Level": 1,  # 子项层级
+                "staticInvestment": float,  # 静态投资
+                "dynamicInvestment": float,  # 动态投资
+            },
+            ...
+        ]
+    }, ...]
+    """
     def __init__(self):
         self.items: List[InvestmentItem] = []
     
     def to_dict(self):
-        # 初设批复不需要建设规模字段
-        return [item.to_dict(include_construction_scale=False) for item in self.items]
+        """转换为嵌套结构，与 designReview 保持一致
+        
+        Level="1" 的项目作为大类（变电工程、线路工程等）
+        Level="2" 的项目作为子项
+        Level="0" 的项目（合计）单独作为一个大类
+        """
+        if not self.items:
+            return []
+        
+        result = []
+        current_category = None
+        
+        for item in self.items:
+            if item.level == "1":
+                # 大类项目 - 创建新的类别
+                if current_category is not None:
+                    result.append(current_category)
+                
+                current_category = {
+                    "name": item.name,
+                    "Level": 0,
+                    "staticInvestment": self._parse_number(item.staticInvestment),
+                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                    "items": []
+                }
+            elif item.level == "2" and current_category is not None:
+                # 子项目 - 添加到当前类别的 items 中
+                current_category["items"].append({
+                    "No": self._parse_no(item.no),
+                    "name": item.name,
+                    "Level": 1,
+                    "staticInvestment": self._parse_number(item.staticInvestment),
+                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                })
+            elif item.level == "0":
+                # 合计行 - 先保存当前类别，然后添加合计
+                if current_category is not None:
+                    result.append(current_category)
+                    current_category = None
+                
+                result.append({
+                    "name": item.name.replace(" ", ""),  # 移除空格，如 "合 计" -> "合计"
+                    "Level": 0,
+                    "staticInvestment": self._parse_number(item.staticInvestment),
+                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                    "items": []
+                })
+        
+        # 添加最后一个类别
+        if current_category is not None:
+            result.append(current_category)
+        
+        return result
+    
+    @staticmethod
+    def _parse_number(value: str) -> float:
+        """将字符串数字转换为浮点数"""
+        if not value or not value.strip():
+            return 0.0
+        try:
+            return float(value.strip())
+        except ValueError:
+            return 0.0
+    
+    @staticmethod
+    def _parse_no(value: str) -> int:
+        """将序号转换为整数"""
+        if not value or not value.strip():
+            return 0
+        try:
+            return int(value.strip())
+        except ValueError:
+            return 0
 
