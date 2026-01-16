@@ -311,7 +311,7 @@ class PreliminaryApprovalInvestment:
         
         Level="1" 的项目作为大类（变电工程、线路工程等）
         Level="2" 的项目作为子项
-        Level="0" 的项目（合计）单独作为一个大类
+        Level="0" 的项目（合计）跳过，不包含在输出中
         """
         if not self.items:
             return []
@@ -342,18 +342,11 @@ class PreliminaryApprovalInvestment:
                     "dynamicInvestment": self._parse_number(item.dynamicInvestment),
                 })
             elif item.level == "0":
-                # 合计行 - 先保存当前类别，然后添加合计
+                # 合计行 - 跳过，不包含在输出中
+                # 先保存当前类别
                 if current_category is not None:
                     result.append(current_category)
                     current_category = None
-                
-                result.append({
-                    "name": item.name.replace(" ", ""),  # 移除空格，如 "合 计" -> "合计"
-                    "Level": 0,
-                    "staticInvestment": self._parse_number(item.staticInvestment),
-                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
-                    "items": []
-                })
         
         # 添加最后一个类别
         if current_category is not None:
