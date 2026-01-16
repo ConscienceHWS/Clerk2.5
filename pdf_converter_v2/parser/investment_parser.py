@@ -97,8 +97,12 @@ def determine_level(text: str) -> str:
     if re.match(r'^\d+[\u4e00-\u9fa5]', text) and not text.startswith('(') and not text.startswith('（'):
         return "2"
     
-    # 第三级: 带括号的数字
+    # 第三级: 带括号的数字，或者数字后跟右括号
+    # 匹配: "(1)", "（1）", "1)", "1）"
     if re.match(r'^[(（]\d+[)）]', text):
+        return "3"
+    # 数字后跟右括号，如 "1)", "2)"
+    if re.match(r'^\d+[)）]', text):
         return "3"
     
     return ""
@@ -157,25 +161,31 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
         logger.warning("[可研批复投资] 未能提取出任何表格内容")
         return record
     
-    # 找到包含投资估算的表格（通常包含"工程或费用名称"、"静态投资"等关键词）
+    # 找到包含"四"（山西晋城周村）的投资估算表格
+    # 因为用户只需要"四"及以下的数据
     target_table = None
-    for table in tables:
+    for table_idx, table in enumerate(tables):
+        table_text = ""
         for row in table:
-            row_text = " ".join([str(cell) for cell in row])
-            # 移除空格后再匹配，以处理OCR可能产生的空格
-            row_text_no_space = row_text.replace(" ", "")
-            if "工程或费用名称" in row_text_no_space and "静态投资" in row_text_no_space:
-                target_table = table
-                logger.info(f"[可研批复投资] 找到投资估算表格, 行数: {len(table)}")
-                break
-        if target_table:
+            table_text += " ".join([str(cell) for cell in row])
+        # 移除空格后再匹配
+        table_text_no_space = table_text.replace(" ", "")
+        # 优先选择包含"四"（晋城周村）的表格
+        if "四" in table_text and "周村" in table_text and "静态投资" in table_text_no_space:
+            target_table = table
+            logger.info(f"[可研批复投资] 找到包含'四'的投资估算表格 (表格{table_idx+1}), 行数: {len(table)}")
             break
+        # 否则选择第一个包含投资估算的表格
+        elif target_table is None and "工程或费用名称" in table_text_no_space and "静态投资" in table_text_no_space:
+            target_table = table
+            logger.info(f"[可研批复投资] 找到投资估算表格 (表格{table_idx+1}), 行数: {len(table)}")
     
     if not target_table:
         logger.warning("[可研批复投资] 未找到包含投资估算的表格")
         return record
     
     # 识别表头行和列索引
+    # 注意：表格可能有多层表头（rowspan），需要扫描前几行来找到所有列名
     header_row_idx = -1
     no_idx = -1
     name_idx = -1
@@ -186,48 +196,63 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
     static_investment_idx = -1
     dynamic_investment_idx = -1
     
-    for row_idx, row in enumerate(target_table):
+    # 扫描前几行（最多5行）来识别列索引
+    for row_idx in range(min(5, len(target_table))):
+        row = target_table[row_idx]
         row_text = " ".join([str(cell) for cell in row])
-        # 移除空格后再匹配，以处理OCR可能产生的空格
         row_text_no_space = row_text.replace(" ", "")
         
-        # 找到表头行
-        if "工程或费用名称" in row_text_no_space or "序号" in row_text:
+        # 识别各列（遍历所有行的所有列）
+        for col_idx, cell in enumerate(row):
+            cell_text = str(cell).strip()
+            cell_text_no_space = cell_text.replace(" ", "")
+            
+            if "序号" in cell_text and no_idx == -1:
+                no_idx = col_idx
+            elif ("工程或费用名称" in cell_text_no_space) and name_idx == -1:
+                name_idx = col_idx
+            elif "架空线" in cell_text_no_space and overhead_line_idx == -1:
+                overhead_line_idx = col_idx
+            elif "间隔" in cell_text and bay_idx == -1:
+                bay_idx = col_idx
+            elif "变电" in cell_text and substation_idx == -1:
+                substation_idx = col_idx
+            elif "光缆" in cell_text and optical_cable_idx == -1:
+                optical_cable_idx = col_idx
+            elif "静态投资" in cell_text_no_space and static_investment_idx == -1:
+                static_investment_idx = col_idx
+            elif "动态投资" in cell_text_no_space and dynamic_investment_idx == -1:
+                dynamic_investment_idx = col_idx
+        
+        # 如果这一行包含"序号"或"工程或费用名称"，记录为表头结束行
+        if ("序号" in row_text or "工程或费用名称" in row_text_no_space) and header_row_idx == -1:
             header_row_idx = row_idx
-            logger.debug(f"[可研批复投资] 找到表头行: 第{row_idx}行")
-            
-            # 识别各列
-            for col_idx, cell in enumerate(row):
-                cell_text = str(cell).strip()
-                # 移除空格后再匹配
-                cell_text_no_space = cell_text.replace(" ", "")
-                if "序号" in cell_text:
-                    no_idx = col_idx
-                elif "工程或费用名称" in cell_text_no_space or "名称" in cell_text:
-                    name_idx = col_idx
-                elif "架空线" in cell_text_no_space:
-                    overhead_line_idx = col_idx
-                elif "间隔" in cell_text:
-                    bay_idx = col_idx
-                elif "变电" in cell_text:
-                    substation_idx = col_idx
-                elif "光缆" in cell_text:
-                    optical_cable_idx = col_idx
-                elif "静态投资" in cell_text_no_space:
-                    static_investment_idx = col_idx
-                elif "动态投资" in cell_text_no_space:
-                    dynamic_investment_idx = col_idx
-            
-            logger.info(f"[可研批复投资] 列索引: 序号={no_idx}, 名称={name_idx}, "
-                       f"架空线={overhead_line_idx}, 间隔={bay_idx}, 变电={substation_idx}, "
-                       f"光缆={optical_cable_idx}, 静态投资={static_investment_idx}, 动态投资={dynamic_investment_idx}")
-            break
+    
+    # 表头结束行应该是最后一个包含表头内容的行
+    # 找到第一个数据行（通常是"一"、"二"等开头）
+    for row_idx in range(min(5, len(target_table))):
+        row = target_table[row_idx]
+        if len(row) > 0:
+            first_cell = str(row[0]).strip()
+            # 如果第一列是中文数字或阿拉伯数字（不是"序号"），这是数据行
+            if first_cell and first_cell not in ["序号", ""] and (first_cell in ["一", "二", "三", "四", "五"] or first_cell.isdigit()):
+                header_row_idx = row_idx - 1
+                logger.debug(f"[可研批复投资] 根据数据行确定表头结束于第{header_row_idx}行")
+                break
+    
+    logger.info(f"[可研批复投资] 表头行: {header_row_idx}")
+    logger.info(f"[可研批复投资] 列索引: 序号={no_idx}, 名称={name_idx}, "
+               f"架空线={overhead_line_idx}, 间隔={bay_idx}, 变电={substation_idx}, "
+               f"光缆={optical_cable_idx}, 静态投资={static_investment_idx}, 动态投资={dynamic_investment_idx}")
     
     if header_row_idx == -1:
         logger.warning("[可研批复投资] 未找到表头行")
         return record
     
     # 解析数据行
+    # 使用状态变量跟踪是否在"四"区域内
+    in_section_four = False
+    
     for row_idx in range(header_row_idx + 1, len(target_table)):
         row = target_table[row_idx]
         
@@ -240,27 +265,38 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
             if not name or name in ["", "nan", "None"]:
                 continue
             
-            item = InvestmentItem()
-            
             # 提取序号
+            no = ""
             if no_idx >= 0 and no_idx < len(row):
-                item.no = str(row[no_idx]).strip()
+                no = str(row[no_idx]).strip()
             
-            # 提取名称
+            # 判断等级
+            level_input = (no + name) if no else name
+            level = determine_level(level_input)
+            
+            # 检查是否是大类（Level=1）
+            if level == "1":
+                no_cleaned = no.strip()
+                # 检查是否进入或退出"四"区域
+                if no_cleaned == "四" or "四、" in no or "四，" in no:
+                    in_section_four = True
+                    logger.info(f"[可研批复投资] 进入'四'区域: {name}")
+                elif no_cleaned in ["一", "二", "三", "五", "六", "七", "八", "九", "十"] or \
+                     any(prefix in no for prefix in ["一、", "二、", "三、", "五、", "六、", "七、", "八、", "九、", "十、"]):
+                    # 遇到其他大类，退出"四"区域
+                    if in_section_four:
+                        logger.info(f"[可研批复投资] 退出'四'区域: {name}")
+                    in_section_four = False
+            
+            # 只保留"四"区域内的数据
+            if not in_section_four:
+                logger.debug(f"[可研批复投资] 跳过非'四'区域数据: No={no}, Name={name}")
+                continue
+            
+            item = InvestmentItem()
+            item.no = no
             item.name = name
-            
-            # 判断等级（先从序号判断，如果没有序号则从名称判断）
-            if item.no:
-                item.level = determine_level(item.no + item.name)
-            else:
-                item.level = determine_level(item.name)
-            
-            # 只保留"四"及以下的数据（即跳过"一"、"二"、"三"）
-            if item.level == "1":
-                # 检查是否是"一"、"二"、"三"（需要跳过）
-                if any(prefix in (item.no + item.name) for prefix in ["一、", "一，", "二、", "二，", "三、", "三，"]):
-                    logger.debug(f"[可研批复投资] 跳过一二三级数据: {item.name}")
-                    continue
+            item.level = level
             
             # 提取建设规模
             if overhead_line_idx >= 0 and overhead_line_idx < len(row):

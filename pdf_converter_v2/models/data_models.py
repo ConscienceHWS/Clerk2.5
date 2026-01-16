@@ -263,23 +263,161 @@ class InvestmentItem:
 
 
 class FeasibilityApprovalInvestment:
-    """可研批复投资估算数据模型"""
+    """可研批复投资估算数据模型
+    
+    返回结构与 designReview 保持一致，包含建设规模字段
+    """
     def __init__(self):
         self.items: List[InvestmentItem] = []
     
     def to_dict(self):
-        # 可研批复需要包含建设规模字段
-        return [item.to_dict(include_construction_scale=True) for item in self.items]
+        """转换为嵌套结构，与 designReview 保持一致
+        
+        Level="1" 的项目作为大类
+        Level="2" 的项目作为子项（items数组中）
+        Level="3" 的项目也作为子项
+        Level="0" 的项目（合计）跳过
+        """
+        if not self.items:
+            return []
+        
+        result = []
+        current_category = None
+        
+        for item in self.items:
+            if item.level == "1":
+                # 大类项目
+                if current_category is not None:
+                    result.append(current_category)
+                
+                current_category = {
+                    "name": item.name,
+                    "Level": 0,
+                    "constructionScaleSubstation": item.constructionScaleSubstation or "",
+                    "constructionScaleBay": item.constructionScaleBay or "",
+                    "constructionScaleOverheadLine": item.constructionScaleOverheadLine or "",
+                    "constructionScaleOpticalCable": item.constructionScaleOpticalCable or "",
+                    "staticInvestment": self._parse_number(item.staticInvestment),
+                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                    "items": []
+                }
+            elif item.level in ["2", "3"] and current_category is not None:
+                # 子项目
+                current_category["items"].append({
+                    "No": self._parse_no(item.no),
+                    "name": item.name,
+                    "Level": 1 if item.level == "2" else 2,
+                    "constructionScaleSubstation": item.constructionScaleSubstation or "",
+                    "constructionScaleBay": item.constructionScaleBay or "",
+                    "constructionScaleOverheadLine": item.constructionScaleOverheadLine or "",
+                    "constructionScaleOpticalCable": item.constructionScaleOpticalCable or "",
+                    "staticInvestment": self._parse_number(item.staticInvestment),
+                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                })
+            elif item.level == "0":
+                # 合计行 - 跳过
+                if current_category is not None:
+                    result.append(current_category)
+                    current_category = None
+        
+        # 添加最后一个类别
+        if current_category is not None:
+            result.append(current_category)
+        
+        return result
+    
+    @staticmethod
+    def _parse_number(value: str) -> float:
+        if not value or not value.strip():
+            return 0.0
+        try:
+            return float(value.strip())
+        except ValueError:
+            return 0.0
+    
+    @staticmethod
+    def _parse_no(value: str) -> int:
+        if not value or not value.strip():
+            return 0
+        try:
+            return int(value.strip())
+        except ValueError:
+            return 0
 
 
 class FeasibilityReviewInvestment:
-    """可研评审投资估算数据模型"""
+    """可研评审投资估算数据模型
+    
+    返回结构与 designReview 保持一致，不包含建设规模字段
+    """
     def __init__(self):
         self.items: List[InvestmentItem] = []
     
     def to_dict(self):
-        # 可研评审不需要建设规模字段
-        return [item.to_dict(include_construction_scale=False) for item in self.items]
+        """转换为嵌套结构，与 designReview 保持一致
+        
+        Level="1" 的项目作为大类
+        Level="2" 的项目作为子项
+        Level="3" 的项目也作为子项
+        Level="0" 的项目（合计）跳过
+        """
+        if not self.items:
+            return []
+        
+        result = []
+        current_category = None
+        
+        for item in self.items:
+            if item.level == "1":
+                # 大类项目
+                if current_category is not None:
+                    result.append(current_category)
+                
+                current_category = {
+                    "name": item.name,
+                    "Level": 0,
+                    "staticInvestment": self._parse_number(item.staticInvestment),
+                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                    "items": []
+                }
+            elif item.level in ["2", "3"] and current_category is not None:
+                # 子项目
+                current_category["items"].append({
+                    "No": self._parse_no(item.no),
+                    "name": item.name,
+                    "Level": 1 if item.level == "2" else 2,
+                    "staticInvestment": self._parse_number(item.staticInvestment),
+                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                })
+            elif item.level == "0":
+                # 合计行 - 跳过
+                if current_category is not None:
+                    result.append(current_category)
+                    current_category = None
+        
+        # 添加最后一个类别
+        if current_category is not None:
+            result.append(current_category)
+        
+        return result
+    
+    @staticmethod
+    def _parse_number(value: str) -> float:
+        if not value or not value.strip():
+            return 0.0
+        try:
+            return float(value.strip())
+        except ValueError:
+            return 0.0
+    
+    @staticmethod
+    def _parse_no(value: str) -> int:
+        if not value or not value.strip():
+            return 0
+        try:
+            return int(value.strip())
+        except ValueError:
+            return 0
 
 
 class PreliminaryApprovalInvestment:
