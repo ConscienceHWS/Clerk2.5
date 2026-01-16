@@ -28,9 +28,9 @@ def detect_investment_type(markdown_content: str) -> Optional[str]:
     
     Returns:
         str: 类型名称
-            - "feasibilityApprovalInvestment" - 可研批复
-            - "feasibilityReviewInvestment" - 可研评审
-            - "preliminaryApprovalInvestment" - 初设批复
+            - "fsApproval" - 可研批复
+            - "fsReview" - 可研评审
+            - "pdApproval" - 初设批复
             - None - 无法识别
     """
     # 检查标题关键词
@@ -38,15 +38,15 @@ def detect_investment_type(markdown_content: str) -> Optional[str]:
         # 检查是否有建设规模相关列（可研批复特有）
         if "架空线" in markdown_content or "间隔" in markdown_content:
             logger.info("[投资估算] 检测到类型: 可研批复投资估算")
-            return "feasibilityApprovalInvestment"
+            return "fsApproval"
     
     if "可研评审" in markdown_content or "可行性研究报告的评审意见" in markdown_content:
         logger.info("[投资估算] 检测到类型: 可研评审投资估算")
-        return "feasibilityReviewInvestment"
+        return "fsReview"
     
     if "初设批复" in markdown_content or "初步设计的批复" in markdown_content:
         logger.info("[投资估算] 检测到类型: 初设批复概算投资")
-        return "preliminaryApprovalInvestment"
+        return "pdApproval"
     
     logger.warning("[投资估算] 无法识别投资估算表格类型")
     return None
@@ -706,9 +706,9 @@ def parse_investment_record(markdown_content: str, investment_type: Optional[str
     Args:
         markdown_content: Markdown内容
         investment_type: 投资类型（可选，如果不提供则自动检测）
-            - "feasibilityApprovalInvestment" - 可研批复
-            - "feasibilityReviewInvestment" - 可研评审
-            - "preliminaryApprovalInvestment" - 初设批复
+            - "fsApproval" - 可研批复
+            - "fsReview" - 可研评审
+            - "pdApproval" - 初设批复
     
     Returns:
         解析后的记录对象
@@ -734,11 +734,11 @@ def parse_investment_record(markdown_content: str, investment_type: Optional[str
     logger.info(f"[投资估算] 调用解析函数: {investment_type}")
     
     result = None
-    if investment_type == "feasibilityApprovalInvestment":
+    if investment_type == "fsApproval":
         result = parse_feasibility_approval_investment(markdown_content)
-    elif investment_type == "feasibilityReviewInvestment":
+    elif investment_type == "fsReview":
         result = parse_feasibility_review_investment(markdown_content)
-    elif investment_type == "preliminaryApprovalInvestment":
+    elif investment_type == "pdApproval":
         result = parse_preliminary_approval_investment(markdown_content)
     else:
         logger.error(f"[投资估算] 未知的投资估算类型: {investment_type}")

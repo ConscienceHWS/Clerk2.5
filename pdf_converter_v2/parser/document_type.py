@@ -16,9 +16,9 @@ def detect_document_type(markdown_content: str) -> str:
             - "opStatus" - 工况信息
             - "settlementReport" - 结算报告
             - "designReview" - 设计评审
-            - "feasibilityApprovalInvestment" - 可研批复投资估算
-            - "feasibilityReviewInvestment" - 可研评审投资估算
-            - "preliminaryApprovalInvestment" - 初设批复概算投资
+            - "fsApproval" - 可研批复投资估算
+            - "fsReview" - 可研评审投资估算
+            - "pdApproval" - 初设批复概算投资
             - "unknown" - 未知类型
     """
     # 检测表格类型（噪声、电磁）- 兼容旧名称
@@ -33,17 +33,17 @@ def detect_document_type(markdown_content: str) -> str:
        ("工程或费用名称" in markdown_content or "静态投资" in markdown_content):
         # 检查是否有建设规模相关列（可研批复特有）
         if "架空线" in markdown_content or "间隔" in markdown_content:
-            return "feasibilityApprovalInvestment"
+            return "fsApproval"
     
     # 可研评审投资估算
     if ("可研评审" in markdown_content or "可行性研究报告的评审意见" in markdown_content) and \
        ("工程或费用名称" in markdown_content or "静态投资" in markdown_content):
-        return "feasibilityReviewInvestment"
+        return "fsReview"
     
     # 初设批复概算投资
     if ("初设批复" in markdown_content or "初步设计的批复" in markdown_content) and \
        ("工程名称" in markdown_content or "静态投资" in markdown_content):
-        return "preliminaryApprovalInvestment"
+        return "pdApproval"
     
     return "unknown"
 
