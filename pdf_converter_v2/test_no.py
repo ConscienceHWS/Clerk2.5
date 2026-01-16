@@ -24,6 +24,17 @@ except ImportError:
     TESSERACT_AVAILABLE = False
     logger.warning("Tesseract OCR 不可用")
 
+# 尝试导入 PaddleOCR 作为备用
+try:
+    from paddleocr import PaddleOCR
+    PADDLEOCR_AVAILABLE = True
+    logger.info("PaddleOCR 可用")
+    # 初始化 PaddleOCR（延迟到实际使用时）
+    _paddle_ocr = None
+except ImportError:
+    PADDLEOCR_AVAILABLE = False
+    logger.warning("PaddleOCR 不可用")
+
 try:
     import PyPDF2
     PYPDF2_AVAILABLE = True
@@ -50,7 +61,7 @@ ATTACHMENT_START_KEYWORDS = [
 
 def ocr_page_image(image) -> str:
     """
-    对图片进行 OCR 识别
+    对图片进行 OCR 识别（优先使用 Tesseract，备用 PaddleOCR）
     
     Args:
         image: PIL Image 对象
@@ -58,17 +69,46 @@ def ocr_page_image(image) -> str:
     Returns:
         str: 识别出的文本
     """
-    if not TESSERACT_AVAILABLE:
-        logger.warning("Tesseract OCR 不可用，无法进行OCR识别")
-        return ""
+    # 优先使用 Tesseract
+    if TESSERACT_AVAILABLE:
+        try:
+            text = pytesseract.image_to_string(image, lang=OCR_LANG)
+            logger.debug(f"Tesseract OCR识别成功，文本长度: {len(text)}")
+            return text
+        except Exception as e:
+            logger.error(f"Tesseract OCR识别失败: {e}")
+            # 失败后尝试 PaddleOCR
     
-    try:
-        text = pytesseract.image_to_string(image, lang=OCR_LANG)
-        logger.debug(f"OCR识别成功，文本长度: {len(text)}")
-        return text
-    except Exception as e:
-        logger.error(f"OCR识别失败: {e}")
-        return ""
+    # 备用：使用 PaddleOCR
+    if PADDLEOCR_AVAILABLE:
+        try:
+            global _paddle_ocr
+            if _paddle_ocr is None:
+                logger.info("初始化 PaddleOCR...")
+                _paddle_ocr = PaddleOCR(use_angle_cls=True, lang='ch', show_log=False)
+            
+            # 将PIL图片转换为numpy数组
+            import numpy as np
+            img_array = np.array(image)
+            
+            # 执行OCR
+            result = _paddle_ocr.ocr(img_array, cls=True)
+            
+            # 提取文本
+            if result and result[0]:
+                texts = [line[1][0] for line in result[0] if line[1][0]]
+                text = '\n'.join(texts)
+                logger.debug(f"PaddleOCR识别成功，文本长度: {len(text)}")
+                return text
+            else:
+                logger.warning("PaddleOCR未识别出文本")
+                return ""
+        except Exception as e:
+            logger.error(f"PaddleOCR识别失败: {e}")
+            return ""
+    
+    logger.warning("没有可用的OCR工具")
+    return ""
 
 def extract_page_text(page, use_ocr: bool = False) -> str:
     """
@@ -89,7 +129,7 @@ def extract_page_text(page, use_ocr: bool = False) -> str:
         return text
     
     # 如果没有文本层，使用 OCR
-    if use_ocr and TESSERACT_AVAILABLE:
+    if use_ocr and (TESSERACT_AVAILABLE or PADDLEOCR_AVAILABLE):
         logger.info(f"第{page.page_number}页: 文本层为空，使用OCR识别")
         try:
             img = page.to_image(resolution=150)  # 降低分辨率加快速度
@@ -163,10 +203,13 @@ def find_attachment_start_page(pdf_path: str, use_ocr: bool = False, debug: bool
         logger.info(f"PDF总页数: {total_pages}")
         print(f"总页数: {total_pages}")
         
-        if use_ocr and not TESSERACT_AVAILABLE:
-            logger.warning("OCR 不可用，仅检查文本层")
+        if use_ocr and not (TESSERACT_AVAILABLE or PADDLEOCR_AVAILABLE):
+            logger.warning("OCR 不可用（Tesseract和PaddleOCR都不可用），仅检查文本层")
             print("⚠ OCR 不可用，仅检查文本层")
             use_ocr = False
+        elif use_ocr:
+            ocr_tool = "Tesseract" if TESSERACT_AVAILABLE else "PaddleOCR"
+            logger.info(f"使用 {ocr_tool} 进行OCR识别")
         
         logger.info(f"OCR: {'启用' if use_ocr else '禁用'}, 调试模式: {'启用' if debug else '禁用'}")
         print(f"OCR: {'启用' if use_ocr else '禁用'}")

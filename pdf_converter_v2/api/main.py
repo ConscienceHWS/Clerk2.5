@@ -249,6 +249,7 @@ async def process_conversion_task(
                     logger.info(f"[任务 {task_id}] 附件页切割完成，使用文件: {file_path}")
                 else:
                     logger.warning(f"[任务 {task_id}] 未找到附件页，使用原始文件")
+                    logger.info(f"[任务 {task_id}] 提示: 如果PDF是扫描件，请确保安装了Tesseract OCR以启用文本识别")
             except Exception as e:
                 logger.error(f"[任务 {task_id}] 附件页切割失败: {e}")
                 logger.warning(f"[任务 {task_id}] 将使用原始文件继续处理")
