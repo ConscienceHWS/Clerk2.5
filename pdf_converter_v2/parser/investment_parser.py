@@ -96,20 +96,33 @@ def determine_level(text: str, name: str = "") -> str:
         is_chinese_numeral = True
     
     if is_chinese_numeral:
-        # 进一步判断：如果名称包含省份关键词，才是真正的顶级大类
-        # 例如：山西临汾古县220千伏输变电工程 -> Level 1
-        # 例如：配套通信工程（OCR误识别"3"为"三"） -> Level 2
+        # 进一步判断：区分顶级大类和子项目
+        # 顶级大类：名称包含省份关键词（如"山西临汾古县220千伏输变电工程"）
+        # 子项目：固定名称（如"变电工程"、"线路工程"、"配套通信工程"）或不含省份
+        
+        name_to_check = name if name else text
+        
+        # 1. 先检查是否是固定的子项目名称（人为错误可能把"3"写成"三"）
+        subitem_keywords = ["变电工程", "线路工程", "配套通信工程", "通信工程", "光缆工程", 
+                           "光通信设备", "保护改造", "间隔扩建", "新建工程"]
+        is_subitem = any(keyword in name_to_check for keyword in subitem_keywords)
+        
+        if is_subitem:
+            # 名称包含子项目关键词，按二级处理（兼容人为错误）
+            logger.debug(f"[等级判断] 中文数字序号但名称是子项目，按二级处理: text={text}, name={name}")
+            return "2"
+        
+        # 2. 检查是否包含省份关键词
         province_keywords = ["山西", "山东", "河北", "河南", "陕西", "甘肃", "江苏", "浙江", 
                             "安徽", "福建", "江西", "湖北", "湖南", "广东", "广西", "四川",
                             "贵州", "云南", "青海", "内蒙古", "宁夏", "新疆", "西藏", "辽宁",
                             "吉林", "黑龙江", "北京", "天津", "上海", "重庆", "海南"]
-        name_to_check = name if name else text
         has_province = any(prov in name_to_check for prov in province_keywords)
         
         if has_province:
             return "1"
         else:
-            # 如果没有省份关键词，可能是OCR误识别，按第二级处理
+            # 既没有省份关键词，也不是已知子项目，按第二级处理
             logger.debug(f"[等级判断] 中文数字序号但名称无省份关键词，按二级处理: text={text}, name={name}")
             return "2"
     
