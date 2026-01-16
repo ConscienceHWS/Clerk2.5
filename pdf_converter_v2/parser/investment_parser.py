@@ -52,13 +52,14 @@ def detect_investment_type(markdown_content: str) -> Optional[str]:
     return None
 
 
-def determine_level(text: str, name: str = "") -> str:
+def determine_level(text: str, name: str = "", strict_mode: bool = True) -> str:
     """
     判断明细等级
     
     规则:
-    - 大写中文数字(一、二、三等) + 名称包含省份 -> 第一级（顶级大类）
-    - 大写中文数字 + 名称无省份（OCR误识别） -> 第二级
+    - 大写中文数字(一、二、三等) -> 第一级（顶级大类）
+      - strict_mode=True: 需要名称包含电压等级+输变电工程才是一级，否则降为二级
+      - strict_mode=False: 中文数字直接判断为一级（用于 fsReview、pdApproval）
     - 小写阿拉伯数字(1、2、3等) -> 第二级  
     - 带括号的数字(1)、2)等) -> 第三级
     - 合计 -> 0
@@ -66,6 +67,7 @@ def determine_level(text: str, name: str = "") -> str:
     Args:
         text: 序号或名称文本
         name: 可选，名称文本，用于辅助判断（区分顶级大类和子项）
+        strict_mode: 是否使用严格模式（默认True，用于 fsApproval 区分顶级大类）
         
     Returns:
         str: "0"(合计), "1"(一级), "2"(二级), "3"(三级), ""(无法判断)
@@ -96,7 +98,11 @@ def determine_level(text: str, name: str = "") -> str:
         is_chinese_numeral = True
     
     if is_chinese_numeral:
-        # 进一步判断：区分顶级大类和子项目
+        # 非严格模式：中文数字直接判断为一级（用于 fsReview、pdApproval）
+        if not strict_mode:
+            return "1"
+        
+        # 严格模式：进一步判断，区分顶级大类和子项目（用于 fsApproval）
         # 顶级大类特征：名称包含电压等级（如"220千伏"、"500kV"）+ 输变电工程
         # 子项目特征：简单的工程类型名称（变电工程、线路工程、配套通信工程）
         
@@ -552,15 +558,16 @@ def parse_feasibility_review_investment(markdown_content: str) -> FeasibilityRev
             
             item.name = name
             
-            # 判断等级 - 使用 no 和 name 分别判断，传入 name 辅助区分
+            # 判断等级 - 使用 no 和 name 分别判断
+            # fsReview 使用非严格模式，中文数字直接判断为一级
             if item.no:
                 # 优先使用 no 判断等级
-                item.level = determine_level(item.no, item.name)
+                item.level = determine_level(item.no, item.name, strict_mode=False)
                 if not item.level:
                     # 如果 no 没有匹配，尝试使用 name
-                    item.level = determine_level(item.name, item.name)
+                    item.level = determine_level(item.name, item.name, strict_mode=False)
             else:
-                item.level = determine_level(item.name, item.name)
+                item.level = determine_level(item.name, item.name, strict_mode=False)
             
             # 提取投资金额
             if static_investment_idx >= 0 and static_investment_idx < len(row):
@@ -710,9 +717,9 @@ def parse_preliminary_approval_investment(markdown_content: str) -> PreliminaryA
             
             item.name = name
             
-            # 判断等级，传入 name 辅助区分
+            # 判断等级 - pdApproval 使用非严格模式，中文数字直接判断为一级
             level_input = (item.no + item.name) if item.no else item.name
-            item.level = determine_level(level_input, item.name)
+            item.level = determine_level(level_input, item.name, strict_mode=False)
             logger.debug(f"[初设批复投资] 等级判断: '{level_input}' -> Level={item.level}")
             
             # 提取投资金额
