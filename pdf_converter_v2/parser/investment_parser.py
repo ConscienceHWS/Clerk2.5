@@ -74,14 +74,16 @@ def determine_level(text: str) -> str:
     text = text.strip()
     
     # 合计行
-    if "合计" in text:
+    if "合计" in text or "小计" in text:
         return "0"
     
-    # 第一级: 大写中文数字
-    if re.match(r'^[一二三四五六七八九十]+[、，,.]', text):
+    # 第一级: 大写中文数字（可能有或没有标点）
+    # 匹配: "一、", "一，", "一.", "一" (单独出现或后面跟空格)
+    if re.match(r'^[一二三四五六七八九十]+[、，,.]', text) or re.match(r'^[一二三四五六七八九十]+\s*$', text):
         return "1"
     
-    # 第二级: 小写阿拉伯数字
+    # 第二级: 小写阿拉伯数字（可能有或没有标点）
+    # 匹配: "1、", "1，", "1.", "1 " (后面跟空格)
     if re.match(r'^\d+[、，,.]', text) and not text.startswith('(') and not text.startswith('（'):
         return "2"
     
