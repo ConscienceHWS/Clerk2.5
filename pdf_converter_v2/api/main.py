@@ -225,14 +225,16 @@ async def process_conversion_task(
             from pathlib import Path as PathLib
             sys.path.insert(0, str(PathLib(__file__).parent.parent))
             
+            attachment_split_success = False
             try:
                 from test_no import split_attachment_pages
                 
                 # 创建附件页输出目录
                 attachment_dir = PathLib(output_dir) / "attachments"
+                attachment_dir.mkdir(parents=True, exist_ok=True)
                 
                 # 切割附件页
-                logger.info(f"[任务 {task_id}] 开始切割附件页...")
+                logger.info(f"[任务 {task_id}] 开始切割附件页，输出目录: {attachment_dir}")
                 await asyncio.to_thread(
                     split_attachment_pages,
                     file_path,
@@ -243,16 +245,24 @@ async def process_conversion_task(
                 
                 # 查找切割后的附件页PDF
                 attachment_pdfs = list(attachment_dir.glob("*_附件页_*.pdf"))
+                logger.info(f"[任务 {task_id}] 附件页目录内容: {list(attachment_dir.iterdir()) if attachment_dir.exists() else '(目录不存在)'}")
+                
                 if attachment_pdfs:
                     # 使用第一个附件页PDF作为输入
                     file_path = str(attachment_pdfs[0])
                     logger.info(f"[任务 {task_id}] 附件页切割完成，使用文件: {file_path}")
+                    attachment_split_success = True
                 else:
-                    logger.warning(f"[任务 {task_id}] 未找到附件页，使用原始文件")
-                    logger.info(f"[任务 {task_id}] 提示: 如果PDF是扫描件，请确保安装了Tesseract OCR以启用文本识别")
-            except Exception as e:
-                logger.error(f"[任务 {task_id}] 附件页切割失败: {e}")
+                    logger.warning(f"[任务 {task_id}] 未找到附件页PDF文件，使用原始文件")
+                    logger.info(f"[任务 {task_id}] 提示: 如果PDF是扫描件，请确保安装了Tesseract OCR或PaddleOCR以启用文本识别")
+            except ImportError as e:
+                logger.error(f"[任务 {task_id}] 导入附件页切割模块失败: {e}")
                 logger.warning(f"[任务 {task_id}] 将使用原始文件继续处理")
+            except Exception as e:
+                logger.exception(f"[任务 {task_id}] 附件页切割失败: {e}")
+                logger.warning(f"[任务 {task_id}] 将使用原始文件继续处理")
+            
+            logger.info(f"[任务 {task_id}] 附件页切割状态: {'成功' if attachment_split_success else '失败/跳过'}，使用文件: {file_path}")
         
         # 针对结算报告 / 初设评审类文档，检查是否有文本层
         # 如果有文本层，直接执行表格提取，不调用外部 OCR API（速度更快）
