@@ -241,31 +241,81 @@ async def convert_to_markdown(
                     content_type=content_type
                 )
                 
-                # 发送API请求（设置超时时间：总超时600秒，连接超时30秒）
-                timeout = aiohttp.ClientTimeout(total=600, connect=30)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    logger.info(f"开始上传文件: {input_file}")
-                    async with session.post(api_url, data=form_data) as response:
-                        if response.status != 200:
-                            error_text = await response.text()
-                            logger.error(f"API请求失败，状态码: {response.status}, 错误: {error_text}")
-                            return None
+                # 发送API请求（设置超时时间：总超时600秒，连接超时30秒，socket读取超时300秒）
+                timeout = aiohttp.ClientTimeout(total=600, connect=30, sock_read=300)
+                
+                # 添加重试机制
+                max_retries = 3
+                retry_count = 0
+                last_error = None
+                
+                while retry_count < max_retries:
+                    try:
+                        async with aiohttp.ClientSession(timeout=timeout) as session:
+                            if retry_count > 0:
+                                logger.warning(f"重试第 {retry_count} 次上传文件: {input_file}")
+                            else:
+                                logger.info(f"开始上传文件: {input_file}")
+                            
+                            async with session.post(api_url, data=form_data) as response:
+                                if response.status != 200:
+                                    error_text = await response.text()
+                                    logger.error(f"API请求失败，状态码: {response.status}, 错误: {error_text}")
+                                    return None
+                                
+                                # 检查Content-Type是否为zip
+                                content_type = response.headers.get('Content-Type', '')
+                                if 'zip' not in content_type and 'application/zip' not in content_type:
+                                    # 如果不是zip，尝试检查响应内容
+                                    content_disposition = response.headers.get('Content-Disposition', '')
+                                    if 'zip' not in content_disposition.lower():
+                                        logger.warning(f"响应Content-Type可能不是zip: {content_type}")
+                                
+                                # 保存zip文件
+                                zip_path = os.path.join(temp_dir, f"{file_name}.zip")
+                                async with aiofiles.open(zip_path, 'wb') as f:
+                                    async for chunk in response.content.iter_chunked(8192):
+                                        await f.write(chunk)
+                                
+                                logger.info(f"Zip文件已保存: {zip_path}")
+                                # 成功，跳出重试循环
+                                break
+                                
+                    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                        last_error = e
+                        retry_count += 1
+                        error_type = type(e).__name__
+                        logger.warning(f"API请求失败 ({error_type}): {e}, 重试 {retry_count}/{max_retries}")
                         
-                        # 检查Content-Type是否为zip
-                        content_type = response.headers.get('Content-Type', '')
-                        if 'zip' not in content_type and 'application/zip' not in content_type:
-                            # 如果不是zip，尝试检查响应内容
-                            content_disposition = response.headers.get('Content-Disposition', '')
-                            if 'zip' not in content_disposition.lower():
-                                logger.warning(f"响应Content-Type可能不是zip: {content_type}")
-                        
-                        # 保存zip文件
-                        zip_path = os.path.join(temp_dir, f"{file_name}.zip")
-                        async with aiofiles.open(zip_path, 'wb') as f:
-                            async for chunk in response.content.iter_chunked(8192):
-                                await f.write(chunk)
-                        
-                        logger.info(f"Zip文件已保存: {zip_path}")
+                        if retry_count < max_retries:
+                            # 等待一段时间后重试（指数退避）
+                            wait_time = 2 ** retry_count
+                            logger.info(f"等待 {wait_time} 秒后重试...")
+                            await asyncio.sleep(wait_time)
+                            
+                            # 重新创建 form_data（因为已经被消费了）
+                            file_obj.seek(0)  # 重置文件指针
+                            form_data = aiohttp.FormData()
+                            form_data.add_field('return_middle_json', str(return_middle_json).lower())
+                            form_data.add_field('return_model_output', str(return_model_output).lower())
+                            form_data.add_field('return_md', str(return_md).lower())
+                            form_data.add_field('return_images', str(return_images).lower())
+                            form_data.add_field('end_page_id', str(end_page_id))
+                            form_data.add_field('parse_method', parse_method)
+                            form_data.add_field('start_page_id', str(start_page_id))
+                            form_data.add_field('lang_list', language)
+                            form_data.add_field('output_dir', './output')
+                            form_data.add_field('server_url', server_url)
+                            form_data.add_field('return_content_list', str(return_content_list).lower())
+                            form_data.add_field('backend', backend)
+                            form_data.add_field('table_enable', str(table_enable).lower())
+                            form_data.add_field('response_format_zip', str(response_format_zip).lower())
+                            form_data.add_field('formula_enable', str(formula_enable).lower())
+                            form_data.add_field('files', file_obj, filename=upload_name, content_type=content_type)
+                        else:
+                            logger.error(f"API请求失败，已达到最大重试次数 ({max_retries})")
+                            raise last_error
+                            
             finally:
                 # 关闭文件对象
                 file_obj.close()
