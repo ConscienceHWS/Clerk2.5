@@ -87,6 +87,10 @@ def determine_level(text: str) -> str:
     # 例如: "一变电工程", "二线路工程"
     if re.match(r'^[一二三四五六七八九十]+[\u4e00-\u9fa5]', text):
         return "1"
+    # 如果只是单独的中文数字（没有后续字符），也是第一级
+    # 例如: "一", "二", "三"
+    if re.match(r'^[一二三四五六七八九十]+$', text):
+        return "1"
     
     # 第二级: 小写阿拉伯数字
     # 匹配: "1、", "1，", "1.", "1 " (后面跟标点或空格)
@@ -95,6 +99,10 @@ def determine_level(text: str) -> str:
     # 如果数字后面直接跟汉字（没有标点），也认为是第二级
     # 例如: "1周村220kV变电站"
     if re.match(r'^\d+[\u4e00-\u9fa5]', text) and not text.startswith('(') and not text.startswith('（'):
+        return "2"
+    # 如果只是单独的阿拉伯数字（没有后续字符），也是第二级
+    # 例如: "1", "2", "3"
+    if re.match(r'^\d+$', text) and not text.startswith('(') and not text.startswith('（'):
         return "2"
     
     # 第三级: 带括号的数字，或者数字后跟右括号
@@ -335,69 +343,142 @@ def parse_feasibility_review_investment(markdown_content: str) -> FeasibilityRev
     - Level: 明细等级
     - staticInvestment: 静态投资（元）
     - dynamicInvestment: 动态投资（元）
+    
+    注意：文档中可能包含多个表格，只解析"输变电工程建设规模及投资估算表"
+    排除"总估算表"类型的表格
     """
     record = FeasibilityReviewInvestment()
     
-    tables = extract_table_with_rowspan_colspan(markdown_content)
+    # 使用正则表达式查找表格及其前面的标题
+    # 查找 "输变电工程" + "投资估算表" 的标题，排除 "总估算表"
+    import re
     
-    if not tables:
-        logger.warning("[可研评审投资] 未能提取出任何表格内容")
-        return record
+    # 找到目标表格的标题位置
+    # 标题格式如: # 山西晋城周村220kV输变电工程建设规模及投资估算表
+    target_table_pattern = re.compile(
+        r'#\s*[^#\n]*?(输变电工程|输变电|变电工程)[^#\n]*?(建设规模及)?投资估算表',
+        re.IGNORECASE
+    )
     
-    # 找到包含投资估算的表格
-    target_table = None
-    for table in tables:
-        for row in table:
-            row_text = " ".join([str(cell) for cell in row])
-            # 移除空格后再匹配，以处理OCR可能产生的空格
-            row_text_no_space = row_text.replace(" ", "")
-            if "工程或费用名称" in row_text_no_space or ("序号" in row_text and "静态投资" in row_text_no_space):
-                target_table = table
-                logger.info(f"[可研评审投资] 找到投资估算表格, 行数: {len(table)}")
-                break
-        if target_table:
+    # 排除"总估算表"的模式
+    exclude_pattern = re.compile(r'总估算表', re.IGNORECASE)
+    
+    # 查找所有匹配的标题
+    target_title_match = None
+    for match in target_table_pattern.finditer(markdown_content):
+        title_text = match.group(0)
+        if not exclude_pattern.search(title_text):
+            target_title_match = match
+            logger.info(f"[可研评审投资] 找到目标表格标题: {title_text}")
             break
     
-    if not target_table:
-        logger.warning("[可研评审投资] 未找到包含投资估算的表格")
-        return record
+    if not target_title_match:
+        logger.warning("[可研评审投资] 未找到'输变电工程投资估算表'标题")
+        # 回退到原有逻辑
+        tables = extract_table_with_rowspan_colspan(markdown_content)
+        if not tables:
+            logger.warning("[可研评审投资] 未能提取出任何表格内容")
+            return record
+        target_table = None
+        for table in tables:
+            for row in table:
+                row_text = " ".join([str(cell) for cell in row])
+                row_text_no_space = row_text.replace(" ", "")
+                if "工程或费用名称" in row_text_no_space or ("序号" in row_text and "静态投资" in row_text_no_space):
+                    target_table = table
+                    logger.info(f"[可研评审投资] 回退: 找到投资估算表格, 行数: {len(table)}")
+                    break
+            if target_table:
+                break
+        if not target_table:
+            logger.warning("[可研评审投资] 未找到包含投资估算的表格")
+            return record
+    else:
+        # 提取标题后面到下一个标题之间的内容（包含目标表格）
+        title_end = target_title_match.end()
+        
+        # 找到下一个标题或文档结束
+        next_title_pattern = re.compile(r'\n#\s+[^#]')
+        next_title_match = next_title_pattern.search(markdown_content, title_end)
+        
+        if next_title_match:
+            section_content = markdown_content[target_title_match.start():next_title_match.start()]
+        else:
+            section_content = markdown_content[target_title_match.start():]
+        
+        logger.debug(f"[可研评审投资] 提取表格区域内容长度: {len(section_content)} 字符")
+        
+        # 从该区域提取表格
+        tables = extract_table_with_rowspan_colspan(section_content)
+        
+        if not tables:
+            logger.warning("[可研评审投资] 目标区域未能提取出任何表格内容")
+            return record
+        
+        # 选择第一个有效表格
+        target_table = None
+        for table in tables:
+            for row in table:
+                row_text = " ".join([str(cell) for cell in row])
+                row_text_no_space = row_text.replace(" ", "")
+                if "工程或费用名称" in row_text_no_space or ("序号" in row_text and "静态投资" in row_text_no_space):
+                    target_table = table
+                    logger.info(f"[可研评审投资] 找到目标投资估算表格, 行数: {len(table)}")
+                    break
+            if target_table:
+                break
+        
+        if not target_table:
+            logger.warning("[可研评审投资] 目标区域未找到包含投资估算的表格")
+            return record
     
-    # 识别表头行和列索引
-    header_row_idx = -1
+    # 识别表头行和列索引（多行表头处理）
+    # 这个表格有多行表头（rowspan/colspan），需要扫描前几行来找到所有列索引
     no_idx = -1
     name_idx = -1
     static_investment_idx = -1
     dynamic_investment_idx = -1
+    header_row_idx = -1
     
-    for row_idx, row in enumerate(target_table):
-        row_text = " ".join([str(cell) for cell in row])
-        # 移除空格后再匹配，以处理OCR可能产生的空格
-        row_text_no_space = row_text.replace(" ", "")
-        
-        if "工程或费用名称" in row_text_no_space or "序号" in row_text:
-            header_row_idx = row_idx
-            logger.debug(f"[可研评审投资] 找到表头行: 第{row_idx}行")
+    # 扫描前5行查找列索引
+    scan_rows = min(5, len(target_table))
+    for row_idx in range(scan_rows):
+        row = target_table[row_idx]
+        for col_idx, cell in enumerate(row):
+            cell_text = str(cell).strip()
+            cell_text_no_space = cell_text.replace(" ", "")
             
-            for col_idx, cell in enumerate(row):
-                cell_text = str(cell).strip()
-                # 移除空格后再匹配
-                cell_text_no_space = cell_text.replace(" ", "")
-                if "序号" in cell_text:
-                    no_idx = col_idx
-                elif "工程或费用名称" in cell_text_no_space or "名称" in cell_text:
-                    name_idx = col_idx
-                elif "静态投资" in cell_text_no_space:
-                    static_investment_idx = col_idx
-                elif "动态投资" in cell_text_no_space:
-                    dynamic_investment_idx = col_idx
-            
-            logger.info(f"[可研评审投资] 列索引: 序号={no_idx}, 名称={name_idx}, "
-                       f"静态投资={static_investment_idx}, 动态投资={dynamic_investment_idx}")
-            break
+            if "序号" in cell_text and no_idx == -1:
+                no_idx = col_idx
+            elif ("工程或费用名称" in cell_text_no_space or "工程名称" in cell_text_no_space) and name_idx == -1:
+                name_idx = col_idx
+            elif "静态投资" in cell_text_no_space and static_investment_idx == -1:
+                static_investment_idx = col_idx
+            elif "动态投资" in cell_text_no_space and dynamic_investment_idx == -1:
+                dynamic_investment_idx = col_idx
+    
+    logger.info(f"[可研评审投资] 列索引: 序号={no_idx}, 名称={name_idx}, "
+               f"静态投资={static_investment_idx}, 动态投资={dynamic_investment_idx}")
+    
+    # 确定表头结束行（第一个数据行的前一行）
+    # 数据行特征：第一列是中文数字（一、二、三）或阿拉伯数字
+    for row_idx in range(len(target_table)):
+        row = target_table[row_idx]
+        if len(row) > 0:
+            first_cell = str(row[0]).strip()
+            # 检查是否是数据行（以中文数字或阿拉伯数字开头）
+            if re.match(r'^[一二三四五六七八九十]+$', first_cell) or re.match(r'^\d+$', first_cell):
+                # 排除表头行（检查第二列是否是表头关键词）
+                if len(row) > 1:
+                    second_cell = str(row[1]).strip().replace(" ", "")
+                    if second_cell not in ["工程或费用名称", "工程名称", "名称", ""]:
+                        header_row_idx = row_idx - 1
+                        logger.debug(f"[可研评审投资] 确定表头结束行: 第{header_row_idx}行")
+                        break
     
     if header_row_idx == -1:
-        logger.warning("[可研评审投资] 未找到表头行")
-        return record
+        header_row_idx = 2  # 默认假设前3行是表头
+        logger.debug(f"[可研评审投资] 使用默认表头结束行: 第{header_row_idx}行")
     
     # 解析数据行
     for row_idx in range(header_row_idx + 1, len(target_table)):
@@ -411,16 +492,30 @@ def parse_feasibility_review_investment(markdown_content: str) -> FeasibilityRev
             if not name or name in ["", "nan", "None"]:
                 continue
             
+            # 跳过重复的表头行
+            name_no_space = name.replace(" ", "")
+            if name_no_space in ["工程或费用名称", "工程名称", "名称"]:
+                logger.debug(f"[可研评审投资] 跳过表头行: {name}")
+                continue
+            
             item = InvestmentItem()
             
             if no_idx >= 0 and no_idx < len(row):
                 item.no = str(row[no_idx]).strip()
             
+            # 跳过表头中的序号列
+            if item.no == "序号":
+                continue
+            
             item.name = name
             
-            # 判断等级
+            # 判断等级 - 使用 no 和 name 分别判断
             if item.no:
-                item.level = determine_level(item.no + item.name)
+                # 优先使用 no 判断等级
+                item.level = determine_level(item.no)
+                if not item.level:
+                    # 如果 no 没有匹配，尝试使用 name
+                    item.level = determine_level(item.name)
             else:
                 item.level = determine_level(item.name)
             
@@ -432,7 +527,8 @@ def parse_feasibility_review_investment(markdown_content: str) -> FeasibilityRev
                 item.dynamicInvestment = clean_number_string(str(row[dynamic_investment_idx]))
             
             record.items.append(item)
-            logger.info(f"[可研评审投资] 解析到数据: No={item.no}, Name={item.name}, Level={item.level}")
+            logger.info(f"[可研评审投资] 解析到数据: No={item.no}, Name={item.name}, Level={item.level}, "
+                       f"静态投资={item.staticInvestment}, 动态投资={item.dynamicInvestment}")
     
     logger.info(f"[可研评审投资] 共解析到 {len(record.items)} 条数据")
     return record
