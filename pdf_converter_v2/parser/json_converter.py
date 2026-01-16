@@ -196,6 +196,8 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
     """
     original_markdown = markdown_content
     
+    logger.info(f"[JSON转换] 开始解析，forced_document_type={forced_document_type}")
+    
     if forced_document_type:
         auto_weather_default = False
         if forced_document_type == "noiseMonitoringRecord":

@@ -1,0 +1,16 @@
+{
+  "document_type": "fsApproval",
+  "data": [
+    {
+      "name": "电缆线路工程",
+      "Level": 0,
+      "constructionScaleSubstation": "",
+      "constructionScaleBay": "",
+      "constructionScaleOverheadLine": "电缆线路工程",
+      "constructionScaleOpticalCable": "",
+      "staticInvestment": 0.0,
+      "dynamicInvestment": 0.0,
+      "items": []
+    }
+  ]
+}
