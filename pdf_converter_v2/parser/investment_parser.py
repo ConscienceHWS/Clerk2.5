@@ -97,33 +97,37 @@ def determine_level(text: str, name: str = "") -> str:
     
     if is_chinese_numeral:
         # 进一步判断：区分顶级大类和子项目
-        # 顶级大类：名称包含省份关键词（如"山西临汾古县220千伏输变电工程"）
-        # 子项目：固定名称（如"变电工程"、"线路工程"、"配套通信工程"）或不含省份
+        # 顶级大类特征：名称包含电压等级（如"220千伏"、"500kV"）+ 输变电工程
+        # 子项目特征：简单的工程类型名称（变电工程、线路工程、配套通信工程）
         
         name_to_check = name if name else text
         
-        # 1. 先检查是否是固定的子项目名称（人为错误可能把"3"写成"三"）
-        subitem_keywords = ["变电工程", "线路工程", "配套通信工程", "通信工程", "光缆工程", 
-                           "光通信设备", "保护改造", "间隔扩建", "新建工程"]
-        is_subitem = any(keyword in name_to_check for keyword in subitem_keywords)
+        # 1. 检查是否是顶级大类（包含电压等级 + 输变电工程）
+        # 电压等级模式：220千伏、500kV、110kv、35千伏等
+        has_voltage = bool(re.search(r'\d+\s*(千伏|kV|KV|kv)', name_to_check, re.IGNORECASE))
+        has_project_type = "输变电" in name_to_check or "变电站" in name_to_check or "送出工程" in name_to_check
         
-        if is_subitem:
-            # 名称包含子项目关键词，按二级处理（兼容人为错误）
+        if has_voltage and has_project_type:
+            # 包含电压等级和工程类型，是顶级大类
+            return "1"
+        
+        # 2. 检查是否是子项目（固定名称，人为错误可能把"3"写成"三"）
+        # 子项目名称通常较短且是固定的工程类型
+        subitem_exact = ["变电工程", "线路工程", "配套通信工程", "通信工程"]
+        is_exact_subitem = name_to_check in subitem_exact
+        
+        if is_exact_subitem:
+            # 完全匹配子项目名称，按二级处理
             logger.debug(f"[等级判断] 中文数字序号但名称是子项目，按二级处理: text={text}, name={name}")
             return "2"
         
-        # 2. 检查是否包含省份关键词
-        province_keywords = ["山西", "山东", "河北", "河南", "陕西", "甘肃", "江苏", "浙江", 
-                            "安徽", "福建", "江西", "湖北", "湖南", "广东", "广西", "四川",
-                            "贵州", "云南", "青海", "内蒙古", "宁夏", "新疆", "西藏", "辽宁",
-                            "吉林", "黑龙江", "北京", "天津", "上海", "重庆", "海南"]
-        has_province = any(prov in name_to_check for prov in province_keywords)
-        
-        if has_province:
+        # 3. 其他情况：如果名称较长（>10字符），可能是顶级大类；否则按二级处理
+        if len(name_to_check) > 10:
+            # 较长的名称可能是顶级大类（即使没有匹配到电压等级模式）
             return "1"
         else:
-            # 既没有省份关键词，也不是已知子项目，按第二级处理
-            logger.debug(f"[等级判断] 中文数字序号但名称无省份关键词，按二级处理: text={text}, name={name}")
+            # 较短的名称，按二级处理
+            logger.debug(f"[等级判断] 中文数字序号但名称较短，按二级处理: text={text}, name={name}")
             return "2"
     
     # 第二级: 小写阿拉伯数字
