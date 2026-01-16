@@ -266,6 +266,10 @@ class FeasibilityApprovalInvestment:
     """可研批复投资估算数据模型
     
     返回结构与 designReview 保持一致，包含建设规模字段
+    三层嵌套结构：
+    - Level 0: 顶层大类（如"山西晋城周村220千伏输变电工程"）
+    - Level 1: 二级分类（如"变电工程"、"线路工程"），有自己的 items
+    - Level 2: 具体项目（如"周村220千伏变电站新建工程"）
     """
     def __init__(self):
         self.items: List[InvestmentItem] = []
@@ -273,24 +277,29 @@ class FeasibilityApprovalInvestment:
     def to_dict(self):
         """转换为嵌套结构，与 designReview 保持一致
         
-        Level="1" 的项目作为大类
-        Level="2" 的项目作为子项（items数组中）
-        Level="3" 的项目也作为子项
+        Level="1" 的项目作为顶层大类（Level: 0）
+        Level="2" 的项目作为二级分类（Level: 1），有自己的 items
+        Level="3" 的项目作为具体项目（Level: 2），放入二级分类的 items
         Level="0" 的项目（合计）跳过
         """
         if not self.items:
             return []
         
         result = []
-        current_category = None
+        current_top_category = None  # Level 0 顶层大类
+        current_sub_category = None  # Level 1 二级分类
         
         for item in self.items:
             if item.level == "1":
-                # 大类项目
-                if current_category is not None:
-                    result.append(current_category)
+                # 顶层大类（如"山西晋城周村220千伏输变电工程"）
+                # 保存之前的二级分类和顶层大类
+                if current_sub_category is not None and current_top_category is not None:
+                    current_top_category["items"].append(current_sub_category)
+                    current_sub_category = None
+                if current_top_category is not None:
+                    result.append(current_top_category)
                 
-                current_category = {
+                current_top_category = {
                     "name": item.name,
                     "Level": 0,
                     "constructionScaleSubstation": item.constructionScaleSubstation or "",
@@ -301,12 +310,30 @@ class FeasibilityApprovalInvestment:
                     "dynamicInvestment": self._parse_number(item.dynamicInvestment),
                     "items": []
                 }
-            elif item.level in ["2", "3"] and current_category is not None:
-                # 子项目
-                current_category["items"].append({
+            elif item.level == "2" and current_top_category is not None:
+                # 二级分类（如"变电工程"、"线路工程"）
+                # 保存之前的二级分类
+                if current_sub_category is not None:
+                    current_top_category["items"].append(current_sub_category)
+                
+                current_sub_category = {
                     "No": self._parse_no(item.no),
                     "name": item.name,
-                    "Level": 1 if item.level == "2" else 2,
+                    "Level": 1,
+                    "constructionScaleSubstation": item.constructionScaleSubstation or "",
+                    "constructionScaleBay": item.constructionScaleBay or "",
+                    "constructionScaleOverheadLine": item.constructionScaleOverheadLine or "",
+                    "constructionScaleOpticalCable": item.constructionScaleOpticalCable or "",
+                    "staticInvestment": self._parse_number(item.staticInvestment),
+                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                    "items": []
+                }
+            elif item.level == "3" and current_sub_category is not None:
+                # 具体项目（如"周村220千伏变电站新建工程"）
+                current_sub_category["items"].append({
+                    "No": self._parse_no(item.no),
+                    "name": item.name,
+                    "Level": 2,
                     "constructionScaleSubstation": item.constructionScaleSubstation or "",
                     "constructionScaleBay": item.constructionScaleBay or "",
                     "constructionScaleOverheadLine": item.constructionScaleOverheadLine or "",
@@ -316,13 +343,18 @@ class FeasibilityApprovalInvestment:
                 })
             elif item.level == "0":
                 # 合计行 - 跳过
-                if current_category is not None:
-                    result.append(current_category)
-                    current_category = None
+                if current_sub_category is not None and current_top_category is not None:
+                    current_top_category["items"].append(current_sub_category)
+                    current_sub_category = None
+                if current_top_category is not None:
+                    result.append(current_top_category)
+                    current_top_category = None
         
-        # 添加最后一个类别
-        if current_category is not None:
-            result.append(current_category)
+        # 添加最后的分类
+        if current_sub_category is not None and current_top_category is not None:
+            current_top_category["items"].append(current_sub_category)
+        if current_top_category is not None:
+            result.append(current_top_category)
         
         return result
     
@@ -349,6 +381,10 @@ class FeasibilityReviewInvestment:
     """可研评审投资估算数据模型
     
     返回结构与 designReview 保持一致，不包含建设规模字段
+    三层嵌套结构：
+    - Level 0: 顶层大类
+    - Level 1: 二级分类，有自己的 items
+    - Level 2: 具体项目
     """
     def __init__(self):
         self.items: List[InvestmentItem] = []
@@ -356,48 +392,70 @@ class FeasibilityReviewInvestment:
     def to_dict(self):
         """转换为嵌套结构，与 designReview 保持一致
         
-        Level="1" 的项目作为大类
-        Level="2" 的项目作为子项
-        Level="3" 的项目也作为子项
+        Level="1" 的项目作为顶层大类（Level: 0）
+        Level="2" 的项目作为二级分类（Level: 1），有自己的 items
+        Level="3" 的项目作为具体项目（Level: 2），放入二级分类的 items
         Level="0" 的项目（合计）跳过
         """
         if not self.items:
             return []
         
         result = []
-        current_category = None
+        current_top_category = None
+        current_sub_category = None
         
         for item in self.items:
             if item.level == "1":
-                # 大类项目
-                if current_category is not None:
-                    result.append(current_category)
+                # 顶层大类
+                if current_sub_category is not None and current_top_category is not None:
+                    current_top_category["items"].append(current_sub_category)
+                    current_sub_category = None
+                if current_top_category is not None:
+                    result.append(current_top_category)
                 
-                current_category = {
+                current_top_category = {
                     "name": item.name,
                     "Level": 0,
                     "staticInvestment": self._parse_number(item.staticInvestment),
                     "dynamicInvestment": self._parse_number(item.dynamicInvestment),
                     "items": []
                 }
-            elif item.level in ["2", "3"] and current_category is not None:
-                # 子项目
-                current_category["items"].append({
+            elif item.level == "2" and current_top_category is not None:
+                # 二级分类
+                if current_sub_category is not None:
+                    current_top_category["items"].append(current_sub_category)
+                
+                current_sub_category = {
                     "No": self._parse_no(item.no),
                     "name": item.name,
-                    "Level": 1 if item.level == "2" else 2,
+                    "Level": 1,
+                    "staticInvestment": self._parse_number(item.staticInvestment),
+                    "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                    "items": []
+                }
+            elif item.level == "3" and current_sub_category is not None:
+                # 具体项目
+                current_sub_category["items"].append({
+                    "No": self._parse_no(item.no),
+                    "name": item.name,
+                    "Level": 2,
                     "staticInvestment": self._parse_number(item.staticInvestment),
                     "dynamicInvestment": self._parse_number(item.dynamicInvestment),
                 })
             elif item.level == "0":
                 # 合计行 - 跳过
-                if current_category is not None:
-                    result.append(current_category)
-                    current_category = None
+                if current_sub_category is not None and current_top_category is not None:
+                    current_top_category["items"].append(current_sub_category)
+                    current_sub_category = None
+                if current_top_category is not None:
+                    result.append(current_top_category)
+                    current_top_category = None
         
-        # 添加最后一个类别
-        if current_category is not None:
-            result.append(current_category)
+        # 添加最后的分类
+        if current_sub_category is not None and current_top_category is not None:
+            current_top_category["items"].append(current_sub_category)
+        if current_top_category is not None:
+            result.append(current_top_category)
         
         return result
     
