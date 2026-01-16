@@ -244,7 +244,6 @@ def find_attachment_start_page(pdf_path: str, use_ocr: bool = False, debug: bool
                         matched_keywords.append(kw)
                 
                 # 检查是否包含"附件"后跟数字
-                import re
                 if re.search(r'附件\s*[0-9１２３４５６７８９０一二三四五六七八九十]', text_no_space):
                     matched_keywords.append("附件+数字")
                 
