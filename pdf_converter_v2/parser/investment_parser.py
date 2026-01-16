@@ -73,18 +73,28 @@ def determine_level(text: str) -> str:
     
     text = text.strip()
     
-    # 合计行
-    if "合计" in text or "小计" in text:
+    # 合计行（包含"合 计"这种带空格的情况）
+    text_no_space = text.replace(" ", "")
+    if "合计" in text_no_space or "小计" in text_no_space:
         return "0"
     
-    # 第一级: 大写中文数字（可能有或没有标点）
-    # 匹配: "一、", "一，", "一.", "一" (单独出现或后面跟空格)
-    if re.match(r'^[一二三四五六七八九十]+[、，,.]', text) or re.match(r'^[一二三四五六七八九十]+\s*$', text):
+    # 第一级: 大写中文数字
+    # 匹配: "一、", "一，", "一.", "一 ", "一" (后面可以跟任意字符或结束)
+    # 注意：需要排除"十一"、"十二"等多位数字，只匹配单个中文数字
+    if re.match(r'^[一二三四五六七八九十]+[、，,.\s]', text):
+        return "1"
+    # 如果序号后面直接跟汉字（没有标点），也认为是第一级
+    # 例如: "一变电工程", "二线路工程"
+    if re.match(r'^[一二三四五六七八九十]+[\u4e00-\u9fa5]', text):
         return "1"
     
-    # 第二级: 小写阿拉伯数字（可能有或没有标点）
-    # 匹配: "1、", "1，", "1.", "1 " (后面跟空格)
-    if re.match(r'^\d+[、，,.]', text) and not text.startswith('(') and not text.startswith('（'):
+    # 第二级: 小写阿拉伯数字
+    # 匹配: "1、", "1，", "1.", "1 " (后面跟标点或空格)
+    if re.match(r'^\d+[、，,.\s]', text) and not text.startswith('(') and not text.startswith('（'):
+        return "2"
+    # 如果数字后面直接跟汉字（没有标点），也认为是第二级
+    # 例如: "1周村220kV变电站"
+    if re.match(r'^\d+[\u4e00-\u9fa5]', text) and not text.startswith('(') and not text.startswith('（'):
         return "2"
     
     # 第三级: 带括号的数字
@@ -152,7 +162,9 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
     for table in tables:
         for row in table:
             row_text = " ".join([str(cell) for cell in row])
-            if "工程或费用名称" in row_text and "静态投资" in row_text:
+            # 移除空格后再匹配，以处理OCR可能产生的空格
+            row_text_no_space = row_text.replace(" ", "")
+            if "工程或费用名称" in row_text_no_space and "静态投资" in row_text_no_space:
                 target_table = table
                 logger.info(f"[可研批复投资] 找到投资估算表格, 行数: {len(table)}")
                 break
@@ -176,20 +188,24 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
     
     for row_idx, row in enumerate(target_table):
         row_text = " ".join([str(cell) for cell in row])
+        # 移除空格后再匹配，以处理OCR可能产生的空格
+        row_text_no_space = row_text.replace(" ", "")
         
         # 找到表头行
-        if "工程或费用名称" in row_text or "序号" in row_text:
+        if "工程或费用名称" in row_text_no_space or "序号" in row_text:
             header_row_idx = row_idx
             logger.debug(f"[可研批复投资] 找到表头行: 第{row_idx}行")
             
             # 识别各列
             for col_idx, cell in enumerate(row):
                 cell_text = str(cell).strip()
+                # 移除空格后再匹配
+                cell_text_no_space = cell_text.replace(" ", "")
                 if "序号" in cell_text:
                     no_idx = col_idx
-                elif "工程或费用名称" in cell_text or "名称" in cell_text:
+                elif "工程或费用名称" in cell_text_no_space or "名称" in cell_text:
                     name_idx = col_idx
-                elif "架空线" in cell_text:
+                elif "架空线" in cell_text_no_space:
                     overhead_line_idx = col_idx
                 elif "间隔" in cell_text:
                     bay_idx = col_idx
@@ -197,9 +213,9 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
                     substation_idx = col_idx
                 elif "光缆" in cell_text:
                     optical_cable_idx = col_idx
-                elif "静态投资" in cell_text:
+                elif "静态投资" in cell_text_no_space:
                     static_investment_idx = col_idx
-                elif "动态投资" in cell_text:
+                elif "动态投资" in cell_text_no_space:
                     dynamic_investment_idx = col_idx
             
             logger.info(f"[可研批复投资] 列索引: 序号={no_idx}, 名称={name_idx}, "
@@ -297,7 +313,9 @@ def parse_feasibility_review_investment(markdown_content: str) -> FeasibilityRev
     for table in tables:
         for row in table:
             row_text = " ".join([str(cell) for cell in row])
-            if "工程或费用名称" in row_text or ("序号" in row_text and "静态投资" in row_text):
+            # 移除空格后再匹配，以处理OCR可能产生的空格
+            row_text_no_space = row_text.replace(" ", "")
+            if "工程或费用名称" in row_text_no_space or ("序号" in row_text and "静态投资" in row_text_no_space):
                 target_table = table
                 logger.info(f"[可研评审投资] 找到投资估算表格, 行数: {len(table)}")
                 break
@@ -317,20 +335,24 @@ def parse_feasibility_review_investment(markdown_content: str) -> FeasibilityRev
     
     for row_idx, row in enumerate(target_table):
         row_text = " ".join([str(cell) for cell in row])
+        # 移除空格后再匹配，以处理OCR可能产生的空格
+        row_text_no_space = row_text.replace(" ", "")
         
-        if "工程或费用名称" in row_text or "序号" in row_text:
+        if "工程或费用名称" in row_text_no_space or "序号" in row_text:
             header_row_idx = row_idx
             logger.debug(f"[可研评审投资] 找到表头行: 第{row_idx}行")
             
             for col_idx, cell in enumerate(row):
                 cell_text = str(cell).strip()
+                # 移除空格后再匹配
+                cell_text_no_space = cell_text.replace(" ", "")
                 if "序号" in cell_text:
                     no_idx = col_idx
-                elif "工程或费用名称" in cell_text or "名称" in cell_text:
+                elif "工程或费用名称" in cell_text_no_space or "名称" in cell_text:
                     name_idx = col_idx
-                elif "静态投资" in cell_text:
+                elif "静态投资" in cell_text_no_space:
                     static_investment_idx = col_idx
-                elif "动态投资" in cell_text:
+                elif "动态投资" in cell_text_no_space:
                     dynamic_investment_idx = col_idx
             
             logger.info(f"[可研评审投资] 列索引: 序号={no_idx}, 名称={name_idx}, "
@@ -406,7 +428,9 @@ def parse_preliminary_approval_investment(markdown_content: str) -> PreliminaryA
     for table in tables:
         for row in table:
             row_text = " ".join([str(cell) for cell in row])
-            if "工程名称" in row_text or ("序号" in row_text and "静态投资" in row_text):
+            # 移除空格后再匹配，以处理OCR可能产生的空格
+            row_text_no_space = row_text.replace(" ", "")
+            if "工程名称" in row_text_no_space or ("序号" in row_text and "静态投资" in row_text_no_space):
                 target_table = table
                 logger.info(f"[初设批复投资] 找到投资估算表格, 行数: {len(table)}")
                 break
@@ -426,20 +450,24 @@ def parse_preliminary_approval_investment(markdown_content: str) -> PreliminaryA
     
     for row_idx, row in enumerate(target_table):
         row_text = " ".join([str(cell) for cell in row])
+        # 移除空格后再匹配，以处理OCR可能产生的空格
+        row_text_no_space = row_text.replace(" ", "")
         
-        if "工程名称" in row_text or "序号" in row_text:
+        if "工程名称" in row_text_no_space or "序号" in row_text:
             header_row_idx = row_idx
             logger.debug(f"[初设批复投资] 找到表头行: 第{row_idx}行")
             
             for col_idx, cell in enumerate(row):
                 cell_text = str(cell).strip()
+                # 移除空格后再匹配，以处理OCR可能产生的空格
+                cell_text_no_space = cell_text.replace(" ", "")
                 if "序号" in cell_text:
                     no_idx = col_idx
-                elif "工程名称" in cell_text or "名称" in cell_text:
+                elif "工程名称" in cell_text_no_space or "名称" in cell_text:
                     name_idx = col_idx
-                elif "静态投资" in cell_text:
+                elif "静态投资" in cell_text_no_space:
                     static_investment_idx = col_idx
-                elif "动态投资" in cell_text:
+                elif "动态投资" in cell_text_no_space:
                     dynamic_investment_idx = col_idx
             
             logger.info(f"[初设批复投资] 列索引: 序号={no_idx}, 名称={name_idx}, "
