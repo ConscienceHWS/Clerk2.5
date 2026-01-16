@@ -327,6 +327,26 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                 op_list = parse_operational_conditions(markdown_content, require_title=False)
             serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
             result = {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
+        elif forced_document_type in ["feasibilityApprovalInvestment", "feasibilityReviewInvestment", "preliminaryApprovalInvestment"]:
+            # 投资估算类型处理
+            logger.info(f"[JSON转换] 处理投资估算类型: {forced_document_type}")
+            logger.debug(f"[JSON转换] Markdown内容长度: {len(markdown_content)} 字符")
+            
+            investment_record = parse_investment_record(markdown_content, forced_document_type)
+            
+            if investment_record:
+                data = investment_record.to_dict()
+                logger.info(f"[JSON转换] 投资估算解析成功，共 {len(data)} 条记录")
+                
+                # 输出前3条记录的摘要
+                if data:
+                    for idx, item in enumerate(data[:3]):
+                        logger.debug(f"[JSON转换] 记录 {idx+1}: No={item.get('No', '')}, Name={item.get('name', '')}, Level={item.get('Level', '')}")
+                
+                result = {"document_type": forced_document_type, "data": data}
+            else:
+                logger.error("[JSON转换] 投资估算解析失败：parse_investment_record 返回 None")
+                result = {"document_type": forced_document_type, "data": [], "error": "投资估算解析失败"}
         else:
             result = {"document_type": forced_document_type, "data": {}}
         
