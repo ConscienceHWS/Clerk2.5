@@ -216,6 +216,43 @@ async def process_conversion_task(
         result = None
         tables_info = None
         
+        # 针对投资估算类型，需要先切割附件页
+        if request.doc_type in ("feasibilityApprovalInvestment", "feasibilityReviewInvestment", "preliminaryApprovalInvestment"):
+            logger.info(f"[任务 {task_id}] 文档类型 {request.doc_type}，需要先切割附件页")
+            
+            # 导入附件页切割函数
+            import sys
+            from pathlib import Path as PathLib
+            sys.path.insert(0, str(PathLib(__file__).parent.parent))
+            
+            try:
+                from test_no import split_attachment_pages
+                
+                # 创建附件页输出目录
+                attachment_dir = PathLib(output_dir) / "attachments"
+                
+                # 切割附件页
+                logger.info(f"[任务 {task_id}] 开始切割附件页...")
+                await asyncio.to_thread(
+                    split_attachment_pages,
+                    file_path,
+                    attachment_dir,
+                    use_ocr=True,
+                    debug=False
+                )
+                
+                # 查找切割后的附件页PDF
+                attachment_pdfs = list(attachment_dir.glob("*_附件页_*.pdf"))
+                if attachment_pdfs:
+                    # 使用第一个附件页PDF作为输入
+                    file_path = str(attachment_pdfs[0])
+                    logger.info(f"[任务 {task_id}] 附件页切割完成，使用文件: {file_path}")
+                else:
+                    logger.warning(f"[任务 {task_id}] 未找到附件页，使用原始文件")
+            except Exception as e:
+                logger.error(f"[任务 {task_id}] 附件页切割失败: {e}")
+                logger.warning(f"[任务 {task_id}] 将使用原始文件继续处理")
+        
         # 针对结算报告 / 初设评审类文档，直接执行表格提取，不调用外部 API
         if request.doc_type in ("settlementReport", "designReview"):
             logger.info(f"[任务 {task_id}] 文档类型 {request.doc_type}，跳过外部 API，直接执行表格提取")
