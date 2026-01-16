@@ -415,33 +415,48 @@ def parse_preliminary_approval_investment(markdown_content: str) -> PreliminaryA
     
     Note: 需要包含合计行，合计的level为0
     """
+    logger.info("[初设批复投资] ========== 开始解析初设批复概算投资 ==========")
+    logger.debug(f"[初设批复投资] Markdown内容长度: {len(markdown_content)} 字符")
+    
     record = PreliminaryApprovalInvestment()
     
+    logger.info("[初设批复投资] 开始提取表格...")
     tables = extract_table_with_rowspan_colspan(markdown_content)
+    logger.info(f"[初设批复投资] 提取到 {len(tables) if tables else 0} 个表格")
     
     if not tables:
         logger.warning("[初设批复投资] 未能提取出任何表格内容")
         return record
     
     # 找到包含投资估算的表格
+    logger.info("[初设批复投资] 开始查找投资估算表格...")
     target_table = None
-    for table in tables:
-        for row in table:
+    for table_idx, table in enumerate(tables):
+        logger.debug(f"[初设批复投资] 检查表格 {table_idx + 1}/{len(tables)}, 行数: {len(table)}")
+        for row_idx, row in enumerate(table):
             row_text = " ".join([str(cell) for cell in row])
             # 移除空格后再匹配，以处理OCR可能产生的空格
             row_text_no_space = row_text.replace(" ", "")
+            
+            # 输出前几行用于调试
+            if row_idx < 3:
+                logger.debug(f"[初设批复投资] 表格{table_idx+1} 第{row_idx+1}行: {row_text[:100]}")
+            
             if "工程名称" in row_text_no_space or ("序号" in row_text and "静态投资" in row_text_no_space):
                 target_table = table
-                logger.info(f"[初设批复投资] 找到投资估算表格, 行数: {len(table)}")
+                logger.info(f"[初设批复投资] ✓ 找到投资估算表格 (表格{table_idx+1}), 行数: {len(table)}")
+                logger.debug(f"[初设批复投资] 匹配行内容: {row_text}")
                 break
         if target_table:
             break
     
     if not target_table:
-        logger.warning("[初设批复投资] 未找到包含投资估算的表格")
+        logger.warning("[初设批复投资] ✗ 未找到包含投资估算的表格")
+        logger.warning("[初设批复投资] 查找条件: 包含'工程名称' 或 ('序号' 且 '静态投资')")
         return record
     
     # 识别表头行和列索引
+    logger.info("[初设批复投资] 开始识别表头行和列索引...")
     header_row_idx = -1
     no_idx = -1
     name_idx = -1
@@ -453,41 +468,64 @@ def parse_preliminary_approval_investment(markdown_content: str) -> PreliminaryA
         # 移除空格后再匹配，以处理OCR可能产生的空格
         row_text_no_space = row_text.replace(" ", "")
         
+        logger.debug(f"[初设批复投资] 检查第{row_idx}行: {row_text[:80]}")
+        
         if "工程名称" in row_text_no_space or "序号" in row_text:
             header_row_idx = row_idx
-            logger.debug(f"[初设批复投资] 找到表头行: 第{row_idx}行")
+            logger.info(f"[初设批复投资] ✓ 找到表头行: 第{row_idx}行")
+            logger.debug(f"[初设批复投资] 表头内容: {row}")
             
             for col_idx, cell in enumerate(row):
                 cell_text = str(cell).strip()
                 # 移除空格后再匹配，以处理OCR可能产生的空格
                 cell_text_no_space = cell_text.replace(" ", "")
+                
+                logger.debug(f"[初设批复投资] 列{col_idx}: '{cell_text}' (去空格: '{cell_text_no_space}')")
+                
                 if "序号" in cell_text:
                     no_idx = col_idx
+                    logger.debug(f"[初设批复投资] → 序号列: {col_idx}")
                 elif "工程名称" in cell_text_no_space or "名称" in cell_text:
                     name_idx = col_idx
+                    logger.debug(f"[初设批复投资] → 名称列: {col_idx}")
                 elif "静态投资" in cell_text_no_space:
                     static_investment_idx = col_idx
+                    logger.debug(f"[初设批复投资] → 静态投资列: {col_idx}")
                 elif "动态投资" in cell_text_no_space:
                     dynamic_investment_idx = col_idx
+                    logger.debug(f"[初设批复投资] → 动态投资列: {col_idx}")
             
-            logger.info(f"[初设批复投资] 列索引: 序号={no_idx}, 名称={name_idx}, "
+            logger.info(f"[初设批复投资] ✓ 列索引识别完成: 序号={no_idx}, 名称={name_idx}, "
                        f"静态投资={static_investment_idx}, 动态投资={dynamic_investment_idx}")
             break
     
     if header_row_idx == -1:
-        logger.warning("[初设批复投资] 未找到表头行")
+        logger.warning("[初设批复投资] ✗ 未找到表头行")
+        logger.warning("[初设批复投资] 查找条件: 包含'工程名称' 或 '序号'")
         return record
     
     # 解析数据行
+    logger.info(f"[初设批复投资] 开始解析数据行 (从第{header_row_idx + 1}行到第{len(target_table)}行)...")
+    parsed_count = 0
+    skipped_count = 0
+    
     for row_idx in range(header_row_idx + 1, len(target_table)):
         row = target_table[row_idx]
         
+        logger.debug(f"[初设批复投资] 处理第{row_idx}行, 列数: {len(row)}")
+        
         if len(row) < 2:
+            logger.debug(f"[初设批复投资] 跳过第{row_idx}行: 列数不足 ({len(row)} < 2)")
+            skipped_count += 1
             continue
         
         if name_idx >= 0 and name_idx < len(row):
             name = str(row[name_idx]).strip()
+            logger.debug(f"[初设批复投资] 第{row_idx}行名称: '{name}'")
+            
             if not name or name in ["", "nan", "None"]:
+                logger.debug(f"[初设批复投资] 跳过第{row_idx}行: 名称为空")
+                skipped_count += 1
                 continue
             
             item = InvestmentItem()
@@ -498,22 +536,34 @@ def parse_preliminary_approval_investment(markdown_content: str) -> PreliminaryA
             item.name = name
             
             # 判断等级
-            if item.no:
-                item.level = determine_level(item.no + item.name)
-            else:
-                item.level = determine_level(item.name)
+            level_input = (item.no + item.name) if item.no else item.name
+            item.level = determine_level(level_input)
+            logger.debug(f"[初设批复投资] 等级判断: '{level_input}' -> Level={item.level}")
             
             # 提取投资金额
             if static_investment_idx >= 0 and static_investment_idx < len(row):
-                item.staticInvestment = clean_number_string(str(row[static_investment_idx]))
+                raw_static = str(row[static_investment_idx])
+                item.staticInvestment = clean_number_string(raw_static)
+                logger.debug(f"[初设批复投资] 静态投资: '{raw_static}' -> '{item.staticInvestment}'")
             
             if dynamic_investment_idx >= 0 and dynamic_investment_idx < len(row):
-                item.dynamicInvestment = clean_number_string(str(row[dynamic_investment_idx]))
+                raw_dynamic = str(row[dynamic_investment_idx])
+                item.dynamicInvestment = clean_number_string(raw_dynamic)
+                logger.debug(f"[初设批复投资] 动态投资: '{raw_dynamic}' -> '{item.dynamicInvestment}'")
             
             record.items.append(item)
-            logger.info(f"[初设批复投资] 解析到数据: No={item.no}, Name={item.name}, Level={item.level}")
+            parsed_count += 1
+            logger.info(f"[初设批复投资] ✓ 解析到数据 #{parsed_count}: No={item.no}, Name={item.name}, Level={item.level}, "
+                       f"静态={item.staticInvestment}, 动态={item.dynamicInvestment}")
+        else:
+            logger.debug(f"[初设批复投资] 跳过第{row_idx}行: name_idx={name_idx} 超出范围 (行长度={len(row)})")
+            skipped_count += 1
     
-    logger.info(f"[初设批复投资] 共解析到 {len(record.items)} 条数据")
+    logger.info(f"[初设批复投资] ========== 解析完成 ==========")
+    logger.info(f"[初设批复投资] 成功解析: {parsed_count} 条")
+    logger.info(f"[初设批复投资] 跳过: {skipped_count} 条")
+    logger.info(f"[初设批复投资] 总计: {len(record.items)} 条数据")
+    
     return record
 
 
@@ -531,21 +581,42 @@ def parse_investment_record(markdown_content: str, investment_type: Optional[str
     Returns:
         解析后的记录对象
     """
+    logger.info("=" * 80)
+    logger.info("[投资估算] 开始解析投资估算记录")
+    logger.info(f"[投资估算] Markdown内容长度: {len(markdown_content)} 字符")
+    
     # 如果没有指定类型，自动检测
     if not investment_type:
+        logger.info("[投资估算] 未指定类型，开始自动检测...")
         investment_type = detect_investment_type(markdown_content)
+        logger.info(f"[投资估算] 自动检测结果: {investment_type}")
+    else:
+        logger.info(f"[投资估算] 指定类型: {investment_type}")
     
     if not investment_type:
         logger.error("[投资估算] 无法识别投资估算类型")
+        logger.error(f"[投资估算] Markdown前500字符: {markdown_content[:500]}")
         return None
     
     # 根据类型调用对应的解析函数
+    logger.info(f"[投资估算] 调用解析函数: {investment_type}")
+    
+    result = None
     if investment_type == "feasibilityApprovalInvestment":
-        return parse_feasibility_approval_investment(markdown_content)
+        result = parse_feasibility_approval_investment(markdown_content)
     elif investment_type == "feasibilityReviewInvestment":
-        return parse_feasibility_review_investment(markdown_content)
+        result = parse_feasibility_review_investment(markdown_content)
     elif investment_type == "preliminaryApprovalInvestment":
-        return parse_preliminary_approval_investment(markdown_content)
+        result = parse_preliminary_approval_investment(markdown_content)
     else:
         logger.error(f"[投资估算] 未知的投资估算类型: {investment_type}")
         return None
+    
+    if result:
+        logger.info(f"[投资估算] 解析完成，返回对象类型: {type(result).__name__}")
+        logger.info(f"[投资估算] 记录数量: {len(result.items)}")
+    else:
+        logger.error("[投资估算] 解析函数返回 None")
+    
+    logger.info("=" * 80)
+    return result

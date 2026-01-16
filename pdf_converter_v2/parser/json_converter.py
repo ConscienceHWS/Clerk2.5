@@ -392,11 +392,22 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
     elif doc_type in ["feasibilityApprovalInvestment", "feasibilityReviewInvestment", "preliminaryApprovalInvestment"]:
         # 新增：投资估算类型
         logger.info(f"[JSON转换] 检测到投资估算类型: {doc_type}")
+        logger.debug(f"[JSON转换] Markdown内容长度: {len(markdown_content)} 字符")
+        
         investment_record = parse_investment_record(markdown_content, doc_type)
+        
         if investment_record:
             data = investment_record.to_dict()
+            logger.info(f"[JSON转换] 投资估算解析成功，共 {len(data)} 条记录")
+            
+            # 输出前3条记录的摘要
+            if data:
+                for idx, item in enumerate(data[:3]):
+                    logger.debug(f"[JSON转换] 记录 {idx+1}: No={item.get('No', '')}, Name={item.get('name', '')}, Level={item.get('Level', '')}")
+            
             result = {"document_type": doc_type, "data": data}
         else:
+            logger.error("[JSON转换] 投资估算解析失败：parse_investment_record 返回 None")
             result = {"document_type": doc_type, "data": [], "error": "投资估算解析失败"}
     else:
         result = {"document_type": "unknown", "data": {}, "error": "无法识别的文档类型"}
