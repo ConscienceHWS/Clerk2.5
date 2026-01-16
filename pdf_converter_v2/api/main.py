@@ -329,10 +329,10 @@ async def process_conversion_task(
 @app.post("/convert", response_model=ConversionResponse)
 async def convert_file(
     file: Annotated[UploadFile, File(description="上传的PDF或图片文件")],
-    # 新增：类型参数（英文传参） noiseRec | emRec | opStatus | settlementReport | designReview
+    # 新增：类型参数（英文传参） noiseRec | emRec | opStatus | settlementReport | designReview | feasibilityApprovalInvestment | feasibilityReviewInvestment | preliminaryApprovalInvestment
     type: Annotated[
-        Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview"]],
-        Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview")
+        Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview", "feasibilityApprovalInvestment", "feasibilityReviewInvestment", "preliminaryApprovalInvestment"]],
+        Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview | feasibilityApprovalInvestment | feasibilityReviewInvestment | preliminaryApprovalInvestment")
     ] = None,
 ):
     """
@@ -345,7 +345,15 @@ async def convert_file(
     4. 客户端使用task_id轮询状态或直接获取结果
     
     - **file**: 上传的文件（PDF或图片）
-    - **type**: 文档类型（noiseRec | emRec | opStatus | settlementReport | designReview）
+    - **type**: 文档类型
+      * noiseRec - 噪声检测
+      * emRec - 电磁检测
+      * opStatus - 工况信息
+      * settlementReport - 结算报告
+      * designReview - 设计评审
+      * feasibilityApprovalInvestment - 可研批复投资估算
+      * feasibilityReviewInvestment - 可研评审投资估算
+      * preliminaryApprovalInvestment - 初设批复概算投资
     
     注意：v2 版本内部使用外部API进行转换，v2特有的配置参数（如API URL、backend等）
     通过环境变量或配置文件设置，不通过API参数传入。
@@ -460,6 +468,10 @@ async def convert_file(
         "settlementReport": "settlementReport",
         # 初设评审类
         "designReview": "designReview",
+        # 投资估算类（新增）
+        "feasibilityApprovalInvestment": "feasibilityApprovalInvestment",
+        "feasibilityReviewInvestment": "feasibilityReviewInvestment",
+        "preliminaryApprovalInvestment": "preliminaryApprovalInvestment",
     }
     doc_type = None
     if type:
