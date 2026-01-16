@@ -52,18 +52,20 @@ def detect_investment_type(markdown_content: str) -> Optional[str]:
     return None
 
 
-def determine_level(text: str) -> str:
+def determine_level(text: str, name: str = "") -> str:
     """
     判断明细等级
     
     规则:
-    - 大写中文数字(一、二、三等) -> 第一级
+    - 大写中文数字(一、二、三等) + 名称包含省份 -> 第一级（顶级大类）
+    - 大写中文数字 + 名称无省份（OCR误识别） -> 第二级
     - 小写阿拉伯数字(1、2、3等) -> 第二级  
     - 带括号的数字(1)、2)等) -> 第三级
     - 合计 -> 0
     
     Args:
         text: 序号或名称文本
+        name: 可选，名称文本，用于辅助判断（区分顶级大类和子项）
         
     Returns:
         str: "0"(合计), "1"(一级), "2"(二级), "3"(三级), ""(无法判断)
@@ -81,16 +83,35 @@ def determine_level(text: str) -> str:
     # 第一级: 大写中文数字
     # 匹配: "一、", "一，", "一.", "一 ", "一" (后面可以跟任意字符或结束)
     # 注意：需要排除"十一"、"十二"等多位数字，只匹配单个中文数字
+    is_chinese_numeral = False
     if re.match(r'^[一二三四五六七八九十]+[、，,.\s]', text):
-        return "1"
-    # 如果序号后面直接跟汉字（没有标点），也认为是第一级
+        is_chinese_numeral = True
+    # 如果序号后面直接跟汉字（没有标点），也可能是第一级
     # 例如: "一变电工程", "二线路工程"
-    if re.match(r'^[一二三四五六七八九十]+[\u4e00-\u9fa5]', text):
-        return "1"
-    # 如果只是单独的中文数字（没有后续字符），也是第一级
+    elif re.match(r'^[一二三四五六七八九十]+[\u4e00-\u9fa5]', text):
+        is_chinese_numeral = True
+    # 如果只是单独的中文数字（没有后续字符），也可能是第一级
     # 例如: "一", "二", "三"
-    if re.match(r'^[一二三四五六七八九十]+$', text):
-        return "1"
+    elif re.match(r'^[一二三四五六七八九十]+$', text):
+        is_chinese_numeral = True
+    
+    if is_chinese_numeral:
+        # 进一步判断：如果名称包含省份关键词，才是真正的顶级大类
+        # 例如：山西临汾古县220千伏输变电工程 -> Level 1
+        # 例如：配套通信工程（OCR误识别"3"为"三"） -> Level 2
+        province_keywords = ["山西", "山东", "河北", "河南", "陕西", "甘肃", "江苏", "浙江", 
+                            "安徽", "福建", "江西", "湖北", "湖南", "广东", "广西", "四川",
+                            "贵州", "云南", "青海", "内蒙古", "宁夏", "新疆", "西藏", "辽宁",
+                            "吉林", "黑龙江", "北京", "天津", "上海", "重庆", "海南"]
+        name_to_check = name if name else text
+        has_province = any(prov in name_to_check for prov in province_keywords)
+        
+        if has_province:
+            return "1"
+        else:
+            # 如果没有省份关键词，可能是OCR误识别，按第二级处理
+            logger.debug(f"[等级判断] 中文数字序号但名称无省份关键词，按二级处理: text={text}, name={name}")
+            return "2"
     
     # 第二级: 小写阿拉伯数字
     # 匹配: "1、", "1，", "1.", "1 " (后面跟标点或空格)
@@ -302,9 +323,9 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
             if no_idx >= 0 and no_idx < len(row):
                 no = str(row[no_idx]).strip()
             
-            # 判断等级
+            # 判断等级，传入 name 辅助区分顶级大类和子项
             level_input = (no + name) if no else name
-            level = determine_level(level_input)
+            level = determine_level(level_input, name)
             
             item = InvestmentItem()
             item.no = no
@@ -514,15 +535,15 @@ def parse_feasibility_review_investment(markdown_content: str) -> FeasibilityRev
             
             item.name = name
             
-            # 判断等级 - 使用 no 和 name 分别判断
+            # 判断等级 - 使用 no 和 name 分别判断，传入 name 辅助区分
             if item.no:
                 # 优先使用 no 判断等级
-                item.level = determine_level(item.no)
+                item.level = determine_level(item.no, item.name)
                 if not item.level:
                     # 如果 no 没有匹配，尝试使用 name
-                    item.level = determine_level(item.name)
+                    item.level = determine_level(item.name, item.name)
             else:
-                item.level = determine_level(item.name)
+                item.level = determine_level(item.name, item.name)
             
             # 提取投资金额
             if static_investment_idx >= 0 and static_investment_idx < len(row):
@@ -672,9 +693,9 @@ def parse_preliminary_approval_investment(markdown_content: str) -> PreliminaryA
             
             item.name = name
             
-            # 判断等级
+            # 判断等级，传入 name 辅助区分
             level_input = (item.no + item.name) if item.no else item.name
-            item.level = determine_level(level_input)
+            item.level = determine_level(level_input, item.name)
             logger.debug(f"[初设批复投资] 等级判断: '{level_input}' -> Level={item.level}")
             
             # 提取投资金额
