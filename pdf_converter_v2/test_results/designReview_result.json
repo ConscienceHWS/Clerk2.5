@@ -1,0 +1,16 @@
+{
+  "document_type": "fsApproval",
+  "data": [
+    {
+      "name": "其他费用",
+      "Level": 0,
+      "constructionScaleSubstation": "",
+      "constructionScaleBay": "",
+      "constructionScaleOverheadLine": "",
+      "constructionScaleOpticalCable": "",
+      "staticInvestment": 13.25,
+      "dynamicInvestment": 0.0,
+      "items": []
+    }
+  ]
+}

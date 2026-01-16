@@ -254,50 +254,98 @@ async def process_conversion_task(
                 logger.error(f"[任务 {task_id}] 附件页切割失败: {e}")
                 logger.warning(f"[任务 {task_id}] 将使用原始文件继续处理")
         
-        # 针对结算报告 / 初设评审类文档，直接执行表格提取，不调用外部 API
+        # 针对结算报告 / 初设评审类文档，检查是否有文本层
+        # 如果有文本层，直接执行表格提取，不调用外部 OCR API（速度更快）
         if request.doc_type in ("settlementReport", "designReview"):
-            logger.info(f"[任务 {task_id}] 文档类型 {request.doc_type}，跳过外部 API，直接执行表格提取")
-            # 延迟导入，避免启动时因 pandas/numpy 版本冲突导致服务无法启动
-            from ..utils.table_extractor import extract_and_filter_tables_for_pdf
+            logger.info(f"[任务 {task_id}] 文档类型 {request.doc_type}，检查 PDF 文本层...")
             
-            # 在线程池中执行表格提取（因为它是同步函数，使用 to_thread 避免阻塞事件循环）
-            def run_table_extraction_sync():
-                try:
-                    logger.info(f"[任务 {task_id}] 开始执行表格提取函数...")
-                    logger.info(f"[任务 {task_id}] 参数: pdf_path={file_path}, output_dir={output_dir}, doc_type={request.doc_type}")
-                    result = extract_and_filter_tables_for_pdf(
-                        pdf_path=file_path,
-                        base_output_dir=output_dir,
-                        doc_type=request.doc_type,  # type: ignore[arg-type]
-                    )
-                    logger.info(f"[任务 {task_id}] 表格提取函数执行完成，返回结果: {result is not None}")
-                    return result
-                except Exception as e:
-                    logger.exception(f"[任务 {task_id}] 表格提取/筛选失败: {e}")
-                    return None
+            # 检查 PDF 是否有文本层
+            from ..utils.file_utils import check_pdf_has_text_layer
+            has_text_layer, _ = await asyncio.to_thread(check_pdf_has_text_layer, file_path)
             
-            # 执行表格提取
-            tables_info = await asyncio.to_thread(run_table_extraction_sync)
-            
-            # 构造一个简单的 result，包含必要的字段
-            if tables_info:
-                # 将表格信息挂到任务状态，方便后续调试或扩展
-                task_status[task_id]["tables"] = tables_info
-                logger.info(
-                    f"[任务 {task_id}] 表格提取完成，筛选目录: {tables_info.get('filtered_dir')}"
-                )
+            if has_text_layer:
+                # 有文本层，直接执行表格提取，跳过外部 OCR API
+                logger.info(f"[任务 {task_id}] PDF 有文本层，直接执行表格提取（跳过外部 OCR API）")
+                # 延迟导入，避免启动时因 pandas/numpy 版本冲突导致服务无法启动
+                from ..utils.table_extractor import extract_and_filter_tables_for_pdf
                 
-                # 构造 result，包含解析后的 JSON 数据
-                result = {
-                    "markdown_file": None,  # 这两个类型不需要 markdown
-                    "json_file": None,  # JSON 数据直接放在 json_data 中
-                    "json_data": {
-                        "document_type": request.doc_type,
-                        "data": tables_info.get("parsed_data", {}),
+                # 在线程池中执行表格提取（因为它是同步函数，使用 to_thread 避免阻塞事件循环）
+                def run_table_extraction_sync():
+                    try:
+                        logger.info(f"[任务 {task_id}] 开始执行表格提取函数...")
+                        logger.info(f"[任务 {task_id}] 参数: pdf_path={file_path}, output_dir={output_dir}, doc_type={request.doc_type}")
+                        result = extract_and_filter_tables_for_pdf(
+                            pdf_path=file_path,
+                            base_output_dir=output_dir,
+                            doc_type=request.doc_type,  # type: ignore[arg-type]
+                        )
+                        logger.info(f"[任务 {task_id}] 表格提取函数执行完成，返回结果: {result is not None}")
+                        return result
+                    except Exception as e:
+                        logger.exception(f"[任务 {task_id}] 表格提取/筛选失败: {e}")
+                        return None
+                
+                # 执行表格提取
+                tables_info = await asyncio.to_thread(run_table_extraction_sync)
+                
+                # 构造一个简单的 result，包含必要的字段
+                if tables_info:
+                    # 将表格信息挂到任务状态，方便后续调试或扩展
+                    task_status[task_id]["tables"] = tables_info
+                    logger.info(
+                        f"[任务 {task_id}] 表格提取完成，筛选目录: {tables_info.get('filtered_dir')}"
+                    )
+                    
+                    # 构造 result，包含解析后的 JSON 数据
+                    result = {
+                        "markdown_file": None,  # 这两个类型不需要 markdown
+                        "json_file": None,  # JSON 数据直接放在 json_data 中
+                        "json_data": {
+                            "document_type": request.doc_type,
+                            "data": tables_info.get("parsed_data", {}),
+                        }
                     }
-                }
+                else:
+                    # 表格提取失败，返回错误
+                    logger.error(f"[任务 {task_id}] 表格提取失败，返回空结果")
+                    result = {
+                        "markdown_file": None,
+                        "json_file": None,
+                        "json_data": {
+                            "document_type": request.doc_type,
+                            "data": {},
+                            "error": "表格提取失败"
+                        }
+                    }
+            else:
+                # 没有文本层（扫描件），需要调用外部 OCR API
+                logger.warning(f"[任务 {task_id}] PDF 无文本层（可能是扫描件），调用外部 OCR API")
+                result = await convert_to_markdown(
+                    input_file=file_path,
+                    output_dir=output_dir,
+                    is_ocr=True,  # 启用 OCR
+                    formula_enable=True,
+                    table_enable=True,
+                    language=DEFAULT_LANGUAGE,
+                    backend=DEFAULT_BACKEND,
+                    url=DEFAULT_API_URL,
+                    embed_images=False,
+                    output_json=True,
+                    start_page_id=DEFAULT_START_PAGE_ID,
+                    end_page_id=DEFAULT_END_PAGE_ID,
+                    parse_method=DEFAULT_PARSE_METHOD,
+                    server_url=DEFAULT_SERVER_URL,
+                    response_format_zip=DEFAULT_RESPONSE_FORMAT_ZIP,
+                    return_middle_json=DEFAULT_RETURN_MIDDLE_JSON,
+                    return_model_output=DEFAULT_RETURN_MODEL_OUTPUT,
+                    return_md=DEFAULT_RETURN_MD,
+                    return_images=DEFAULT_RETURN_IMAGES,
+                    return_content_list=DEFAULT_RETURN_CONTENT_LIST,
+                    forced_document_type=request.doc_type
+                )
         else:
-            # 其他类型：执行转换（v2 使用外部API）
+            # 其他类型（包括投资类型 fsApproval, fsReview, pdApproval 以及 noiseRec, emRec, opStatus）
+            # 执行转换（v2 使用外部API）
             # v2 特有的参数通过配置或环境变量获取
             result = await convert_to_markdown(
                 input_file=file_path,
