@@ -169,8 +169,9 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
         logger.warning("[可研批复投资] 未能提取出任何表格内容")
         return record
     
-    # 找到投资估算表格
-    target_table = None
+    # 找到所有投资估算表格并合并
+    # 因为OCR可能将一个大表格拆分成多个<table>
+    all_matching_tables = []
     for table_idx, table in enumerate(tables):
         table_text = ""
         for row in table:
@@ -179,13 +180,44 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
         table_text_no_space = table_text.replace(" ", "")
         # 选择包含"工程或费用名称"和"静态投资"的表格
         if "工程或费用名称" in table_text_no_space and "静态投资" in table_text_no_space:
-            target_table = table
+            all_matching_tables.append((table_idx, table))
             logger.info(f"[可研批复投资] 找到投资估算表格 (表格{table_idx+1}), 行数: {len(table)}")
-            break
     
-    if not target_table:
+    if not all_matching_tables:
         logger.warning("[可研批复投资] 未找到包含投资估算的表格")
         return record
+    
+    # 如果只有一个表格，直接使用
+    if len(all_matching_tables) == 1:
+        target_table = all_matching_tables[0][1]
+    else:
+        # 多个表格：合并所有表格的数据行（跳过重复的表头行）
+        logger.info(f"[可研批复投资] 发现 {len(all_matching_tables)} 个投资估算表格，将进行合并")
+        target_table = []
+        first_table = True
+        for table_idx, table in all_matching_tables:
+            if first_table:
+                # 第一个表格：保留全部内容（包括表头）
+                target_table.extend(table)
+                first_table = False
+            else:
+                # 后续表格：跳过表头行（前几行包含"序号"、"工程或费用名称"等）
+                header_end_idx = 0
+                for row_idx, row in enumerate(table):
+                    row_text = " ".join([str(cell) for cell in row]).replace(" ", "")
+                    # 如果这行包含表头关键词，继续跳过
+                    if "序号" in row_text or "工程或费用名称" in row_text or "建设规模" in row_text:
+                        header_end_idx = row_idx + 1
+                    # 如果第一列是中文数字（一、二、三...），说明是数据行开始
+                    elif len(row) > 0:
+                        first_cell = str(row[0]).strip()
+                        if first_cell in ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]:
+                            break
+                # 只添加数据行
+                target_table.extend(table[header_end_idx:])
+                logger.debug(f"[可研批复投资] 表格{table_idx+1}: 跳过前{header_end_idx}行表头，添加{len(table)-header_end_idx}行数据")
+        
+        logger.info(f"[可研批复投资] 合并后总行数: {len(target_table)}")
     
     # 识别表头行和列索引
     # 注意：表格可能有多层表头（rowspan），需要扫描前几行来找到所有列名
