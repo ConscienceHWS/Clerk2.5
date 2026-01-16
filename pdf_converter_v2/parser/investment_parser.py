@@ -169,8 +169,7 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
         logger.warning("[可研批复投资] 未能提取出任何表格内容")
         return record
     
-    # 找到包含"四"（山西晋城周村）的投资估算表格
-    # 因为用户只需要"四"及以下的数据
+    # 找到投资估算表格
     target_table = None
     for table_idx, table in enumerate(tables):
         table_text = ""
@@ -178,15 +177,11 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
             table_text += " ".join([str(cell) for cell in row])
         # 移除空格后再匹配
         table_text_no_space = table_text.replace(" ", "")
-        # 优先选择包含"四"（晋城周村）的表格
-        if "四" in table_text and "周村" in table_text and "静态投资" in table_text_no_space:
-            target_table = table
-            logger.info(f"[可研批复投资] 找到包含'四'的投资估算表格 (表格{table_idx+1}), 行数: {len(table)}")
-            break
-        # 否则选择第一个包含投资估算的表格
-        elif target_table is None and "工程或费用名称" in table_text_no_space and "静态投资" in table_text_no_space:
+        # 选择包含"工程或费用名称"和"静态投资"的表格
+        if "工程或费用名称" in table_text_no_space and "静态投资" in table_text_no_space:
             target_table = table
             logger.info(f"[可研批复投资] 找到投资估算表格 (表格{table_idx+1}), 行数: {len(table)}")
+            break
     
     if not target_table:
         logger.warning("[可研批复投资] 未找到包含投资估算的表格")
@@ -257,10 +252,7 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
         logger.warning("[可研批复投资] 未找到表头行")
         return record
     
-    # 解析数据行
-    # 使用状态变量跟踪是否在"四"区域内
-    in_section_four = False
-    
+    # 解析数据行（输出全部数据，不再只筛选"四"区域）
     for row_idx in range(header_row_idx + 1, len(target_table)):
         row = target_table[row_idx]
         
@@ -281,25 +273,6 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
             # 判断等级
             level_input = (no + name) if no else name
             level = determine_level(level_input)
-            
-            # 检查是否是大类（Level=1）
-            if level == "1":
-                no_cleaned = no.strip()
-                # 检查是否进入或退出"四"区域
-                if no_cleaned == "四" or "四、" in no or "四，" in no:
-                    in_section_four = True
-                    logger.info(f"[可研批复投资] 进入'四'区域: {name}")
-                elif no_cleaned in ["一", "二", "三", "五", "六", "七", "八", "九", "十"] or \
-                     any(prefix in no for prefix in ["一、", "二、", "三、", "五、", "六、", "七、", "八、", "九、", "十、"]):
-                    # 遇到其他大类，退出"四"区域
-                    if in_section_four:
-                        logger.info(f"[可研批复投资] 退出'四'区域: {name}")
-                    in_section_four = False
-            
-            # 只保留"四"区域内的数据
-            if not in_section_four:
-                logger.debug(f"[可研批复投资] 跳过非'四'区域数据: No={no}, Name={name}")
-                continue
             
             item = InvestmentItem()
             item.no = no
