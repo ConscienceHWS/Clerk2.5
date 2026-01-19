@@ -2193,19 +2193,35 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
         '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15, '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20
     }
     
+    # 特殊的"其中："项，应作为 Level 1（独立大类）而非子项
+    SPECIAL_LEVEL1_ITEMS = [
+        "可抵扣固定资产增值税额",
+    ]
+    
     def determine_level(no_str: str, expense_name: str = "") -> int:
         """
         根据序号格式和费用名称判断层级：
         - 中文数字（一、二、三）：Level 1（大类）
         - 阿拉伯数字（1、2、3）：Level 1（大类）
         - 带括号的数字（(1)、（一））：Level 2（子项）
-        - 以"其中："开头的行：Level 2（子项）
+        - 以"其中："开头的行：Level 2（子项），但特殊项除外
         """
         no_str = str(no_str).strip() if no_str else ""
         expense_name = str(expense_name).strip() if expense_name else ""
         
-        # 优先检查：以"其中："或"其中:"开头的 -> Level 2（子项）
-        # 这类行通常序号为空，所以必须先检查
+        # 移除"其中："前缀用于判断
+        name_without_prefix = expense_name
+        if expense_name.startswith("其中："):
+            name_without_prefix = expense_name[3:]
+        elif expense_name.startswith("其中:"):
+            name_without_prefix = expense_name[3:]
+        
+        # 检查是否为特殊的 Level 1 项
+        for special_item in SPECIAL_LEVEL1_ITEMS:
+            if special_item in name_without_prefix:
+                return 1
+        
+        # 以"其中："或"其中:"开头的 -> Level 2（子项）
         if expense_name.startswith("其中：") or expense_name.startswith("其中:"):
             return 2
         
@@ -2384,6 +2400,13 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
         # 判断层级（传入费用名称用于判断"其中："）
         level = determine_level(no_str, expense_name)
         
+        # 去除"其中："前缀
+        clean_expense_name = expense_name
+        if expense_name.startswith("其中："):
+            clean_expense_name = expense_name[3:]
+        elif expense_name.startswith("其中:"):
+            clean_expense_name = expense_name[3:]
+        
         # 解析费用金额
         construction_cost = parse_number(construction_val)
         equipment_cost = parse_number(equipment_val)
@@ -2394,7 +2417,7 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
             "No": no if no is not None else idx + 1,
             "Level": level,
             "name": project_name,  # 从标题提取的工程名称
-            "projectOrExpenseName": expense_name,
+            "projectOrExpenseName": clean_expense_name,
             "constructionProjectCost": construction_cost,
             "equipmentPurchaseCost": equipment_cost,
             "installationProjectCost": installation_cost,
@@ -2442,19 +2465,35 @@ def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[D
         '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15, '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20
     }
     
+    # 特殊的"其中："项，应作为 Level 1（独立大类）而非子项
+    SPECIAL_LEVEL1_ITEMS = [
+        "可抵扣固定资产增值税额",
+    ]
+    
     def determine_level(no_str: str, expense_name: str = "") -> int:
         """
         根据序号格式和费用名称判断层级：
         - 中文数字（一、二、三）：Level 1（大类）
         - 阿拉伯数字（1、2、3）：Level 1（大类）
         - 带括号的数字（(1)、（一））：Level 2（子项）
-        - 以"其中："开头的行：Level 2（子项）
+        - 以"其中："开头的行：Level 2（子项），但特殊项除外
         """
         no_str = str(no_str).strip() if no_str else ""
         expense_name = str(expense_name).strip() if expense_name else ""
         
-        # 优先检查：以"其中："或"其中:"开头的 -> Level 2（子项）
-        # 这类行通常序号为空，所以必须先检查
+        # 移除"其中："前缀用于判断
+        name_without_prefix = expense_name
+        if expense_name.startswith("其中："):
+            name_without_prefix = expense_name[3:]
+        elif expense_name.startswith("其中:"):
+            name_without_prefix = expense_name[3:]
+        
+        # 检查是否为特殊的 Level 1 项
+        for special_item in SPECIAL_LEVEL1_ITEMS:
+            if special_item in name_without_prefix:
+                return 1
+        
+        # 以"其中："或"其中:"开头的 -> Level 2（子项）
         if expense_name.startswith("其中：") or expense_name.startswith("其中:"):
             return 2
         
@@ -2576,13 +2615,21 @@ def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[D
         
         # 判断层级（传入费用名称用于判断"其中："）
         level = determine_level(no_str, expense_name)
+        
+        # 去除"其中："前缀
+        clean_expense_name = expense_name
+        if expense_name.startswith("其中："):
+            clean_expense_name = expense_name[3:]
+        elif expense_name.startswith("其中:"):
+            clean_expense_name = expense_name[3:]
+        
         cost = parse_number(cost_val)
         
         result.append({
             "No": no if no is not None else idx + 1,
             "Level": level,
             "name": project_name,
-            "projectOrExpenseName": expense_name,
+            "projectOrExpenseName": clean_expense_name,
             "cost": cost,
         })
     
