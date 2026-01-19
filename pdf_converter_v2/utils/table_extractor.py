@@ -2560,6 +2560,61 @@ def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[D
     return result
 
 
+def _group_items_by_name(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    将平铺的项目列表按 name 字段分组为嵌套结构。
+    
+    输入:
+    [
+        {"No": 1, "Level": 1, "name": "工程A", "projectOrExpenseName": "费用1", ...},
+        {"No": 2, "Level": 1, "name": "工程A", "projectOrExpenseName": "费用2", ...},
+        {"No": 1, "Level": 1, "name": "工程B", "projectOrExpenseName": "费用1", ...},
+    ]
+    
+    输出:
+    [
+        {
+            "name": "工程A",
+            "items": [
+                {"No": 1, "Level": 1, "projectOrExpenseName": "费用1", ...},
+                {"No": 2, "Level": 1, "projectOrExpenseName": "费用2", ...},
+            ]
+        },
+        {
+            "name": "工程B",
+            "items": [
+                {"No": 1, "Level": 1, "projectOrExpenseName": "费用1", ...},
+            ]
+        }
+    ]
+    """
+    if not items:
+        return []
+    
+    # 使用有序字典保持工程顺序
+    from collections import OrderedDict
+    grouped: OrderedDict[str, List[Dict[str, Any]]] = OrderedDict()
+    
+    for item in items:
+        name = item.get("name", "未知工程")
+        if name not in grouped:
+            grouped[name] = []
+        
+        # 复制 item 并移除 name 字段（因为 name 会作为分组的键）
+        item_copy = {k: v for k, v in item.items() if k != "name"}
+        grouped[name].append(item_copy)
+    
+    # 转换为列表格式
+    result = []
+    for name, group_items in grouped.items():
+        result.append({
+            "name": name,
+            "items": group_items
+        })
+    
+    return result
+
+
 def parse_settlement_report_tables(
     merged_tables: List[Tuple[int, pd.DataFrame, str, int]]
 ) -> Dict[str, List[Dict[str, Any]]]:
@@ -2861,14 +2916,25 @@ def extract_and_filter_tables_for_pdf(
                 except Exception as e:
                     logger.warning(f"[表格提取] 解析 designReview 表格(规则3)失败: {e}", exc_info=True)
         
+        # 将规则2和规则3的平铺结果按工程名称分组为嵌套结构
+        for rule_key in ["初设评审的概算投资明细", "初设评审的概算投资费用"]:
+            if rule_key in parsed_data and parsed_data[rule_key]:
+                flat_items = parsed_data[rule_key]
+                grouped = _group_items_by_name(flat_items)
+                parsed_data[rule_key] = grouped
+        
         # 统计解析结果
         logger.info(f"[表格提取] 解析结果统计:")
         total_records = 0
         for table_type, table_data in parsed_data.items():
             if table_data:
-                record_count = len(table_data)
+                if isinstance(table_data, list):
+                    # 嵌套结构，统计所有 items
+                    record_count = sum(len(item.get("items", [])) for item in table_data) if table_data and isinstance(table_data[0], dict) and "items" in table_data[0] else len(table_data)
+                else:
+                    record_count = len(table_data)
                 total_records += record_count
-                logger.info(f"[表格提取]   - {table_type}: {record_count} 条数据")
+                logger.info(f"[表格提取]   - {table_type}: {len(table_data)} 个工程，共 {record_count} 条明细")
             else:
                 logger.info(f"[表格提取]   - {table_type}: 未匹配到数据")
         logger.info(f"[表格提取] 总计: {total_records} 条数据")
