@@ -2244,28 +2244,36 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
     col_installation = None
     col_other = None
     
+    # 打印前几行表头用于调试
+    logger.debug(f"[表格解析] DataFrame 形状: {df.shape}")
+    for i in range(min(3, len(df))):
+        row_vals = df.iloc[i].astype(str).tolist()
+        logger.debug(f"[表格解析] 第{i}行: {row_vals}")
+    
     # 扫描前几行表头（多行表头情况）
     header_end_idx = header_start_idx
     for i in range(header_start_idx, min(header_start_idx + 3, len(df))):
         row = df.iloc[i].astype(str).str.strip()
         for idx, cell in enumerate(row):
-            cell_no_space = cell.replace(" ", "")
+            # 移除所有空格、换行符等
+            cell_no_space = re.sub(r'\s+', '', cell)
             if ("序号" in cell_no_space or cell_no_space == "No") and col_no is None:
                 col_no = idx
             elif ("工程或费用名称" in cell_no_space or "费用名称" in cell_no_space) and col_name is None:
                 col_name = idx
-            elif ("建筑工程费" in cell_no_space or "建筑工程" in cell_no_space) and col_construction is None:
+            # 增强列名匹配 - 使用更宽松的匹配
+            elif col_construction is None and any(kw in cell_no_space for kw in ["建筑工程费", "建筑工程", "建筑"]):
                 col_construction = idx
-            elif ("设备购置费" in cell_no_space or "设备购置" in cell_no_space) and col_equipment is None:
+            elif col_equipment is None and any(kw in cell_no_space for kw in ["设备购置费", "设备购置", "设备"]):
                 col_equipment = idx
-            elif ("安装工程费" in cell_no_space or "安装工程" in cell_no_space) and col_installation is None:
+            elif col_installation is None and any(kw in cell_no_space for kw in ["安装工程费", "安装工程", "安装"]):
                 col_installation = idx
-            elif "其他费用" in cell_no_space and col_other is None:
+            elif col_other is None and "其他费用" in cell_no_space:
                 col_other = idx
         
         # 检查这一行是否像数据行（第一列是数字或中文数字）
         first_cell = row.iloc[0] if len(row) > 0 else ""
-        first_cell_clean = first_cell.replace(" ", "").replace("、", "")
+        first_cell_clean = re.sub(r'\s+', '', first_cell).replace("、", "")
         chinese_nums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
         if first_cell_clean and (first_cell_clean.isdigit() or first_cell_clean in chinese_nums):
             # 这一行可能是数据行，表头到此结束
@@ -2278,14 +2286,26 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
         col_no = 0
     if col_name is None:
         col_name = 1
-    # 如果费用列都未找到，尝试按位置推断（假设顺序：序号、名称、建筑、设备、安装、其他、合计）
-    if col_construction is None and col_equipment is None and col_installation is None:
-        if len(df.columns) >= 7:
-            col_construction = 2
-            col_equipment = 3
-            col_installation = 4
-            col_other = 5
+    
+    # 如果费用列未找到，尝试按位置推断
+    # 假设顺序：序号(0)、名称(1)、建筑(2)、设备(3)、安装(4)、其他(5)、合计(6)...
+    logger.info(f"[表格解析] 列数: {len(df.columns)}, 当前列索引: 建筑={col_construction}, 设备={col_equipment}, 安装={col_installation}, 其他={col_other}")
+    
+    if col_construction is None or col_equipment is None or col_installation is None or col_other is None:
+        num_cols = len(df.columns)
+        if num_cols >= 7:
+            # 按位置推断
+            if col_construction is None:
+                col_construction = 2
+            if col_equipment is None:
+                col_equipment = 3
+            if col_installation is None:
+                col_installation = 4
+            if col_other is None:
+                col_other = 5
             logger.info(f"[表格解析] 按位置推断列索引: 建筑={col_construction}, 设备={col_equipment}, 安装={col_installation}, 其他={col_other}")
+        else:
+            logger.warning(f"[表格解析] 列数不足({num_cols}<7)，无法按位置推断费用列")
     
     logger.info(f"[表格解析] 列索引: 序号={col_no}, 名称={col_name}, 建筑={col_construction}, 设备={col_equipment}, 安装={col_installation}, 其他={col_other}")
     logger.info(f"[表格解析] 表头范围: 行 {header_start_idx} - {header_end_idx}")
