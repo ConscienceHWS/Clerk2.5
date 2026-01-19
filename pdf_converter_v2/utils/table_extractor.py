@@ -2193,33 +2193,39 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
         '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15, '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20
     }
     
-    def determine_level(no_str: str) -> int:
+    def determine_level(no_str: str, expense_name: str = "") -> int:
         """
-        根据序号格式判断层级：
+        根据序号格式和费用名称判断层级：
         - 中文数字（一、二、三）：Level 1（大类）
-        - 阿拉伯数字（1、2、3）：Level 2（子项）
-        - 带括号的数字（(1)、（一））：Level 3（明细）
+        - 阿拉伯数字（1、2、3）：Level 1（大类）
+        - 带括号的数字（(1)、（一））：Level 2（子项）
+        - 以"其中："开头的行：Level 2（子项）
         """
         if not no_str:
-            return 2  # 默认
+            return 1  # 默认
         
         no_str = str(no_str).strip()
+        expense_name = str(expense_name).strip() if expense_name else ""
         
-        # 带括号的 -> Level 3
+        # 以"其中："或"其中:"开头的 -> Level 2（子项）
+        if expense_name.startswith("其中：") or expense_name.startswith("其中:"):
+            return 2
+        
+        # 带括号的 -> Level 2（子项）
         if '（' in no_str or '(' in no_str or '）' in no_str or ')' in no_str:
-            return 3
+            return 2
         
-        # 中文数字 -> Level 1
+        # 中文数字（一、二、三等）-> Level 1（大类）
         cleaned = no_str.replace(' ', '').replace('、', '').replace('.', '').replace('。', '')
         for chinese_num in CHINESE_NUMBERS.keys():
             if cleaned == chinese_num or cleaned.startswith(chinese_num):
                 return 1
         
-        # 阿拉伯数字 -> Level 2
+        # 阿拉伯数字（1、2、3等）-> Level 1（大类）
         if re.match(r'^\d+\.?$', cleaned):
-            return 2
+            return 1
         
-        return 2  # 默认
+        return 1  # 默认
     
     def parse_number(value: Any) -> float:
         """解析数字"""
@@ -2370,8 +2376,8 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
         if any(kw in expense_name for kw in ["合计", "总计", "小计"]):
             continue
         
-        # 判断层级
-        level = determine_level(no_str)
+        # 判断层级（传入费用名称用于判断"其中："）
+        level = determine_level(no_str, expense_name)
         
         # 解析费用金额
         construction_cost = parse_number(construction_val)
@@ -2431,28 +2437,39 @@ def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[D
         '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15, '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20
     }
     
-    def determine_level(no_str: str) -> int:
-        """根据序号格式判断层级"""
+    def determine_level(no_str: str, expense_name: str = "") -> int:
+        """
+        根据序号格式和费用名称判断层级：
+        - 中文数字（一、二、三）：Level 1（大类）
+        - 阿拉伯数字（1、2、3）：Level 1（大类）
+        - 带括号的数字（(1)、（一））：Level 2（子项）
+        - 以"其中："开头的行：Level 2（子项）
+        """
         if not no_str:
-            return 2
+            return 1
         
         no_str = str(no_str).strip()
+        expense_name = str(expense_name).strip() if expense_name else ""
         
-        # 带括号的 -> Level 3
+        # 以"其中："或"其中:"开头的 -> Level 2（子项）
+        if expense_name.startswith("其中：") or expense_name.startswith("其中:"):
+            return 2
+        
+        # 带括号的 -> Level 2（子项）
         if '（' in no_str or '(' in no_str or '）' in no_str or ')' in no_str:
-            return 3
+            return 2
         
-        # 中文数字 -> Level 1
+        # 中文数字（一、二、三等）-> Level 1（大类）
         cleaned = no_str.replace(' ', '').replace('、', '').replace('.', '').replace('。', '')
         for chinese_num in CHINESE_NUMBERS.keys():
             if cleaned == chinese_num or cleaned.startswith(chinese_num):
                 return 1
         
-        # 阿拉伯数字 -> Level 2
+        # 阿拉伯数字（1、2、3等）-> Level 1（大类）
         if re.match(r'^\d+\.?$', cleaned):
-            return 2
+            return 1
         
-        return 2
+        return 1
     
     def parse_number(value: Any) -> float:
         """解析数字"""
@@ -2545,7 +2562,8 @@ def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[D
         if any(kw in expense_name for kw in ["合计", "总计", "小计"]):
             continue
         
-        level = determine_level(no_str)
+        # 判断层级（传入费用名称用于判断"其中："）
+        level = determine_level(no_str, expense_name)
         cost = parse_number(cost_val)
         
         result.append({
