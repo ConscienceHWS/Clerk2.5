@@ -111,6 +111,16 @@
             "items": []
           },
           {
+            "No": 8,
+            "Level": 1,
+            "projectOrExpenseName": "其中：建设场地征用及清理费",
+            "constructionProjectCost": 0.0,
+            "equipmentPurchaseCost": 0.0,
+            "installationProjectCost": 0.0,
+            "otherExpenses": 326.0,
+            "items": []
+          },
+          {
             "No": 5,
             "Level": 1,
             "projectOrExpenseName": "基本预备费",
@@ -158,6 +168,16 @@
                 "otherExpenses": 174.0
               }
             ]
+          },
+          {
+            "No": 16,
+            "Level": 1,
+            "projectOrExpenseName": "其中：可抵扣固定资产增值税额",
+            "constructionProjectCost": 0.0,
+            "equipmentPurchaseCost": 0.0,
+            "installationProjectCost": 0.0,
+            "otherExpenses": 0.0,
+            "items": []
           }
         ]
       },
@@ -224,6 +244,16 @@
             "items": []
           },
           {
+            "No": 8,
+            "Level": 1,
+            "projectOrExpenseName": "其中：建设场地征用及清理费",
+            "constructionProjectCost": 0.0,
+            "equipmentPurchaseCost": 0.0,
+            "installationProjectCost": 0.0,
+            "otherExpenses": 16.0,
+            "items": []
+          },
+          {
             "No": 5,
             "Level": 1,
             "projectOrExpenseName": "基本预备费",
@@ -271,6 +301,16 @@
                 "otherExpenses": 8.0
               }
             ]
+          },
+          {
+            "No": 16,
+            "Level": 1,
+            "projectOrExpenseName": "其中：可抵扣固定资产增值税额",
+            "constructionProjectCost": 0.0,
+            "equipmentPurchaseCost": 0.0,
+            "installationProjectCost": 0.0,
+            "otherExpenses": 0.0,
+            "items": []
           }
         ]
       }
@@ -308,6 +348,13 @@
             "items": []
           },
           {
+            "No": 6,
+            "Level": 1,
+            "projectOrExpenseName": "其中：建设场地征用及清理费",
+            "cost": 174.0,
+            "items": []
+          },
+          {
             "No": 5,
             "Level": 1,
             "projectOrExpenseName": "基本预备费",
@@ -340,6 +387,13 @@
                 "cost": 55.0
               }
             ]
+          },
+          {
+            "No": 14,
+            "Level": 1,
+            "projectOrExpenseName": "其中：可抵扣固定资产增值税额",
+            "cost": 227.0,
+            "items": []
           }
         ]
       },
@@ -375,6 +429,13 @@
             "items": []
           },
           {
+            "No": 6,
+            "Level": 1,
+            "projectOrExpenseName": "其中：建设场地征用及清理费",
+            "cost": 158.0,
+            "items": []
+          },
+          {
             "No": 5,
             "Level": 1,
             "projectOrExpenseName": "基本预备费",
@@ -407,6 +468,13 @@
                 "cost": 32.0
               }
             ]
+          },
+          {
+            "No": 14,
+            "Level": 1,
+            "projectOrExpenseName": "其中：可抵扣固定资产增值税额",
+            "cost": 128.0,
+            "items": []
           }
         ]
       }

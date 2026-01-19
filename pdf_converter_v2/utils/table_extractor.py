@@ -2201,15 +2201,17 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
         - 带括号的数字（(1)、（一））：Level 2（子项）
         - 以"其中："开头的行：Level 2（子项）
         """
-        if not no_str:
-            return 1  # 默认
-        
-        no_str = str(no_str).strip()
+        no_str = str(no_str).strip() if no_str else ""
         expense_name = str(expense_name).strip() if expense_name else ""
         
-        # 以"其中："或"其中:"开头的 -> Level 2（子项）
+        # 优先检查：以"其中："或"其中:"开头的 -> Level 2（子项）
+        # 这类行通常序号为空，所以必须先检查
         if expense_name.startswith("其中：") or expense_name.startswith("其中:"):
             return 2
+        
+        # 序号为空的情况，默认 Level 1
+        if not no_str:
+            return 1
         
         # 带括号的 -> Level 2（子项）
         if '（' in no_str or '(' in no_str or '）' in no_str or ')' in no_str:
@@ -2448,15 +2450,17 @@ def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[D
         - 带括号的数字（(1)、（一））：Level 2（子项）
         - 以"其中："开头的行：Level 2（子项）
         """
-        if not no_str:
-            return 1
-        
-        no_str = str(no_str).strip()
+        no_str = str(no_str).strip() if no_str else ""
         expense_name = str(expense_name).strip() if expense_name else ""
         
-        # 以"其中："或"其中:"开头的 -> Level 2（子项）
+        # 优先检查：以"其中："或"其中:"开头的 -> Level 2（子项）
+        # 这类行通常序号为空，所以必须先检查
         if expense_name.startswith("其中：") or expense_name.startswith("其中:"):
             return 2
+        
+        # 序号为空的情况，默认 Level 1
+        if not no_str:
+            return 1
         
         # 带括号的 -> Level 2（子项）
         if '（' in no_str or '(' in no_str or '）' in no_str or ')' in no_str:
