@@ -2361,15 +2361,18 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
                     if cleaned_no_brackets in CHINESE_NUMBERS:
                         no = CHINESE_NUMBERS[cleaned_no_brackets]
         
-        # 跳过序号为空或无效的行
-        if not no_str or pd.isna(no_val):
-            continue
-        
-        # 解析工程或费用名称
+        # 解析工程或费用名称（提前解析，用于判断是否为"其中："行）
         expense_name = str(name_val).strip() if name_val is not None and not pd.isna(name_val) else ""
         
         # 跳过空行
         if not expense_name:
+            continue
+        
+        # 判断是否为"其中："开头的行（这类行序号通常为空，但需要保留）
+        is_sub_item = expense_name.startswith("其中：") or expense_name.startswith("其中:")
+        
+        # 跳过序号为空或无效的行（但"其中："行除外）
+        if (not no_str or pd.isna(no_val)) and not is_sub_item:
             continue
         
         # 跳过合计行
@@ -2551,12 +2554,17 @@ def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[D
                     if cleaned_no_brackets in CHINESE_NUMBERS:
                         no = CHINESE_NUMBERS[cleaned_no_brackets]
         
-        if not no_str or pd.isna(no_val):
-            continue
-        
+        # 解析工程或费用名称（提前解析，用于判断是否为"其中："行）
         expense_name = str(name_val).strip() if name_val is not None and not pd.isna(name_val) else ""
         
         if not expense_name:
+            continue
+        
+        # 判断是否为"其中："开头的行（这类行序号通常为空，但需要保留）
+        is_sub_item = expense_name.startswith("其中：") or expense_name.startswith("其中:")
+        
+        # 跳过序号为空或无效的行（但"其中："行除外）
+        if (not no_str or pd.isna(no_val)) and not is_sub_item:
             continue
         
         if any(kw in expense_name for kw in ["合计", "总计", "小计"]):
