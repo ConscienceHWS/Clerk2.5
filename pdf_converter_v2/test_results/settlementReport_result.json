@@ -1,0 +1,472 @@
+{
+  "document_type": "settlementReport",
+  "data": {
+    "审定结算汇总表": [
+      {
+        "No": 1,
+        "name": "建筑安装工程费",
+        "settledVerifiedTaxExclusiveInvestment": 50332168.79,
+        "settledVerifiedTaxInclusiveInvestment": 54862064.0
+      },
+      {
+        "No": 2,
+        "name": "建设场地清理费",
+        "settledVerifiedTaxExclusiveInvestment": 4241199.82,
+        "settledVerifiedTaxInclusiveInvestment": 4267054.85
+      },
+      {
+        "No": 3,
+        "name": "工程物资",
+        "settledVerifiedTaxExclusiveInvestment": 62528782.66,
+        "settledVerifiedTaxInclusiveInvestment": 70657517.0
+      },
+      {
+        "No": 4,
+        "name": "其他费用（不含建设场地清理费）",
+        "settledVerifiedTaxExclusiveInvestment": 11675825.0,
+        "settledVerifiedTaxInclusiveInvestment": 12202755.51
+      }
+    ],
+    "合同执行情况": [
+      {
+        "No": 1,
+        "constructionUnit": "晋城市巨能电网工程有限公司(变电安装)",
+        "bidNoticeAmount": 738.98,
+        "bidNoticeNo": "国网晋招建设施工字（2019-0925）-04",
+        "contractAmount": 738.98,
+        "settlementSubmittedAmount": 697.94,
+        "differenceAmount": 41.04
+      },
+      {
+        "No": 2,
+        "constructionUnit": "晋城市巨能电网工程有限公司(间隔)",
+        "bidNoticeAmount": 104.93,
+        "bidNoticeNo": "国网晋招建设施工字（2019-0925）-04",
+        "contractAmount": 104.93,
+        "settlementSubmittedAmount": 85.39,
+        "differenceAmount": 19.54
+      },
+      {
+        "No": 3,
+        "constructionUnit": "豪佳电力建设集团股份有限公司（变电土建）",
+        "bidNoticeAmount": 1730.12,
+        "bidNoticeNo": "国网晋招建设施工01字（2019-0903）-06",
+        "contractAmount": 1730.12,
+        "settlementSubmittedAmount": 1957.72,
+        "differenceAmount": -227.6
+      },
+      {
+        "No": 4,
+        "constructionUnit": "晋城市巨能电网工程有限公司(π接线路)",
+        "bidNoticeAmount": 1586.46,
+        "bidNoticeNo": "国网晋招建设施工字（2019-0925）-08",
+        "contractAmount": 1586.46,
+        "settlementSubmittedAmount": 1701.58,
+        "differenceAmount": -115.12
+      },
+      {
+        "No": 5,
+        "constructionUnit": "晋城市巨能电网工程有限公司(凤城-周村线路)",
+        "bidNoticeAmount": 817.45,
+        "bidNoticeNo": "国网晋招建设施工01字（2019-0903）-02",
+        "contractAmount": 817.45,
+        "settlementSubmittedAmount": 949.75,
+        "differenceAmount": -132.3
+      },
+      {
+        "No": 6,
+        "constructionUnit": "山西益通电网保护自动化有限责任公司（通信）",
+        "bidNoticeAmount": 78.33,
+        "bidNoticeNo": "国网晋招建设框字（2019-0919）-442",
+        "contractAmount": 78.33,
+        "settlementSubmittedAmount": 46.7,
+        "differenceAmount": 31.63
+      },
+      {
+        "No": 7,
+        "constructionUnit": "山西益通电网保护自动化有限责任公司（远动）",
+        "bidNoticeAmount": 5.08,
+        "bidNoticeNo": "国网晋招建设框字（2019-0919）-445",
+        "contractAmount": 5.08,
+        "settlementSubmittedAmount": 22.24,
+        "differenceAmount": -17.16
+      }
+    ],
+    "赔偿合同": [
+      {
+        "No": 1,
+        "contractCounterpartyName": "泽州县交通运输局路政管理所",
+        "compensationItem": "在公路上增设平面交叉道口1处",
+        "contractAmount": 11.49,
+        "settlementSubmittedAmount": 11.49,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 2,
+        "contractCounterpartyName": "泽州县岭南镇人民政府",
+        "compensationItem": "道路修复",
+        "contractAmount": 5.85,
+        "settlementSubmittedAmount": 5.85,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 3,
+        "contractCounterpartyName": "泽州县李寨乡人民政府",
+        "compensationItem": "建设场地征用及清理",
+        "contractAmount": 23.59,
+        "settlementSubmittedAmount": 23.59,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 4,
+        "contractCounterpartyName": "阳城县北留镇章训村村民委员会",
+        "compensationItem": "ABG2-3永久占地",
+        "contractAmount": 6.0,
+        "settlementSubmittedAmount": 6.0,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 5,
+        "contractCounterpartyName": "阳城县北留镇崇上村村民委员会",
+        "compensationItem": "ABG4-6永久占地",
+        "contractAmount": 9.0,
+        "settlementSubmittedAmount": 9.0,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 6,
+        "contractCounterpartyName": "泽州县周村镇人民政府",
+        "compensationItem": "ABG7,AG8-11永久占地",
+        "contractAmount": 10.0,
+        "settlementSubmittedAmount": 10.0,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 7,
+        "contractCounterpartyName": "泽州县李寨乡人民政府",
+        "compensationItem": "AG12-14永久占地",
+        "contractAmount": 6.6,
+        "settlementSubmittedAmount": 6.6,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 8,
+        "contractCounterpartyName": "泽州县李寨乡人民政府",
+        "compensationItem": "AG15-19永久占地",
+        "contractAmount": 8.0,
+        "settlementSubmittedAmount": 8.0,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 9,
+        "contractCounterpartyName": "泽州县周村镇人民政府",
+        "compensationItem": "BG1-2，CG14永久占地",
+        "contractAmount": 6.0,
+        "settlementSubmittedAmount": 6.0,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 10,
+        "contractCounterpartyName": "泽州县李寨乡人民政府",
+        "compensationItem": "BG3-7，CG6-12永久占地",
+        "contractAmount": 21.6,
+        "settlementSubmittedAmount": 21.6,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 11,
+        "contractCounterpartyName": "泽州县李寨乡人民政府",
+        "compensationItem": "CG1-5，ABG20-27永久占地",
+        "contractAmount": 20.8,
+        "settlementSubmittedAmount": 20.8,
+        "differenceAmount": 0.0
+      },
+      {
+        "No": 12,
+        "contractCounterpartyName": "泽州县李寨乡人民政府",
+        "compensationItem": "CG13永久占地",
+        "contractAmount": 2.0,
+        "settlementSubmittedAmount": 2.0,
+        "differenceAmount": 0.0
+      }
+    ],
+    "物资采购合同1": [
+      {
+        "No": 1,
+        "materialName": "铁塔,AC220kV,通用,角钢,Q345,常规塔",
+        "contractQuantity": 0.0,
+        "drawingQuantity": 36.08,
+        "unitPriceExcludingTax": 7349.37,
+        "differenceAmount": -265194.67
+      },
+      {
+        "No": 2,
+        "materialName": "控制电缆,KVVP2,2.5,7,ZR,22",
+        "contractQuantity": 0.0,
+        "drawingQuantity": 2500.0,
+        "unitPriceExcludingTax": 12.93,
+        "differenceAmount": -32325.0
+      },
+      {
+        "No": 3,
+        "materialName": "三相智能电能表,C级,无,无控,无,3×220/380V,1.5A",
+        "contractQuantity": 0.0,
+        "drawingQuantity": 2.0,
+        "unitPriceExcludingTax": 481.86,
+        "differenceAmount": -963.72
+      },
+      {
+        "No": 4,
+        "materialName": "三相智能电能表,0.5S级,无,无控,无,3×100V,0.3A",
+        "contractQuantity": 0.0,
+        "drawingQuantity": 1.0,
+        "unitPriceExcludingTax": 407.08,
+        "differenceAmount": -407.08
+      },
+      {
+        "No": 5,
+        "materialName": "三相智能电能表,0.5S级,无,无控,无,3×100V,1.5A",
+        "contractQuantity": 0.0,
+        "drawingQuantity": 12.0,
+        "unitPriceExcludingTax": 305.74,
+        "differenceAmount": -3668.88
+      },
+      {
+        "No": 6,
+        "materialName": "三相智能电能表,0.5S级,无,无控,无,3×100V,1.5A",
+        "contractQuantity": 0.0,
+        "drawingQuantity": 13.0,
+        "unitPriceExcludingTax": 1769.91,
+        "differenceAmount": -23008.83
+      },
+      {
+        "No": 7,
+        "materialName": "三相智能电能表,0.5S级,无,无控,无,3×100V,0.3A",
+        "contractQuantity": 0.0,
+        "drawingQuantity": 5.0,
+        "unitPriceExcludingTax": 407.08,
+        "differenceAmount": -2035.4
+      },
+      {
+        "No": 8,
+        "materialName": "厂站终端,GPRS,机架式",
+        "contractQuantity": 0.0,
+        "drawingQuantity": 1.0,
+        "unitPriceExcludingTax": 10256.41,
+        "differenceAmount": -10256.41
+      },
+      {
+        "No": 9,
+        "materialName": "交流支柱绝缘子,AC35KV,瓷,12.5KN,非磁性,户外",
+        "contractQuantity": 8.0,
+        "drawingQuantity": 0.0,
+        "unitPriceExcludingTax": 1011.88,
+        "differenceAmount": 8095.04
+      }
+    ],
+    "物资采购合同2": [
+      {
+        "No": 1,
+        "materialName": "铁塔,AC220kV,通用,角钢,Q345,常规塔",
+        "contractAmount": 0.0,
+        "bookedAmount": 265194.67,
+        "differenceAmount": -265194.67,
+        "remark": ""
+      },
+      {
+        "No": 2,
+        "materialName": "控制电缆,KVVP2,2.5,7,ZR,22",
+        "contractAmount": 0.0,
+        "bookedAmount": 32325.0,
+        "differenceAmount": -32325.0,
+        "remark": ""
+      },
+      {
+        "No": 3,
+        "materialName": "三相智能电能表,C级,无,无控,无,3×220/380V,1.5A",
+        "contractAmount": 0.0,
+        "bookedAmount": 963.72,
+        "differenceAmount": -963.72,
+        "remark": ""
+      },
+      {
+        "No": 4,
+        "materialName": "三相智能电能表,0.5S级,无,无控,无,3×100V,0.3A",
+        "contractAmount": 0.0,
+        "bookedAmount": 407.08,
+        "differenceAmount": -407.08,
+        "remark": ""
+      },
+      {
+        "No": 5,
+        "materialName": "三相智能电能表,0.5S级,无,无控,无,3×100V,1.5A",
+        "contractAmount": 0.0,
+        "bookedAmount": 3668.88,
+        "differenceAmount": -3668.88,
+        "remark": ""
+      },
+      {
+        "No": 6,
+        "materialName": "三相智能电能表,0.5S级,无,无控,无,3×100V,1.5A",
+        "contractAmount": 0.0,
+        "bookedAmount": 23008.83,
+        "differenceAmount": -23008.83,
+        "remark": ""
+      },
+      {
+        "No": 7,
+        "materialName": "三相智能电能表,0.5S级,无,无控,无,3×100V,0.3A",
+        "contractAmount": 0.0,
+        "bookedAmount": 2035.4,
+        "differenceAmount": -2035.4,
+        "remark": ""
+      },
+      {
+        "No": 8,
+        "materialName": "厂站终端,GPRS,机架式",
+        "contractAmount": 0.0,
+        "bookedAmount": 10256.41,
+        "differenceAmount": -10256.41,
+        "remark": ""
+      },
+      {
+        "No": 9,
+        "materialName": "交流支柱绝缘子,AC35KV,瓷,12.5KN,非磁性,户外",
+        "contractAmount": 8.0,
+        "bookedAmount": 8095.04,
+        "differenceAmount": 8095.04,
+        "remark": ""
+      }
+    ],
+    "其他服务类合同": [
+      {
+        "No": 1,
+        "serviceProvider": "山西顺德土地评估规划咨询有限公司",
+        "bidNotice": "SXTYZX-TY20087TP-JC04-QT-38",
+        "contractAmount": 44.98,
+        "submittedAmount": 44.98,
+        "settlementAmount": 44.98
+      },
+      {
+        "No": 2,
+        "serviceProvider": "山西科汇工程质量检测有限公司",
+        "bidNotice": "国网晋招建设框字（2021-0218）-4",
+        "contractAmount": 8.25,
+        "submittedAmount": 8.25,
+        "settlementAmount": 8.25
+      },
+      {
+        "No": 3,
+        "serviceProvider": "山西宏志环境工程咨询有限公司",
+        "bidNotice": "国网晋招建设框字（2019-1120）-1267",
+        "contractAmount": 7.76,
+        "submittedAmount": 7.76,
+        "settlementAmount": 7.76
+      },
+      {
+        "No": 4,
+        "serviceProvider": "山西宏志环境工程咨询有限公司",
+        "bidNotice": "国网晋招建设框字（2019-1120）-1268",
+        "contractAmount": 7.76,
+        "submittedAmount": 7.76,
+        "settlementAmount": 7.76
+      },
+      {
+        "No": 5,
+        "serviceProvider": "山西宏志环境工程咨询有限公司",
+        "bidNotice": "国网晋招建设框字（2019-1120）-1278",
+        "contractAmount": 14.55,
+        "submittedAmount": 14.55,
+        "settlementAmount": 14.55
+      },
+      {
+        "No": 6,
+        "serviceProvider": "山西锦通工程项目管理咨询有限公司",
+        "bidNotice": "国网晋招建设监理字（2019-0903）-07",
+        "contractAmount": 145.32,
+        "submittedAmount": 145.32,
+        "settlementAmount": 145.32
+      },
+      {
+        "No": 7,
+        "serviceProvider": "国网山西电力勘测设计研究院有限公司",
+        "bidNotice": "国网晋招建设设计字（2017-1205）-15",
+        "contractAmount": 457.47,
+        "submittedAmount": 452.9,
+        "settlementAmount": 452.9
+      },
+      {
+        "No": 8,
+        "serviceProvider": "江西赣能工程咨询有限公司",
+        "bidNotice": "国网晋招审计框字（2021-1011）-345",
+        "contractAmount": 16.02,
+        "submittedAmount": 16.02,
+        "settlementAmount": 16.02
+      },
+      {
+        "No": 9,
+        "serviceProvider": "山西晋鑫科源环保科技有限公司",
+        "bidNotice": "国网晋招建设框字（2021-0716）-257",
+        "contractAmount": 33.36,
+        "submittedAmount": 33.36,
+        "settlementAmount": 33.36
+      },
+      {
+        "No": 10,
+        "serviceProvider": "山西中立工程造价咨询有限公司",
+        "bidNotice": "国网晋招建设框字（2019-0722）-323",
+        "contractAmount": 13.59,
+        "submittedAmount": 13.59,
+        "settlementAmount": 13.59
+      },
+      {
+        "No": 11,
+        "serviceProvider": "山西智信杰工程项目管理有限公司",
+        "bidNotice": "SXHYDLZB2020--112-95",
+        "contractAmount": 7.94,
+        "submittedAmount": 7.94,
+        "settlementAmount": 7.94
+      },
+      {
+        "No": 12,
+        "serviceProvider": "北京卓识网安技术股份有限公司",
+        "bidNotice": "国网晋招建设框字（2020-0119）-671",
+        "contractAmount": 14.73,
+        "submittedAmount": 14.73,
+        "settlementAmount": 14.73
+      },
+      {
+        "No": 13,
+        "serviceProvider": "山西益通电网保护自动化有限责任公司",
+        "bidNotice": "国网晋招建设框字（2019-1120）-1190",
+        "contractAmount": 5.8,
+        "submittedAmount": 5.8,
+        "settlementAmount": 5.8
+      },
+      {
+        "No": 14,
+        "serviceProvider": "山西益通电网保护自动化有限责任公司",
+        "bidNotice": "国网晋招建设框字（2019-1120）-1189",
+        "contractAmount": 2.9,
+        "submittedAmount": 2.9,
+        "settlementAmount": 2.9
+      },
+      {
+        "No": 15,
+        "serviceProvider": "晋城市晋天消防工程有限公司",
+        "bidNotice": "SXTXTZB-2019-11119",
+        "contractAmount": 5.8,
+        "submittedAmount": 5.8,
+        "settlementAmount": 5.8
+      },
+      {
+        "No": 16,
+        "serviceProvider": "中国电力企业",
+        "bidNotice": "基建技经〔2019〕",
+        "contractAmount": 24.03,
+        "submittedAmount": 24.03,
+        "settlementAmount": 24.03
+      }
+    ]
+  }
+}

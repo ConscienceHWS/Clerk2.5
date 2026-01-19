@@ -1,4 +1,85 @@
 {
   "document_type": "fsReview",
-  "data": []
+  "data": [
+    {
+      "name": "变电工程",
+      "Level": 0,
+      "staticInvestment": 9317.0,
+      "dynamicInvestment": 9491.0,
+      "items": [
+        {
+          "No": 1,
+          "name": "晋城周村220kV变电站新建工程",
+          "Level": 1,
+          "staticInvestment": 8889.0,
+          "dynamicInvestment": 9055.0,
+          "items": []
+        },
+        {
+          "No": 2,
+          "name": "凤城220kV变电站220kV间隔扩建工程",
+          "Level": 1,
+          "staticInvestment": 341.0,
+          "dynamicInvestment": 347.0,
+          "items": []
+        },
+        {
+          "No": 3,
+          "name": "金鼎220kV变电站保护改造工程",
+          "Level": 1,
+          "staticInvestment": 87.0,
+          "dynamicInvestment": 89.0,
+          "items": []
+        }
+      ]
+    },
+    {
+      "name": "220kV线路工程",
+      "Level": 0,
+      "staticInvestment": 4657.0,
+      "dynamicInvestment": 4744.0,
+      "items": [
+        {
+          "No": 1,
+          "name": "凤城~金鼎π入周村变220kV线路工程",
+          "Level": 1,
+          "staticInvestment": 2945.0,
+          "dynamicInvestment": 3000.0,
+          "items": []
+        },
+        {
+          "No": 2,
+          "name": "凤城~周村220kV线路新建工程",
+          "Level": 1,
+          "staticInvestment": 1712.0,
+          "dynamicInvestment": 1744.0,
+          "items": []
+        }
+      ]
+    },
+    {
+      "name": "系统通信工程",
+      "Level": 0,
+      "staticInvestment": 583.0,
+      "dynamicInvestment": 594.0,
+      "items": [
+        {
+          "No": 1,
+          "name": "光通信设备工程",
+          "Level": 1,
+          "staticInvestment": 502.0,
+          "dynamicInvestment": 511.0,
+          "items": []
+        },
+        {
+          "No": 2,
+          "name": "光缆通信工程",
+          "Level": 1,
+          "staticInvestment": 81.0,
+          "dynamicInvestment": 83.0,
+          "items": []
+        }
+      ]
+    }
+  ]
 }

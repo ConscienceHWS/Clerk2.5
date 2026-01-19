@@ -78,6 +78,16 @@ TABLE_TYPE_RULES: Dict[str, List[dict]] = {
             "keywords": ["序号", "工程名称", "建设规模", "静态投资", "其中：建设场地征用及清理费", "动态投资"],
             "match_mode": "all",
         },
+        {
+            "name": "初设评审的概算投资明细",
+            "keywords": ["序号", "工程或费用名称", "建筑工程费", "设备购置费", "安装工程费", "其他费用", "合计"],
+            "match_mode": "all",
+        },
+        {
+            "name": "初设评审的概算投资费用",
+            "keywords": ["序号", "工程或费用名称", "费用金额", "各项占静态投资", "单位投资"],
+            "match_mode": "all",
+        },
     ],
 }
 
@@ -88,15 +98,73 @@ EXCLUDE_RULES: List[str] = []
 ENABLE_MERGE_CROSS_PAGE_TABLES: bool = True
 
 
+def extract_table_title_from_page(page, table_bbox: tuple, max_lines: int = 3) -> str:
+    """
+    从 PDF 页面中提取表格上方的文本作为表格标题。
+    
+    Args:
+        page: pdfplumber page 对象
+        table_bbox: 表格的边界框 (x0, top, x1, bottom)
+        max_lines: 最多向上搜索的行数
+    
+    Returns:
+        str: 表格标题，如果未找到则返回空字符串
+    """
+    if not table_bbox:
+        return ""
+    
+    table_top = table_bbox[1]  # 表格顶部 y 坐标
+    page_width = page.width
+    
+    # 在表格上方区域搜索文本（向上搜索 100 像素范围内）
+    search_top = max(0, table_top - 100)
+    search_bottom = table_top - 5  # 留一点边距
+    
+    if search_bottom <= search_top:
+        return ""
+    
+    # 提取表格上方区域的文本
+    crop_box = (0, search_top, page_width, search_bottom)
+    try:
+        cropped = page.within_bbox(crop_box)
+        text = cropped.extract_text() or ""
+    except Exception:
+        return ""
+    
+    if not text.strip():
+        return ""
+    
+    # 取最后几行（最接近表格的行）
+    lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
+    if not lines:
+        return ""
+    
+    # 返回最后一行（最接近表格的标题）
+    # 通常标题行包含 "工程" 或 "概算表" 等关键词
+    for line in reversed(lines[-max_lines:]):
+        if any(kw in line for kw in ["工程", "概算表", "估算表", "汇总表"]):
+            return line.strip()
+    
+    # 如果没有找到特征关键词，返回最后一行
+    return lines[-1].strip() if lines else ""
+
+
 def extract_tables_with_pdfplumber(
     pdf_path: str,
     pages: str = "all",
-) -> List[Tuple[int, pd.DataFrame, tuple]]:
+    extract_titles: bool = False,
+) -> List[Tuple[int, pd.DataFrame, tuple, str]]:
     """
     使用 pdfplumber 提取 PDF 中的表格。
 
+    Args:
+        pdf_path: PDF 文件路径
+        pages: 页码范围，如 "all" 或 "1-5,7,9-10"
+        extract_titles: 是否提取表格标题
+
     Returns:
-        List[Tuple[int, pd.DataFrame, tuple]]: [(页码, DataFrame, bbox), ...]
+        List[Tuple[int, pd.DataFrame, tuple, str]]: [(页码, DataFrame, bbox, title), ...]
+        如果 extract_titles=False，title 为空字符串
     """
     # 运行时再次尝试导入，因为模块加载时可能失败但运行时环境可能不同
     global _PDFPLUMBER_AVAILABLE, pdfplumber, _PDFPLUMBER_IMPORT_ERROR
@@ -117,7 +185,7 @@ def extract_tables_with_pdfplumber(
                 error_msg += f"\n模块加载时导入错误: {_PDFPLUMBER_IMPORT_ERROR}"
             raise RuntimeError(error_msg)
 
-    tables_data: List[Tuple[int, pd.DataFrame, tuple]] = []
+    tables_data: List[Tuple[int, pd.DataFrame, tuple, str]] = []
 
     with pdfplumber.open(pdf_path) as pdf:
         total_pages = len(pdf.pages)
@@ -163,7 +231,13 @@ def extract_tables_with_pdfplumber(
                 if table_data and len(table_data) > 0:
                     df = pd.DataFrame(table_data)
                     bbox = table.bbox  # (x0, top, x1, bottom)
-                    tables_data.append((page_num, df, bbox))
+                    # 提取表格标题
+                    title = ""
+                    if extract_titles:
+                        title = extract_table_title_from_page(page, bbox)
+                        if title:
+                            logger.debug(f"[pdfplumber] 页面 {page_num}: 表格标题: {title}")
+                    tables_data.append((page_num, df, bbox, title))
                     page_table_count += 1
             
             if page_table_count > 0:
@@ -326,31 +400,33 @@ def _merge_all_tables(
 
 
 def _merge_cross_page_tables(
-    tables: List[Tuple[int, pd.DataFrame, str, int]],
+    tables: List[Tuple[int, pd.DataFrame, str, int, str]],
     header_rules: List[dict],
-) -> List[Tuple[int, pd.DataFrame, str, int]]:
+) -> List[Tuple[int, pd.DataFrame, str, int, str]]:
     """
     简化版跨页合并逻辑（用于已匹配规则的表格）：
     - 只处理"表头在当前页，内容在下一页"的典型情况；
     - 严格限制只合并相邻页，且列结构相似；
     - 如果下一页第一行看起来像新的表头，则不合并。
+    
+    元组格式: (orig_idx, df, rule_name, page, title)
     """
     if not ENABLE_MERGE_CROSS_PAGE_TABLES or not tables:
         return tables
 
-    # page -> [(idx, df, rule_name)]
-    page_map: Dict[int, List[Tuple[int, pd.DataFrame, str]]] = {}
-    for orig_idx, df, rule_name, page in tables:
-        page_map.setdefault(page, []).append((orig_idx, df, rule_name))
+    # page -> [(idx, df, rule_name, title)]
+    page_map: Dict[int, List[Tuple[int, pd.DataFrame, str, str]]] = {}
+    for orig_idx, df, rule_name, page, title in tables:
+        page_map.setdefault(page, []).append((orig_idx, df, rule_name, title))
 
-    merged: List[Tuple[int, pd.DataFrame, str, int]] = []
+    merged: List[Tuple[int, pd.DataFrame, str, int, str]] = []
     processed: set[int] = set()
 
     sorted_pages = sorted(page_map.keys())
 
     for page in sorted_pages:
         current_list = page_map[page]
-        for orig_idx, df, rule_name in current_list:
+        for orig_idx, df, rule_name, title in current_list:
             if orig_idx in processed:
                 continue
 
@@ -361,7 +437,7 @@ def _merge_cross_page_tables(
             if is_likely_header_only(current_df):
                 next_page = page + 1
                 if next_page in page_map:
-                    for next_orig_idx, next_df, next_rule_name in page_map[next_page]:
+                    for next_orig_idx, next_df, next_rule_name, next_title in page_map[next_page]:
                         if next_orig_idx in processed:
                             continue
 
@@ -404,14 +480,14 @@ def _merge_cross_page_tables(
                                     next_data_df[len(next_data_df.columns)] = ""
 
                         merged_df = pd.concat([header_df, next_data_df], ignore_index=True)
-                        merged.append((orig_idx, merged_df, rule_name, page))
+                        merged.append((orig_idx, merged_df, rule_name, page, title))
                         processed.add(orig_idx)
                         processed.add(next_orig_idx)
                         did_merge = True
                         break
 
             if not did_merge and orig_idx not in processed:
-                merged.append((orig_idx, current_df, rule_name, page))
+                merged.append((orig_idx, current_df, rule_name, page, title))
                 processed.add(orig_idx)
 
     return merged
@@ -2039,6 +2115,377 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return result
 
 
+def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List[Dict[str, Any]]:
+    """
+    解析 designReview 类型的概算投资明细表格（规则2）。
+    
+    表头格式：
+    序号 | 工程或费用名称 | 建筑工程费 | 设备购置费 | 安装工程费 | 其他费用 | 合计 | ...
+    
+    Args:
+        df: 表格 DataFrame
+        table_title: 表格标题（如"周村 220kV 变电站新建工程总概算表"），用于提取工程名称
+    
+    返回格式:
+    [{
+        "No": int,  # 序号
+        "Level": int,  # 明细等级
+        "name": str,  # 单项工程名称（从标题提取，如"周村220KV变电站新建工程"）
+        "projectOrExpenseName": str,  # 工程或费用名称
+        "constructionProjectCost": float,  # 建筑工程费（元）
+        "equipmentPurchaseCost": float,  # 设备购置费（元）
+        "installationProjectCost": float,  # 安装工程费（元）
+        "otherExpenses": float,  # 其他费用（元）
+    }, ...]
+    """
+    if df.empty:
+        return []
+    
+    # 从标题中提取工程名称
+    # 标题格式如："周村 220kV 变电站新建工程总概算表" -> "周村220kV变电站新建工程"
+    project_name = table_title
+    if project_name:
+        # 移除"总概算表"、"概算表"、"估算表"等后缀
+        project_name = re.sub(r'(总概算表|概算表|估算表|汇总表)$', '', project_name)
+        # 移除多余空格
+        project_name = re.sub(r'\s+', '', project_name)
+    
+    # 中文数字映射（用于判断层级）
+    CHINESE_NUMBERS = {
+        '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+        '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15, '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20
+    }
+    
+    def determine_level(no_str: str) -> int:
+        """
+        根据序号格式判断层级：
+        - 中文数字（一、二、三）：Level 1（大类）
+        - 阿拉伯数字（1、2、3）：Level 2（子项）
+        - 带括号的数字（(1)、（一））：Level 3（明细）
+        """
+        if not no_str:
+            return 2  # 默认
+        
+        no_str = str(no_str).strip()
+        
+        # 带括号的 -> Level 3
+        if '（' in no_str or '(' in no_str or '）' in no_str or ')' in no_str:
+            return 3
+        
+        # 中文数字 -> Level 1
+        cleaned = no_str.replace(' ', '').replace('、', '').replace('.', '').replace('。', '')
+        for chinese_num in CHINESE_NUMBERS.keys():
+            if cleaned == chinese_num or cleaned.startswith(chinese_num):
+                return 1
+        
+        # 阿拉伯数字 -> Level 2
+        if re.match(r'^\d+\.?$', cleaned):
+            return 2
+        
+        return 2  # 默认
+    
+    def parse_number(value: Any) -> float:
+        """解析数字"""
+        if pd.isna(value):
+            return 0.0
+        value_str = str(value).strip()
+        # 移除常见的非数字字符（保留小数点、负号）
+        value_str = re.sub(r'[^\d.\-]', '', value_str)
+        if not value_str or value_str == '-':
+            return 0.0
+        try:
+            return float(value_str)
+        except ValueError:
+            return 0.0
+    
+    # 识别表头行（通常在前几行）
+    header_row_idx = None
+    for i in range(min(5, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        row_text_no_space = row_text.replace(" ", "")
+        # 检查是否包含表头关键词
+        if "工程或费用名称" in row_text_no_space and "建筑工程费" in row_text_no_space:
+            header_row_idx = i
+            break
+        elif "序号" in row_text and ("建筑工程" in row_text or "设备购置" in row_text):
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        # 如果没有找到明确的表头，假设第一行是表头
+        header_row_idx = 0
+        logger.warning(f"[表格解析] 未找到明确表头，使用第一行作为表头")
+    
+    # 从表头行识别列索引
+    header_row = df.iloc[header_row_idx].astype(str).str.strip()
+    
+    col_no = None  # 序号列
+    col_name = None  # 工程或费用名称列
+    col_construction = None  # 建筑工程费列
+    col_equipment = None  # 设备购置费列
+    col_installation = None  # 安装工程费列
+    col_other = None  # 其他费用列
+    
+    for idx, cell in enumerate(header_row):
+        cell_no_space = cell.replace(" ", "")
+        if "序号" in cell_no_space or cell_no_space == "No":
+            col_no = idx
+        elif "工程或费用名称" in cell_no_space or "费用名称" in cell_no_space:
+            col_name = idx
+        elif "建筑工程费" in cell_no_space or "建筑工程" in cell_no_space:
+            col_construction = idx
+        elif "设备购置费" in cell_no_space or "设备购置" in cell_no_space:
+            col_equipment = idx
+        elif "安装工程费" in cell_no_space or "安装工程" in cell_no_space:
+            col_installation = idx
+        elif "其他费用" in cell_no_space:
+            col_other = idx
+    
+    # 如果关键列未找到，尝试位置推断
+    if col_no is None:
+        col_no = 0
+    if col_name is None:
+        col_name = 1
+    
+    logger.info(f"[表格解析] 列索引: 序号={col_no}, 名称={col_name}, 建筑={col_construction}, 设备={col_equipment}, 安装={col_installation}, 其他={col_other}")
+    
+    # 从数据行开始解析（跳过表头行）
+    data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    
+    result = []
+    for idx, row in data_rows.iterrows():
+        # 跳过空行
+        if row.isna().all():
+            continue
+        
+        # 提取各列数据
+        no_val = row.iloc[col_no] if col_no is not None and col_no < len(row) else None
+        name_val = row.iloc[col_name] if col_name is not None and col_name < len(row) else None
+        construction_val = row.iloc[col_construction] if col_construction is not None and col_construction < len(row) else None
+        equipment_val = row.iloc[col_equipment] if col_equipment is not None and col_equipment < len(row) else None
+        installation_val = row.iloc[col_installation] if col_installation is not None and col_installation < len(row) else None
+        other_val = row.iloc[col_other] if col_other is not None and col_other < len(row) else None
+        
+        # 解析序号
+        no = None
+        no_str = ""
+        if no_val is not None and not pd.isna(no_val):
+            no_str = str(no_val).strip()
+            if no_str:
+                try:
+                    no = int(float(no_str))
+                except (ValueError, TypeError):
+                    # 尝试中文数字
+                    cleaned = no_str.replace(' ', '').replace('、', '').replace('.', '').replace('。', '')
+                    cleaned_no_brackets = cleaned.replace('（', '').replace('(', '').replace('）', '').replace(')', '')
+                    if cleaned_no_brackets in CHINESE_NUMBERS:
+                        no = CHINESE_NUMBERS[cleaned_no_brackets]
+        
+        # 跳过序号为空或无效的行
+        if not no_str or pd.isna(no_val):
+            continue
+        
+        # 解析工程或费用名称
+        expense_name = str(name_val).strip() if name_val is not None and not pd.isna(name_val) else ""
+        
+        # 跳过空行
+        if not expense_name:
+            continue
+        
+        # 跳过合计行
+        if any(kw in expense_name for kw in ["合计", "总计", "小计"]):
+            continue
+        
+        # 判断层级
+        level = determine_level(no_str)
+        
+        # 解析费用金额
+        construction_cost = parse_number(construction_val)
+        equipment_cost = parse_number(equipment_val)
+        installation_cost = parse_number(installation_val)
+        other_cost = parse_number(other_val)
+        
+        result.append({
+            "No": no if no is not None else idx + 1,
+            "Level": level,
+            "name": project_name,  # 从标题提取的工程名称
+            "projectOrExpenseName": expense_name,
+            "constructionProjectCost": construction_cost,
+            "equipmentPurchaseCost": equipment_cost,
+            "installationProjectCost": installation_cost,
+            "otherExpenses": other_cost,
+        })
+    
+    logger.info(f"[表格解析] 解析完成: 工程名称={project_name}, 共 {len(result)} 条数据")
+    return result
+
+
+def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[Dict[str, Any]]:
+    """
+    解析 designReview 类型的概算投资费用表格（规则3）。
+    
+    表头格式：
+    序号 | 工程或费用名称 | 费用金额 | 各项占静态投资% | 单位投资万元/km
+    
+    Args:
+        df: 表格 DataFrame
+        table_title: 表格标题（如"周村 220kV 变电站新建工程总概算表"），用于提取工程名称
+    
+    返回格式:
+    [{
+        "No": int,  # 序号
+        "Level": int,  # 明细等级
+        "name": str,  # 单项工程名称（从标题提取）
+        "projectOrExpenseName": str,  # 工程或费用名称
+        "cost": float,  # 费用金额（元）
+    }, ...]
+    """
+    if df.empty:
+        return []
+    
+    # 从标题中提取工程名称
+    project_name = table_title
+    if project_name:
+        # 移除"总概算表"、"概算表"、"估算表"等后缀
+        project_name = re.sub(r'(总概算表|概算表|估算表|汇总表)$', '', project_name)
+        # 移除多余空格
+        project_name = re.sub(r'\s+', '', project_name)
+    
+    # 中文数字映射（用于判断层级）
+    CHINESE_NUMBERS = {
+        '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+        '十一': 11, '十二': 12, '十三': 13, '十四': 14, '十五': 15, '十六': 16, '十七': 17, '十八': 18, '十九': 19, '二十': 20
+    }
+    
+    def determine_level(no_str: str) -> int:
+        """根据序号格式判断层级"""
+        if not no_str:
+            return 2
+        
+        no_str = str(no_str).strip()
+        
+        # 带括号的 -> Level 3
+        if '（' in no_str or '(' in no_str or '）' in no_str or ')' in no_str:
+            return 3
+        
+        # 中文数字 -> Level 1
+        cleaned = no_str.replace(' ', '').replace('、', '').replace('.', '').replace('。', '')
+        for chinese_num in CHINESE_NUMBERS.keys():
+            if cleaned == chinese_num or cleaned.startswith(chinese_num):
+                return 1
+        
+        # 阿拉伯数字 -> Level 2
+        if re.match(r'^\d+\.?$', cleaned):
+            return 2
+        
+        return 2
+    
+    def parse_number(value: Any) -> float:
+        """解析数字"""
+        if pd.isna(value):
+            return 0.0
+        value_str = str(value).strip()
+        value_str = re.sub(r'[^\d.\-]', '', value_str)
+        if not value_str or value_str == '-':
+            return 0.0
+        try:
+            return float(value_str)
+        except ValueError:
+            return 0.0
+    
+    # 识别表头行
+    header_row_idx = None
+    for i in range(min(5, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        row_text_no_space = row_text.replace(" ", "")
+        if "工程或费用名称" in row_text_no_space and "费用金额" in row_text_no_space:
+            header_row_idx = i
+            break
+        elif "序号" in row_text and "费用金额" in row_text:
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        header_row_idx = 0
+        logger.warning(f"[表格解析] 未找到明确表头，使用第一行作为表头")
+    
+    # 从表头行识别列索引
+    header_row = df.iloc[header_row_idx].astype(str).str.strip()
+    
+    col_no = None
+    col_name = None
+    col_cost = None
+    
+    for idx, cell in enumerate(header_row):
+        cell_no_space = cell.replace(" ", "")
+        if "序号" in cell_no_space or cell_no_space == "No":
+            col_no = idx
+        elif "工程或费用名称" in cell_no_space or "费用名称" in cell_no_space:
+            col_name = idx
+        elif "费用金额" in cell_no_space:
+            col_cost = idx
+    
+    if col_no is None:
+        col_no = 0
+    if col_name is None:
+        col_name = 1
+    if col_cost is None:
+        col_cost = 2
+    
+    logger.info(f"[表格解析] 列索引: 序号={col_no}, 名称={col_name}, 费用金额={col_cost}")
+    
+    # 从数据行开始解析
+    data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    
+    result = []
+    for idx, row in data_rows.iterrows():
+        if row.isna().all():
+            continue
+        
+        no_val = row.iloc[col_no] if col_no is not None and col_no < len(row) else None
+        name_val = row.iloc[col_name] if col_name is not None and col_name < len(row) else None
+        cost_val = row.iloc[col_cost] if col_cost is not None and col_cost < len(row) else None
+        
+        # 解析序号
+        no = None
+        no_str = ""
+        if no_val is not None and not pd.isna(no_val):
+            no_str = str(no_val).strip()
+            if no_str:
+                try:
+                    no = int(float(no_str))
+                except (ValueError, TypeError):
+                    cleaned = no_str.replace(' ', '').replace('、', '').replace('.', '').replace('。', '')
+                    cleaned_no_brackets = cleaned.replace('（', '').replace('(', '').replace('）', '').replace(')', '')
+                    if cleaned_no_brackets in CHINESE_NUMBERS:
+                        no = CHINESE_NUMBERS[cleaned_no_brackets]
+        
+        if not no_str or pd.isna(no_val):
+            continue
+        
+        expense_name = str(name_val).strip() if name_val is not None and not pd.isna(name_val) else ""
+        
+        if not expense_name:
+            continue
+        
+        if any(kw in expense_name for kw in ["合计", "总计", "小计"]):
+            continue
+        
+        level = determine_level(no_str)
+        cost = parse_number(cost_val)
+        
+        result.append({
+            "No": no if no is not None else idx + 1,
+            "Level": level,
+            "name": project_name,
+            "projectOrExpenseName": expense_name,
+            "cost": cost,
+        })
+    
+    logger.info(f"[表格解析] 解析完成: 工程名称={project_name}, 共 {len(result)} 条数据")
+    return result
+
+
 def parse_settlement_report_tables(
     merged_tables: List[Tuple[int, pd.DataFrame, str, int]]
 ) -> Dict[str, List[Dict[str, Any]]]:
@@ -2153,8 +2600,10 @@ def extract_and_filter_tables_for_pdf(
     logger.info(f"[表格提取] 输出目录: {base_output_dir}")
 
     # 1. 使用 pdfplumber 从 PDF 提取所有表格（不限制页数）
+    # 对于 designReview 类型，启用标题提取（用于识别多个概算表）
+    extract_titles = (doc_type == "designReview")
     logger.info("[表格提取] 步骤1: 使用 pdfplumber 提取所有表格...")
-    tables_data = extract_tables_with_pdfplumber(str(pdf_path_obj), pages="all")
+    tables_data = extract_tables_with_pdfplumber(str(pdf_path_obj), pages="all", extract_titles=extract_titles)
     logger.info(f"[表格提取] 步骤1完成: 共提取到 {len(tables_data)} 个表格")
 
     # 2. 保存所有原始表格为 xlsx，命名: table_page{page}_{index}.xlsx
@@ -2162,9 +2611,15 @@ def extract_and_filter_tables_for_pdf(
     page_table_count: Dict[int, int] = {}
     all_tables_meta: List[Dict[str, Any]] = []
 
+    # 存储表格标题映射（用于后续解析）
+    table_titles: Dict[int, str] = {}  # orig_idx -> title
+
     # 给每个表格一个全局索引，方便后续合并/去重
     all_tables: List[Tuple[int, pd.DataFrame, int]] = []  # (orig_idx, df, page)
-    for orig_idx, (page, df, _bbox) in enumerate(tables_data):
+    for orig_idx, (page, df, _bbox, title) in enumerate(tables_data):
+        # 保存标题映射
+        if title:
+            table_titles[orig_idx] = title
         page_table_count[page] = page_table_count.get(page, 0) + 1
         idx_on_page = page_table_count[page]
 
@@ -2226,17 +2681,21 @@ def extract_and_filter_tables_for_pdf(
 
     # 5. 从合并后的表格中过滤出匹配规则的表格
     logger.info("[表格提取] 步骤5: 从合并后的表格中筛选匹配规则的表格...")
-    matched_for_merge: List[Tuple[int, pd.DataFrame, str, int]] = []
+    # 增加 title 字段: (orig_idx, df, rule_name, page, title)
+    matched_for_merge: List[Tuple[int, pd.DataFrame, str, int, str]] = []
     for merged_idx, (orig_idx, df, page) in enumerate(merged_all_tables):
         rule_name: Optional[str] = None
         for rule in header_rules:
             is_match, rn = check_table_header(df, rule)
             if is_match:
                 rule_name = rn
-                logger.info(f"[表格提取] 表格 {merged_idx + 1} (页面 {page}) 匹配规则: {rule_name}")
+                # 获取表格标题
+                title = table_titles.get(orig_idx, "")
+                logger.info(f"[表格提取] 表格 {merged_idx + 1} (页面 {page}) 匹配规则: {rule_name}, 标题: {title}")
                 break
         if rule_name:
-            matched_for_merge.append((orig_idx, df.copy(), rule_name, page))
+            title = table_titles.get(orig_idx, "")
+            matched_for_merge.append((orig_idx, df.copy(), rule_name, page, title))
     logger.info(f"[表格提取] 步骤5完成: 共匹配到 {len(matched_for_merge)} 个表格")
 
     # 如果没有匹配到表格，直接返回（保留 extracted_tables 和 merged_tables）
@@ -2263,7 +2722,7 @@ def extract_and_filter_tables_for_pdf(
     filtered_meta: List[Dict[str, Any]] = []
 
     parsed_data = None
-    for orig_idx, df, rule_name, page in merged_tables:
+    for orig_idx, df, rule_name, page, title in merged_tables:
         filtered_page_table_count[page] = filtered_page_table_count.get(page, 0) + 1
         idx_on_page = filtered_page_table_count[page]
 
@@ -2275,6 +2734,7 @@ def extract_and_filter_tables_for_pdf(
                 "page": page,
                 "index_on_page": idx_on_page,
                 "rule_name": rule_name,
+                "title": title,
                 "excel_path": str(excel_path),
             }
         )
@@ -2282,24 +2742,70 @@ def extract_and_filter_tables_for_pdf(
     
     # 8. 根据文档类型解析表格数据
     logger.info(f"[表格提取] 步骤8: 解析表格数据，文档类型: {doc_type}...")
-    logger.info(f"[表格提取] 待解析的表格列表: {[(rule_name, page) for _, _, rule_name, page in merged_tables]}")
+    logger.info(f"[表格提取] 待解析的表格列表: {[(rule_name, page, title) for _, _, rule_name, page, title in merged_tables]}")
     if doc_type == "designReview":
-        # 对于 designReview 类型，解析第一个匹配的表格生成 JSON 数据
-        for orig_idx, df, rule_name, page in merged_tables:
-            if parsed_data is None:
+        # 对于 designReview 类型，返回类似 settlementReport 的结构
+        # 按规则类型分组：
+        # - 初设评审的概算投资（规则1）: 嵌套结构
+        # - 初设评审的概算投资明细（规则2）: 平铺结构，多个表格
+        # - 初设评审的概算投资费用（规则3）: 平铺结构，多个表格
+        parsed_data = {
+            "初设评审的概算投资": [],
+            "初设评审的概算投资明细": [],
+            "初设评审的概算投资费用": [],
+        }
+        
+        for orig_idx, df, rule_name, page, title in merged_tables:
+            if rule_name == "初设评审的概算投资":
+                # 规则1：嵌套结构
                 try:
-                    logger.info(f"[表格提取] 解析 designReview 表格: {rule_name} (页面 {page}, 行数: {len(df)})")
-                    parsed_data = parse_design_review_table(df)
-                    logger.info(f"[表格提取] 解析完成: 共 {len(parsed_data)} 条数据")
-                    break
+                    logger.info(f"[表格提取] 解析 designReview 表格(规则1): {rule_name} (页面 {page}, 行数: {len(df)})")
+                    summary_data = parse_design_review_table(df)
+                    if summary_data:
+                        parsed_data["初设评审的概算投资"] = summary_data
+                        logger.info(f"[表格提取] 解析完成: 共 {len(summary_data)} 条数据")
                 except Exception as e:
-                    # 如果解析失败，记录错误但不影响其他流程
-                    logger.warning(f"[表格提取] 解析 designReview 表格失败: {e}", exc_info=True)
+                    logger.warning(f"[表格提取] 解析 designReview 表格(规则1)失败: {e}", exc_info=True)
+            elif rule_name == "初设评审的概算投资明细":
+                # 规则2：使用标题作为工程名称
+                try:
+                    logger.info(f"[表格提取] 解析 designReview 表格(规则2): {rule_name} (页面 {page}, 标题: {title}, 行数: {len(df)})")
+                    detail_data = parse_design_review_detail_table(df, title)
+                    if detail_data:
+                        parsed_data["初设评审的概算投资明细"].extend(detail_data)
+                        logger.info(f"[表格提取] 解析完成: 共 {len(detail_data)} 条数据")
+                except Exception as e:
+                    logger.warning(f"[表格提取] 解析 designReview 表格(规则2)失败: {e}", exc_info=True)
+            elif rule_name == "初设评审的概算投资费用":
+                # 规则3：使用标题作为工程名称
+                try:
+                    logger.info(f"[表格提取] 解析 designReview 表格(规则3): {rule_name} (页面 {page}, 标题: {title}, 行数: {len(df)})")
+                    cost_data = parse_design_review_cost_table(df, title)
+                    if cost_data:
+                        parsed_data["初设评审的概算投资费用"].extend(cost_data)
+                        logger.info(f"[表格提取] 解析完成: 共 {len(cost_data)} 条数据")
+                except Exception as e:
+                    logger.warning(f"[表格提取] 解析 designReview 表格(规则3)失败: {e}", exc_info=True)
+        
+        # 统计解析结果
+        logger.info(f"[表格提取] 解析结果统计:")
+        total_records = 0
+        for table_type, table_data in parsed_data.items():
+            if table_data:
+                record_count = len(table_data)
+                total_records += record_count
+                logger.info(f"[表格提取]   - {table_type}: {record_count} 条数据")
+            else:
+                logger.info(f"[表格提取]   - {table_type}: 未匹配到数据")
+        logger.info(f"[表格提取] 总计: {total_records} 条数据")
+            
     elif doc_type == "settlementReport":
         # 对于 settlementReport 类型，解析所有匹配的表格，按表名组织
         try:
             logger.info(f"[表格提取] 解析 settlementReport 表格，共 {len(merged_tables)} 个表格")
-            parsed_data = parse_settlement_report_tables(merged_tables)
+            # 转换为4元组格式以兼容现有的 parse_settlement_report_tables 函数
+            tables_4tuple = [(orig_idx, df, rule_name, page) for orig_idx, df, rule_name, page, title in merged_tables]
+            parsed_data = parse_settlement_report_tables(tables_4tuple)
             # 统计每个表的解析结果
             logger.info(f"[表格提取] 解析结果统计:")
             total_records = 0

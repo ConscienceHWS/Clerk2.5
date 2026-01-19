@@ -8,6 +8,28 @@
 
 ---
 
+## 文档类型与模板数据源对照表
+
+| type | 说明 | 模板数据源文件 |
+|------|------|----------------|
+| fsApproval | 可研批复投资估算 | `2-（可研批复）晋电发展〔2017〕831号+国网山西省电力公司关于临汾古县、晋城周村220kV输变电等工程可行性研究报告的批复.pdf` |
+| fsReview | 可研评审投资估算 | `1-（可研评审）晋电经研规划〔2017〕187号(盖章)国网山西经研院关于山西晋城周村220kV输变电工程可行性研究报告的评审意见.pdf` |
+| pdApproval | 初设批复概算投资 | `5-（初设批复）晋电建设〔2019〕566号　国网山西省电力公司关于晋城周村220kV输变电工程初步设计的批复.pdf` |
+| designReview | 初设评审概算投资 | `4-（初设评审）中电联电力建设技术经济咨询中心技经〔2019〕201号关于山西周村220kV输变电工程初步设计的评审意见.pdf` |
+| settlementReport | 结算审计报告 | `9-（结算报告）山西晋城周村220kV输变电工程结算审计报告.pdf` |
+
+### 文档标题特征识别规则
+
+| type | 标题关键词 | 返回结构 |
+|------|-----------|----------|
+| fsApproval | 含"可研批复" | 三层嵌套 + 建设规模 |
+| fsReview | 含"可研评审" | 两层嵌套 |
+| pdApproval | 含"初设批复" | 两层嵌套 |
+| designReview | 含"初设评审" | 两层嵌套 |
+| settlementReport | 含"结算报告"或"审计报告" | 多表对象 |
+
+---
+
 ## 1. 健康检查
 
 ### 请求
@@ -258,30 +280,110 @@ GET /task/{task_id}/json
 
 ### 5.4 初设评审概算投资 (designReview)
 
-两层嵌套结构，与 pdApproval 结构完全一致。
+对象结构，包含三种表格类型（与 settlementReport 结构类似）：
+1. **初设评审的概算投资**（表头含：序号、工程名称、建设规模、静态投资、动态投资）- 嵌套结构
+2. **初设评审的概算投资明细**（表头含：序号、工程或费用名称、建筑工程费、设备购置费、安装工程费、其他费用、合计）- 平铺结构，一个 PDF 中可能包含多个表格
+3. **初设评审的概算投资费用**（表头含：序号、工程或费用名称、费用金额、各项占静态投资%、单位投资）- 平铺结构，一个 PDF 中可能包含多个表格
+
+**返回格式**:
 
 ```json
 {
   "document_type": "designReview",
-  "data": [
-    {
-      "name": "变电工程",
-      "Level": 0,
-      "staticInvestment": 9728.0,
-      "dynamicInvestment": 9910.0,
-      "items": [
-        {
-          "No": 1,
-          "name": "周村220kV变电站新建工程",
-          "Level": 1,
-          "staticInvestment": 9278.0,
-          "dynamicInvestment": 9452.0
-        }
-      ]
-    }
-  ]
+  "data": {
+    "初设评审的概算投资": [
+      {
+        "name": "变电工程",
+        "Level": 0,
+        "staticInvestment": 9728.0,
+        "dynamicInvestment": 9910.0,
+        "items": [
+          {
+            "No": 1,
+            "name": "周村220kV变电站新建工程",
+            "Level": 1,
+            "staticInvestment": 9278.0,
+            "dynamicInvestment": 9452.0
+          }
+        ]
+      }
+    ],
+    "初设评审的概算投资明细": [
+      {
+        "No": 1,
+        "Level": 1,
+        "name": "周村220kV变电站新建工程",
+        "projectOrExpenseName": "建筑工程",
+        "constructionProjectCost": 1234567.0,
+        "equipmentPurchaseCost": 2345678.0,
+        "installationProjectCost": 345678.0,
+        "otherExpenses": 123456.0
+      },
+      {
+        "No": 1,
+        "Level": 1,
+        "name": "凤城220kV变电站周村间隔扩建工程",
+        "projectOrExpenseName": "建筑工程",
+        "constructionProjectCost": 234567.0,
+        "equipmentPurchaseCost": 345678.0,
+        "installationProjectCost": 45678.0,
+        "otherExpenses": 23456.0
+      }
+    ],
+    "初设评审的概算投资费用": [
+      {
+        "No": 1,
+        "Level": 1,
+        "name": "周村220kV变电站新建工程",
+        "projectOrExpenseName": "建筑工程",
+        "cost": 1234567.0
+      },
+      {
+        "No": 1,
+        "Level": 1,
+        "name": "凤城220kV变电站周村间隔扩建工程",
+        "projectOrExpenseName": "建筑工程",
+        "cost": 234567.0
+      }
+    ]
+  }
 }
 ```
+
+**初设评审的概算投资 字段说明**（嵌套结构）:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| name | String | 工程大类名称（如"变电工程"、"线路工程"） |
+| Level | Integer | 层级（0=大类, 1=子项） |
+| staticInvestment | Number | 静态投资（万元） |
+| dynamicInvestment | Number | 动态投资（万元） |
+| items | Array | 子项目列表 |
+
+**初设评审的概算投资明细 字段说明**（平铺结构）:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| No | Integer | 序号 |
+| Level | Integer | 明细等级（1=大类, 2=子项, 3=明细） |
+| name | String | 单项工程名称（从表格标题提取，如"周村220kV变电站新建工程"） |
+| projectOrExpenseName | String | 工程或费用名称 |
+| constructionProjectCost | Number | 建筑工程费（元） |
+| equipmentPurchaseCost | Number | 设备购置费（元） |
+| installationProjectCost | Number | 安装工程费（元） |
+| otherExpenses | Number | 其他费用（元） |
+
+**初设评审的概算投资费用 字段说明**（平铺结构）:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| No | Integer | 序号 |
+| Level | Integer | 明细等级（1=大类, 2=子项, 3=明细） |
+| name | String | 单项工程名称（从表格标题提取，如"周村220kV变电站新建工程"） |
+| projectOrExpenseName | String | 工程或费用名称 |
+| cost | Number | 费用金额（元） |
+
+> **说明**: 明细表和费用表会从 PDF 中提取多个表格（如"周村220kV变电站新建工程总概算表"、"凤城220kV变电站周村间隔扩建工程总概算表"），每个表格的标题会作为 `name` 字段的值，包括变电站和间隔类型的工程。
 
 ---
 
@@ -381,18 +483,6 @@ curl -X GET "http://{host}:14213/task/{task_id}/json"
 
 1. **异步处理**: 文件上传后立即返回 `task_id`，需轮询状态直到 `completed`
 2. **轮询间隔**: 建议 3-5 秒轮询一次
-3. **超时时间**: 大文件处理可能需要 30 秒以上，建议设置 5 分钟超时
 4. **文件大小**: 支持最大 50MB 的 PDF 文件
 5. **类型指定**: `type` 参数必须与文档内容匹配，否则解析结果可能为空
 
----
-
-## 9. 文档类型对照表
-
-| type | 文档标题特征 | 返回结构 |
-|------|-------------|----------|
-| fsApproval | 可研批复 | 三层嵌套 + 建设规模 |
-| fsReview | 可研评审 | 两层嵌套 |
-| pdApproval | 初设批复 | 两层嵌套 |
-| designReview | 初设评审 | 两层嵌套 |
-| settlementReport | 结算报告/审计报告 | 多表对象 |
