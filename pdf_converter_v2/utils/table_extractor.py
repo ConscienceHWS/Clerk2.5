@@ -98,7 +98,7 @@ EXCLUDE_RULES: List[str] = []
 ENABLE_MERGE_CROSS_PAGE_TABLES: bool = True
 
 
-def extract_table_title_from_page(page, table_bbox: tuple, max_lines: int = 5) -> str:
+def extract_table_title_from_page(page, table_bbox: tuple, max_lines: int = 10) -> str:
     """
     从 PDF 页面中提取表格上方的文本作为表格标题。
     优先查找包含工程名称的行（如 "XXX变电站新建工程总概算表"）。
@@ -117,8 +117,8 @@ def extract_table_title_from_page(page, table_bbox: tuple, max_lines: int = 5) -
     table_top = table_bbox[1]  # 表格顶部 y 坐标
     page_width = page.width
     
-    # 在表格上方区域搜索文本（向上搜索 200 像素范围内，增大搜索范围）
-    search_top = max(0, table_top - 200)
+    # 在表格上方区域搜索文本（向上搜索到页面顶部）
+    search_top = 0  # 从页面顶部开始搜索
     search_bottom = table_top - 5  # 留一点边距
     
     if search_bottom <= search_top:
@@ -140,35 +140,48 @@ def extract_table_title_from_page(page, table_bbox: tuple, max_lines: int = 5) -
     if not lines:
         return ""
     
-    # 优先查找包含工程名称的行（特征：包含 "总概算表" 或 "概算表" + "工程"）
-    # 从下往上搜索（最接近表格的优先）
+    # 排除的关键词（这些不是工程名称）
+    exclude_keywords = ["工程规模", "金额单位", "建设规模", "附表", "附件"]
+    
+    def is_valid_title(line: str) -> bool:
+        """检查是否是有效的工程名称标题"""
+        # 排除包含排除关键词的行
+        if any(kw in line for kw in exclude_keywords):
+            return False
+        # 必须包含工程相关关键词
+        if not any(kw in line for kw in ["工程", "概算表", "估算表"]):
+            return False
+        return True
+    
+    # 优先查找包含 "总概算表" 的行（最可能是工程名称）
     for line in reversed(lines):
-        # 排除工程规模描述行
-        if "工程规模" in line or "金额单位" in line:
-            continue
-        # 查找包含工程名称的标题行
-        if ("总概算表" in line or "概算表" in line) and ("变电站" in line or "线路" in line or "间隔" in line):
-            return line.strip()
-    
-    # 次优先：查找包含 "变电站" 或 "线路" + "工程" 的行
-    for line in reversed(lines):
-        if "工程规模" in line or "金额单位" in line:
-            continue
-        if ("变电站" in line or "线路" in line or "间隔" in line) and "工程" in line:
-            return line.strip()
-    
-    # 再次优先：查找包含 "工程" 和 "概算表/估算表/汇总表" 的行
-    for line in reversed(lines[-max_lines:]):
-        if "工程规模" in line or "金额单位" in line:
-            continue
-        if any(kw in line for kw in ["概算表", "估算表", "汇总表"]) and "工程" in line:
-            return line.strip()
-    
-    # 最后：返回第一行非工程规模描述的行
-    for line in lines:
-        if "工程规模" not in line and "金额单位" not in line:
-            if any(kw in line for kw in ["工程", "概算表", "估算表", "汇总表"]):
+        if "总概算表" in line and is_valid_title(line):
+            # 进一步检查是否包含具体工程类型
+            if any(kw in line for kw in ["变电站", "线路", "间隔", "kV", "KV", "千伏"]):
                 return line.strip()
+    
+    # 次优先：查找包含 "概算表" 但不是 "总概算表" 的行
+    for line in reversed(lines):
+        if "概算表" in line and "总概算表" not in line and is_valid_title(line):
+            if any(kw in line for kw in ["变电站", "线路", "间隔", "kV", "KV", "千伏"]):
+                return line.strip()
+    
+    # 再次优先：查找包含 "变电站"/"线路"/"间隔" + "工程" 的行
+    for line in reversed(lines):
+        if is_valid_title(line):
+            if any(kw in line for kw in ["变电站", "线路", "间隔"]) and "工程" in line:
+                return line.strip()
+    
+    # 查找包含电压等级 + "工程" 的行
+    for line in reversed(lines):
+        if is_valid_title(line):
+            if any(kw in line for kw in ["kV", "KV", "千伏", "kv"]) and "工程" in line:
+                return line.strip()
+    
+    # 最后：返回任何包含工程关键词的有效行
+    for line in reversed(lines):
+        if is_valid_title(line):
+            return line.strip()
     
     return ""
 
