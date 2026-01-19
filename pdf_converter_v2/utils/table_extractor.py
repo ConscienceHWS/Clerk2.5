@@ -2580,13 +2580,17 @@ def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[D
 
 def _group_items_by_name(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    将平铺的项目列表按 name 字段分组为嵌套结构。
+    将平铺的项目列表按 name 字段分组，并按 Level 嵌套：
+    - Level 1 的项作为大类
+    - Level 2 的项作为大类的子项（放入 items 中）
     
     输入:
     [
-        {"No": 1, "Level": 1, "name": "工程A", "projectOrExpenseName": "费用1", ...},
-        {"No": 2, "Level": 1, "name": "工程A", "projectOrExpenseName": "费用2", ...},
-        {"No": 1, "Level": 1, "name": "工程B", "projectOrExpenseName": "费用1", ...},
+        {"No": "一", "Level": 1, "name": "工程A", "projectOrExpenseName": "主辅生产工程", ...},
+        {"No": "(一)", "Level": 2, "name": "工程A", "projectOrExpenseName": "主要生产工程", ...},
+        {"No": "(二)", "Level": 2, "name": "工程A", "projectOrExpenseName": "辅助生产工程", ...},
+        {"No": "二", "Level": 1, "name": "工程A", "projectOrExpenseName": "其他费用", ...},
+        {"No": "", "Level": 2, "name": "工程A", "projectOrExpenseName": "其中：建设场地征用", ...},
     ]
     
     输出:
@@ -2594,14 +2598,19 @@ def _group_items_by_name(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         {
             "name": "工程A",
             "items": [
-                {"No": 1, "Level": 1, "projectOrExpenseName": "费用1", ...},
-                {"No": 2, "Level": 1, "projectOrExpenseName": "费用2", ...},
-            ]
-        },
-        {
-            "name": "工程B",
-            "items": [
-                {"No": 1, "Level": 1, "projectOrExpenseName": "费用1", ...},
+                {
+                    "No": "一", "Level": 1, "projectOrExpenseName": "主辅生产工程", ...,
+                    "items": [
+                        {"No": "(一)", "Level": 2, "projectOrExpenseName": "主要生产工程", ...},
+                        {"No": "(二)", "Level": 2, "projectOrExpenseName": "辅助生产工程", ...},
+                    ]
+                },
+                {
+                    "No": "二", "Level": 1, "projectOrExpenseName": "其他费用", ...,
+                    "items": [
+                        {"No": "", "Level": 2, "projectOrExpenseName": "其中：建设场地征用", ...},
+                    ]
+                }
             ]
         }
     ]
@@ -2609,25 +2618,50 @@ def _group_items_by_name(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not items:
         return []
     
-    # 使用有序字典保持工程顺序
     from collections import OrderedDict
-    grouped: OrderedDict[str, List[Dict[str, Any]]] = OrderedDict()
+    
+    # 第一步：按工程名称（name）分组
+    grouped_by_name: OrderedDict[str, List[Dict[str, Any]]] = OrderedDict()
     
     for item in items:
         name = item.get("name", "未知工程")
-        if name not in grouped:
-            grouped[name] = []
-        
-        # 复制 item 并移除 name 字段（因为 name 会作为分组的键）
+        if name not in grouped_by_name:
+            grouped_by_name[name] = []
+        # 复制 item 并移除 name 字段
         item_copy = {k: v for k, v in item.items() if k != "name"}
-        grouped[name].append(item_copy)
+        grouped_by_name[name].append(item_copy)
     
-    # 转换为列表格式
+    # 第二步：在每个工程组内，按 Level 建立父子关系
     result = []
-    for name, group_items in grouped.items():
+    for name, group_items in grouped_by_name.items():
+        nested_items = []
+        current_parent = None
+        
+        for item in group_items:
+            level = item.get("Level", 1)
+            
+            if level == 1:
+                # Level 1 是大类，创建新的父项
+                item_with_children = dict(item)
+                item_with_children["items"] = []
+                nested_items.append(item_with_children)
+                current_parent = item_with_children
+            elif level == 2:
+                # Level 2 是子项，放入当前父项的 items 中
+                if current_parent is not None:
+                    # 移除 Level 字段（子项统一在父项下，不需要重复标识）
+                    child_item = {k: v for k, v in item.items()}
+                    current_parent["items"].append(child_item)
+                else:
+                    # 没有父项，作为独立项处理
+                    nested_items.append(item)
+            else:
+                # 其他 Level，作为独立项
+                nested_items.append(item)
+        
         result.append({
             "name": name,
-            "items": group_items
+            "items": nested_items
         })
     
     return result
