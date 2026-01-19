@@ -98,9 +98,10 @@ EXCLUDE_RULES: List[str] = []
 ENABLE_MERGE_CROSS_PAGE_TABLES: bool = True
 
 
-def extract_table_title_from_page(page, table_bbox: tuple, max_lines: int = 3) -> str:
+def extract_table_title_from_page(page, table_bbox: tuple, max_lines: int = 5) -> str:
     """
     从 PDF 页面中提取表格上方的文本作为表格标题。
+    优先查找包含工程名称的行（如 "XXX变电站新建工程总概算表"）。
     
     Args:
         page: pdfplumber page 对象
@@ -116,8 +117,8 @@ def extract_table_title_from_page(page, table_bbox: tuple, max_lines: int = 3) -
     table_top = table_bbox[1]  # 表格顶部 y 坐标
     page_width = page.width
     
-    # 在表格上方区域搜索文本（向上搜索 100 像素范围内）
-    search_top = max(0, table_top - 100)
+    # 在表格上方区域搜索文本（向上搜索 200 像素范围内，增大搜索范围）
+    search_top = max(0, table_top - 200)
     search_bottom = table_top - 5  # 留一点边距
     
     if search_bottom <= search_top:
@@ -134,19 +135,42 @@ def extract_table_title_from_page(page, table_bbox: tuple, max_lines: int = 3) -
     if not text.strip():
         return ""
     
-    # 取最后几行（最接近表格的行）
+    # 取所有行
     lines = [line.strip() for line in text.strip().split('\n') if line.strip()]
     if not lines:
         return ""
     
-    # 返回最后一行（最接近表格的标题）
-    # 通常标题行包含 "工程" 或 "概算表" 等关键词
-    for line in reversed(lines[-max_lines:]):
-        if any(kw in line for kw in ["工程", "概算表", "估算表", "汇总表"]):
+    # 优先查找包含工程名称的行（特征：包含 "总概算表" 或 "概算表" + "工程"）
+    # 从下往上搜索（最接近表格的优先）
+    for line in reversed(lines):
+        # 排除工程规模描述行
+        if "工程规模" in line or "金额单位" in line:
+            continue
+        # 查找包含工程名称的标题行
+        if ("总概算表" in line or "概算表" in line) and ("变电站" in line or "线路" in line or "间隔" in line):
             return line.strip()
     
-    # 如果没有找到特征关键词，返回最后一行
-    return lines[-1].strip() if lines else ""
+    # 次优先：查找包含 "变电站" 或 "线路" + "工程" 的行
+    for line in reversed(lines):
+        if "工程规模" in line or "金额单位" in line:
+            continue
+        if ("变电站" in line or "线路" in line or "间隔" in line) and "工程" in line:
+            return line.strip()
+    
+    # 再次优先：查找包含 "工程" 和 "概算表/估算表/汇总表" 的行
+    for line in reversed(lines[-max_lines:]):
+        if "工程规模" in line or "金额单位" in line:
+            continue
+        if any(kw in line for kw in ["概算表", "估算表", "汇总表"]) and "工程" in line:
+            return line.strip()
+    
+    # 最后：返回第一行非工程规模描述的行
+    for line in lines:
+        if "工程规模" not in line and "金额单位" not in line:
+            if any(kw in line for kw in ["工程", "概算表", "估算表", "汇总表"]):
+                return line.strip()
+    
+    return ""
 
 
 def extract_tables_with_pdfplumber(
@@ -2198,59 +2222,76 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
         except ValueError:
             return 0.0
     
-    # 识别表头行（通常在前几行）
-    header_row_idx = None
+    # 识别表头行（可能有多行表头，需要扫描多行来找到列索引）
+    # 先找到包含 "序号" 的行作为起始行
+    header_start_idx = None
     for i in range(min(5, len(df))):
         row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
         row_text_no_space = row_text.replace(" ", "")
-        # 检查是否包含表头关键词
-        if "工程或费用名称" in row_text_no_space and "建筑工程费" in row_text_no_space:
-            header_row_idx = i
-            break
-        elif "序号" in row_text and ("建筑工程" in row_text or "设备购置" in row_text):
-            header_row_idx = i
+        if "序号" in row_text_no_space:
+            header_start_idx = i
             break
     
-    if header_row_idx is None:
-        # 如果没有找到明确的表头，假设第一行是表头
-        header_row_idx = 0
-        logger.warning(f"[表格解析] 未找到明确表头，使用第一行作为表头")
+    if header_start_idx is None:
+        header_start_idx = 0
+        logger.warning(f"[表格解析] 未找到包含'序号'的表头行，使用第一行作为表头")
     
-    # 从表头行识别列索引
-    header_row = df.iloc[header_row_idx].astype(str).str.strip()
+    # 扫描表头区域（可能是多行表头），收集所有列的关键词
+    col_no = None
+    col_name = None
+    col_construction = None
+    col_equipment = None
+    col_installation = None
+    col_other = None
     
-    col_no = None  # 序号列
-    col_name = None  # 工程或费用名称列
-    col_construction = None  # 建筑工程费列
-    col_equipment = None  # 设备购置费列
-    col_installation = None  # 安装工程费列
-    col_other = None  # 其他费用列
-    
-    for idx, cell in enumerate(header_row):
-        cell_no_space = cell.replace(" ", "")
-        if "序号" in cell_no_space or cell_no_space == "No":
-            col_no = idx
-        elif "工程或费用名称" in cell_no_space or "费用名称" in cell_no_space:
-            col_name = idx
-        elif "建筑工程费" in cell_no_space or "建筑工程" in cell_no_space:
-            col_construction = idx
-        elif "设备购置费" in cell_no_space or "设备购置" in cell_no_space:
-            col_equipment = idx
-        elif "安装工程费" in cell_no_space or "安装工程" in cell_no_space:
-            col_installation = idx
-        elif "其他费用" in cell_no_space:
-            col_other = idx
+    # 扫描前几行表头（多行表头情况）
+    header_end_idx = header_start_idx
+    for i in range(header_start_idx, min(header_start_idx + 3, len(df))):
+        row = df.iloc[i].astype(str).str.strip()
+        for idx, cell in enumerate(row):
+            cell_no_space = cell.replace(" ", "")
+            if ("序号" in cell_no_space or cell_no_space == "No") and col_no is None:
+                col_no = idx
+            elif ("工程或费用名称" in cell_no_space or "费用名称" in cell_no_space) and col_name is None:
+                col_name = idx
+            elif ("建筑工程费" in cell_no_space or "建筑工程" in cell_no_space) and col_construction is None:
+                col_construction = idx
+            elif ("设备购置费" in cell_no_space or "设备购置" in cell_no_space) and col_equipment is None:
+                col_equipment = idx
+            elif ("安装工程费" in cell_no_space or "安装工程" in cell_no_space) and col_installation is None:
+                col_installation = idx
+            elif "其他费用" in cell_no_space and col_other is None:
+                col_other = idx
+        
+        # 检查这一行是否像数据行（第一列是数字或中文数字）
+        first_cell = row.iloc[0] if len(row) > 0 else ""
+        first_cell_clean = first_cell.replace(" ", "").replace("、", "")
+        chinese_nums = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十']
+        if first_cell_clean and (first_cell_clean.isdigit() or first_cell_clean in chinese_nums):
+            # 这一行可能是数据行，表头到此结束
+            header_end_idx = i - 1
+            break
+        header_end_idx = i
     
     # 如果关键列未找到，尝试位置推断
     if col_no is None:
         col_no = 0
     if col_name is None:
         col_name = 1
+    # 如果费用列都未找到，尝试按位置推断（假设顺序：序号、名称、建筑、设备、安装、其他、合计）
+    if col_construction is None and col_equipment is None and col_installation is None:
+        if len(df.columns) >= 7:
+            col_construction = 2
+            col_equipment = 3
+            col_installation = 4
+            col_other = 5
+            logger.info(f"[表格解析] 按位置推断列索引: 建筑={col_construction}, 设备={col_equipment}, 安装={col_installation}, 其他={col_other}")
     
     logger.info(f"[表格解析] 列索引: 序号={col_no}, 名称={col_name}, 建筑={col_construction}, 设备={col_equipment}, 安装={col_installation}, 其他={col_other}")
+    logger.info(f"[表格解析] 表头范围: 行 {header_start_idx} - {header_end_idx}")
     
     # 从数据行开始解析（跳过表头行）
-    data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+    data_rows = df.iloc[header_end_idx + 1:].reset_index(drop=True)
     
     result = []
     for idx, row in data_rows.iterrows():
