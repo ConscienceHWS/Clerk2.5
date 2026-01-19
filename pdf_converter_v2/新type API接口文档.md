@@ -281,9 +281,9 @@ GET /task/{task_id}/json
 ### 5.4 初设评审概算投资 (designReview)
 
 对象结构，包含三种表格类型（与 settlementReport 结构类似）：
-1. **初设评审的概算投资**（表头含：序号、工程名称、建设规模、静态投资、动态投资）- 嵌套结构
-2. **初设评审的概算投资明细**（表头含：序号、工程或费用名称、建筑工程费、设备购置费、安装工程费、其他费用、合计）- 平铺结构，一个 PDF 中可能包含多个表格
-3. **初设评审的概算投资费用**（表头含：序号、工程或费用名称、费用金额、各项占静态投资%、单位投资）- 平铺结构，一个 PDF 中可能包含多个表格
+1. **初设评审的概算投资**（表头含：序号、工程名称、建设规模、静态投资、动态投资）- 两层嵌套结构
+2. **初设评审的概算投资明细**（表头含：序号、工程或费用名称、建筑工程费、设备购置费、安装工程费、其他费用、合计）- 三层嵌套结构，按工程名称分组
+3. **初设评审的概算投资费用**（表头含：序号、工程或费用名称、费用金额、各项占静态投资%、单位投资）- 三层嵌套结构，按工程名称分组
 
 **返回格式**:
 
@@ -310,47 +310,84 @@ GET /task/{task_id}/json
     ],
     "初设评审的概算投资明细": [
       {
-        "No": 1,
-        "Level": 1,
         "name": "周村220kV变电站新建工程",
-        "projectOrExpenseName": "建筑工程",
-        "constructionProjectCost": 1234567.0,
-        "equipmentPurchaseCost": 2345678.0,
-        "installationProjectCost": 345678.0,
-        "otherExpenses": 123456.0
-      },
-      {
-        "No": 1,
-        "Level": 1,
-        "name": "凤城220kV变电站周村间隔扩建工程",
-        "projectOrExpenseName": "建筑工程",
-        "constructionProjectCost": 234567.0,
-        "equipmentPurchaseCost": 345678.0,
-        "installationProjectCost": 45678.0,
-        "otherExpenses": 23456.0
+        "items": [
+          {
+            "No": 1,
+            "Level": 1,
+            "projectOrExpenseName": "主辅生产工程",
+            "constructionProjectCost": 1537.0,
+            "equipmentPurchaseCost": 4309.0,
+            "installationProjectCost": 1417.0,
+            "otherExpenses": 0.0,
+            "items": [
+              {
+                "No": 1,
+                "Level": 2,
+                "projectOrExpenseName": "主要生产工程",
+                "constructionProjectCost": 1188.0,
+                "equipmentPurchaseCost": 4294.0,
+                "installationProjectCost": 1417.0,
+                "otherExpenses": 0.0
+              }
+            ]
+          },
+          {
+            "No": 4,
+            "Level": 1,
+            "projectOrExpenseName": "其他费用",
+            "constructionProjectCost": 0.0,
+            "equipmentPurchaseCost": 0.0,
+            "installationProjectCost": 0.0,
+            "otherExpenses": 1229.0,
+            "items": [
+              {
+                "No": 8,
+                "Level": 2,
+                "projectOrExpenseName": "建设场地征用及清理费",
+                "constructionProjectCost": 0.0,
+                "equipmentPurchaseCost": 0.0,
+                "installationProjectCost": 0.0,
+                "otherExpenses": 326.0
+              }
+            ]
+          }
+        ]
       }
     ],
     "初设评审的概算投资费用": [
       {
-        "No": 1,
-        "Level": 1,
-        "name": "周村220kV变电站新建工程",
-        "projectOrExpenseName": "建筑工程",
-        "cost": 1234567.0
-      },
-      {
-        "No": 1,
-        "Level": 1,
-        "name": "凤城220kV变电站周村间隔扩建工程",
-        "projectOrExpenseName": "建筑工程",
-        "cost": 234567.0
+        "name": "凤城—金鼎π入周村变220kV线路工程",
+        "items": [
+          {
+            "No": 1,
+            "Level": 1,
+            "projectOrExpenseName": "输电线路本体工程",
+            "cost": 2265.0,
+            "items": []
+          },
+          {
+            "No": 4,
+            "Level": 1,
+            "projectOrExpenseName": "其他费用",
+            "cost": 415.0,
+            "items": [
+              {
+                "No": 6,
+                "Level": 2,
+                "projectOrExpenseName": "建设场地征用及清理费",
+                "cost": 174.0
+              }
+            ]
+          }
+        ]
       }
     ]
   }
 }
 ```
 
-**初设评审的概算投资 字段说明**（嵌套结构）:
+**初设评审的概算投资 字段说明**（两层嵌套）:
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -360,30 +397,79 @@ GET /task/{task_id}/json
 | dynamicInvestment | Number | 动态投资（万元） |
 | items | Array | 子项目列表 |
 
-**初设评审的概算投资明细 字段说明**（平铺结构）:
+**初设评审的概算投资明细 字段说明**（三层嵌套）:
+
+第一层（按工程名称分组）:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| name | String | 单项工程名称（如"周村220kV变电站新建工程"） |
+| items | Array | 该工程下的费用项目列表 |
+
+第二层（费用大类，Level=1）:
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | No | Integer | 序号 |
-| Level | Integer | 明细等级（1=大类, 2=子项, 3=明细） |
-| name | String | 单项工程名称（从表格标题提取，如"周村220kV变电站新建工程"） |
+| Level | Integer | 1（大类） |
 | projectOrExpenseName | String | 工程或费用名称 |
-| constructionProjectCost | Number | 建筑工程费（元） |
-| equipmentPurchaseCost | Number | 设备购置费（元） |
-| installationProjectCost | Number | 安装工程费（元） |
-| otherExpenses | Number | 其他费用（元） |
+| constructionProjectCost | Number | 建筑工程费（万元） |
+| equipmentPurchaseCost | Number | 设备购置费（万元） |
+| installationProjectCost | Number | 安装工程费（万元） |
+| otherExpenses | Number | 其他费用（万元） |
+| items | Array | 子项列表 |
 
-**初设评审的概算投资费用 字段说明**（平铺结构）:
+第三层（费用子项，Level=2）:
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | No | Integer | 序号 |
-| Level | Integer | 明细等级（1=大类, 2=子项, 3=明细） |
-| name | String | 单项工程名称（从表格标题提取，如"周村220kV变电站新建工程"） |
-| projectOrExpenseName | String | 工程或费用名称 |
-| cost | Number | 费用金额（元） |
+| Level | Integer | 2（子项） |
+| projectOrExpenseName | String | 工程或费用名称（已去除"其中："前缀） |
+| constructionProjectCost | Number | 建筑工程费（万元） |
+| equipmentPurchaseCost | Number | 设备购置费（万元） |
+| installationProjectCost | Number | 安装工程费（万元） |
+| otherExpenses | Number | 其他费用（万元） |
 
-> **说明**: 明细表和费用表会从 PDF 中提取多个表格（如"周村220kV变电站新建工程总概算表"、"凤城220kV变电站周村间隔扩建工程总概算表"），每个表格的标题会作为 `name` 字段的值，包括变电站和间隔类型的工程。
+**初设评审的概算投资费用 字段说明**（三层嵌套）:
+
+第一层（按工程名称分组）:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| name | String | 单项工程名称（如"凤城—金鼎π入周村变220kV线路工程"） |
+| items | Array | 该工程下的费用项目列表 |
+
+第二层（费用大类，Level=1）:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| No | Integer | 序号 |
+| Level | Integer | 1（大类） |
+| projectOrExpenseName | String | 工程或费用名称 |
+| cost | Number | 费用金额（万元） |
+| items | Array | 子项列表 |
+
+第三层（费用子项，Level=2）:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| No | Integer | 序号 |
+| Level | Integer | 2（子项） |
+| projectOrExpenseName | String | 工程或费用名称（已去除"其中："前缀） |
+| cost | Number | 费用金额（万元） |
+
+**Level 判断规则**:
+
+| 序号格式 | Level | 说明 |
+|---------|-------|------|
+| 一、二、三 | 1 | 大类（中文数字） |
+| 1、2、3 | 1 | 大类（阿拉伯数字） |
+| (1)、（一）、（二） | 2 | 子项（带括号） |
+| 以"其中："开头 | 2 | 子项（特殊标识，输出时去除前缀） |
+| "可抵扣固定资产增值税额" | 1 | 特殊处理为大类 |
+
+> **说明**: 明细表和费用表会从 PDF 中提取多个表格（如"周村220kV变电站新建工程总概算表"、"凤城220kV变电站周村间隔扩建工程总概算表"），每个表格按工程名称分组，Level 2 的子项嵌套在对应的 Level 1 父项下。
 
 ---
 
