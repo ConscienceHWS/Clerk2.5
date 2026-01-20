@@ -8,8 +8,8 @@
       "constructionScaleBay": "1",
       "constructionScaleOverheadLine": "75.11",
       "constructionScaleOpticalCable": "124.2",
-      "staticInvestment": 19850.0,
-      "dynamicInvestment": 20222.0,
+      "staticInvestment": "19850",
+      "dynamicInvestment": "20222",
       "items": [
         {
           "No": 1,
@@ -19,8 +19,8 @@
           "constructionScaleBay": "1",
           "constructionScaleOverheadLine": "",
           "constructionScaleOpticalCable": "",
-          "staticInvestment": 10055.0,
-          "dynamicInvestment": 10244.0,
+          "staticInvestment": "10055",
+          "dynamicInvestment": "10244",
           "items": [
             {
               "No": 0,
@@ -30,8 +30,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 9630.0,
-              "dynamicInvestment": 9810.0
+              "staticInvestment": "9630",
+              "dynamicInvestment": "9810"
             },
             {
               "No": 0,
@@ -41,8 +41,8 @@
               "constructionScaleBay": "1",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 243.0,
-              "dynamicInvestment": 248.0
+              "staticInvestment": "243",
+              "dynamicInvestment": "248"
             },
             {
               "No": 0,
@@ -52,8 +52,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 91.0,
-              "dynamicInvestment": 93.0
+              "staticInvestment": "91",
+              "dynamicInvestment": "93"
             },
             {
               "No": 0,
@@ -63,8 +63,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 91.0,
-              "dynamicInvestment": 93.0
+              "staticInvestment": "91",
+              "dynamicInvestment": "93"
             }
           ]
         },
@@ -76,8 +76,8 @@
           "constructionScaleBay": "",
           "constructionScaleOverheadLine": "75.11",
           "constructionScaleOpticalCable": "",
-          "staticInvestment": 8734.0,
-          "dynamicInvestment": 8897.0,
+          "staticInvestment": "8734",
+          "dynamicInvestment": "8897",
           "items": [
             {
               "No": 0,
@@ -87,8 +87,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "25.2",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 2321.0,
-              "dynamicInvestment": 2364.0
+              "staticInvestment": "2321",
+              "dynamicInvestment": "2364"
             },
             {
               "No": 0,
@@ -98,8 +98,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "49.91",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 6413.0,
-              "dynamicInvestment": 6533.0
+              "staticInvestment": "6413",
+              "dynamicInvestment": "6533"
             }
           ]
         },
@@ -111,8 +111,8 @@
           "constructionScaleBay": "",
           "constructionScaleOverheadLine": "",
           "constructionScaleOpticalCable": "124.2",
-          "staticInvestment": 1061.0,
-          "dynamicInvestment": 1081.0,
+          "staticInvestment": "1061",
+          "dynamicInvestment": "1081",
           "items": [
             {
               "No": 0,
@@ -122,8 +122,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 680.0,
-              "dynamicInvestment": 693.0
+              "staticInvestment": "680",
+              "dynamicInvestment": "693"
             },
             {
               "No": 0,
@@ -133,8 +133,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "124.2",
-              "staticInvestment": 381.0,
-              "dynamicInvestment": 388.0
+              "staticInvestment": "381",
+              "dynamicInvestment": "388"
             }
           ]
         }
@@ -147,8 +147,8 @@
       "constructionScaleBay": "",
       "constructionScaleOverheadLine": "28",
       "constructionScaleOpticalCable": "19",
-      "staticInvestment": 4461.0,
-      "dynamicInvestment": 4623.0,
+      "staticInvestment": "4461",
+      "dynamicInvestment": "4623",
       "items": [
         {
           "No": 1,
@@ -158,8 +158,8 @@
           "constructionScaleBay": "",
           "constructionScaleOverheadLine": "",
           "constructionScaleOpticalCable": "",
-          "staticInvestment": 65.0,
-          "dynamicInvestment": 67.0,
+          "staticInvestment": "65",
+          "dynamicInvestment": "67",
           "items": [
             {
               "No": 0,
@@ -169,8 +169,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 35.0,
-              "dynamicInvestment": 36.0
+              "staticInvestment": "35",
+              "dynamicInvestment": "36"
             },
             {
               "No": 0,
@@ -180,8 +180,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 30.0,
-              "dynamicInvestment": 31.0
+              "staticInvestment": "30",
+              "dynamicInvestment": "31"
             }
           ]
         },
@@ -193,8 +193,8 @@
           "constructionScaleBay": "",
           "constructionScaleOverheadLine": "28",
           "constructionScaleOpticalCable": "",
-          "staticInvestment": 4160.0,
-          "dynamicInvestment": 4316.0,
+          "staticInvestment": "4160",
+          "dynamicInvestment": "4316",
           "items": [
             {
               "No": 0,
@@ -204,8 +204,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "13",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 2933.0,
-              "dynamicInvestment": 3043.0
+              "staticInvestment": "2933",
+              "dynamicInvestment": "3043"
             },
             {
               "No": 0,
@@ -215,8 +215,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "15",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 1227.0,
-              "dynamicInvestment": 1273.0
+              "staticInvestment": "1227",
+              "dynamicInvestment": "1273"
             }
           ]
         },
@@ -228,8 +228,8 @@
           "constructionScaleBay": "",
           "constructionScaleOverheadLine": "",
           "constructionScaleOpticalCable": "19",
-          "staticInvestment": 236.0,
-          "dynamicInvestment": 240.0,
+          "staticInvestment": "236",
+          "dynamicInvestment": "240",
           "items": [
             {
               "No": 0,
@@ -239,8 +239,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 167.0,
-              "dynamicInvestment": 170.0
+              "staticInvestment": "167",
+              "dynamicInvestment": "170"
             },
             {
               "No": 0,
@@ -250,8 +250,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "19",
-              "staticInvestment": 69.0,
-              "dynamicInvestment": 70.0
+              "staticInvestment": "69",
+              "dynamicInvestment": "70"
             }
           ]
         }
@@ -264,8 +264,8 @@
       "constructionScaleBay": "1",
       "constructionScaleOverheadLine": "33.7",
       "constructionScaleOpticalCable": "36.7",
-      "staticInvestment": 13119.0,
-      "dynamicInvestment": 13364.0,
+      "staticInvestment": "13119",
+      "dynamicInvestment": "13364",
       "items": [
         {
           "No": 1,
@@ -275,8 +275,8 @@
           "constructionScaleBay": "1",
           "constructionScaleOverheadLine": "",
           "constructionScaleOpticalCable": "",
-          "staticInvestment": 9076.0,
-          "dynamicInvestment": 9246.0,
+          "staticInvestment": "9076",
+          "dynamicInvestment": "9246",
           "items": [
             {
               "No": 0,
@@ -286,8 +286,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 8679.0,
-              "dynamicInvestment": 8841.0
+              "staticInvestment": "8679",
+              "dynamicInvestment": "8841"
             },
             {
               "No": 0,
@@ -297,8 +297,8 @@
               "constructionScaleBay": "1",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 205.0,
-              "dynamicInvestment": 209.0
+              "staticInvestment": "205",
+              "dynamicInvestment": "209"
             },
             {
               "No": 0,
@@ -308,8 +308,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 96.0,
-              "dynamicInvestment": 98.0
+              "staticInvestment": "96",
+              "dynamicInvestment": "98"
             },
             {
               "No": 0,
@@ -319,8 +319,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 96.0,
-              "dynamicInvestment": 98.0
+              "staticInvestment": "96",
+              "dynamicInvestment": "98"
             }
           ]
         },
@@ -332,8 +332,8 @@
           "constructionScaleBay": "",
           "constructionScaleOverheadLine": "33.7",
           "constructionScaleOpticalCable": "",
-          "staticInvestment": 3545.0,
-          "dynamicInvestment": 3611.0,
+          "staticInvestment": "3545",
+          "dynamicInvestment": "3611",
           "items": [
             {
               "No": 0,
@@ -343,8 +343,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "5.7",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 717.0,
-              "dynamicInvestment": 730.0
+              "staticInvestment": "717",
+              "dynamicInvestment": "730"
             },
             {
               "No": 0,
@@ -354,8 +354,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "28",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 2828.0,
-              "dynamicInvestment": 2881.0
+              "staticInvestment": "2828",
+              "dynamicInvestment": "2881"
             }
           ]
         },
@@ -367,8 +367,8 @@
           "constructionScaleBay": "",
           "constructionScaleOverheadLine": "",
           "constructionScaleOpticalCable": "36.7",
-          "staticInvestment": 498.0,
-          "dynamicInvestment": 507.0,
+          "staticInvestment": "498",
+          "dynamicInvestment": "507",
           "items": [
             {
               "No": 0,
@@ -378,8 +378,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 416.0,
-              "dynamicInvestment": 424.0
+              "staticInvestment": "416",
+              "dynamicInvestment": "424"
             },
             {
               "No": 0,
@@ -389,8 +389,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "36.7",
-              "staticInvestment": 82.0,
-              "dynamicInvestment": 83.0
+              "staticInvestment": "82",
+              "dynamicInvestment": "83"
             }
           ]
         }
@@ -403,8 +403,8 @@
       "constructionScaleBay": "1",
       "constructionScaleOverheadLine": "20.7",
       "constructionScaleOpticalCable": "20.7",
-      "staticInvestment": 14557.0,
-      "dynamicInvestment": 14829.0,
+      "staticInvestment": "14557",
+      "dynamicInvestment": "14829",
       "items": [
         {
           "No": 1,
@@ -414,8 +414,8 @@
           "constructionScaleBay": "1",
           "constructionScaleOverheadLine": "",
           "constructionScaleOpticalCable": "",
-          "staticInvestment": 9317.0,
-          "dynamicInvestment": 9491.0,
+          "staticInvestment": "9317",
+          "dynamicInvestment": "9491",
           "items": [
             {
               "No": 0,
@@ -425,8 +425,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 8889.0,
-              "dynamicInvestment": 9055.0
+              "staticInvestment": "8889",
+              "dynamicInvestment": "9055"
             },
             {
               "No": 0,
@@ -436,8 +436,8 @@
               "constructionScaleBay": "1",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 341.0,
-              "dynamicInvestment": 347.0
+              "staticInvestment": "341",
+              "dynamicInvestment": "347"
             },
             {
               "No": 0,
@@ -447,8 +447,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 87.0,
-              "dynamicInvestment": 89.0
+              "staticInvestment": "87",
+              "dynamicInvestment": "89"
             }
           ]
         },
@@ -460,8 +460,8 @@
           "constructionScaleBay": "",
           "constructionScaleOverheadLine": "20.7",
           "constructionScaleOpticalCable": "",
-          "staticInvestment": 4657.0,
-          "dynamicInvestment": 4744.0,
+          "staticInvestment": "4657",
+          "dynamicInvestment": "4744",
           "items": [
             {
               "No": 0,
@@ -471,8 +471,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "8.7",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 2945.0,
-              "dynamicInvestment": 3000.0
+              "staticInvestment": "2945",
+              "dynamicInvestment": "3000"
             },
             {
               "No": 0,
@@ -482,8 +482,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "12",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 1712.0,
-              "dynamicInvestment": 1744.0
+              "staticInvestment": "1712",
+              "dynamicInvestment": "1744"
             }
           ]
         },
@@ -495,8 +495,8 @@
           "constructionScaleBay": "",
           "constructionScaleOverheadLine": "",
           "constructionScaleOpticalCable": "20.7",
-          "staticInvestment": 583.0,
-          "dynamicInvestment": 594.0,
+          "staticInvestment": "583",
+          "dynamicInvestment": "594",
           "items": [
             {
               "No": 0,
@@ -506,8 +506,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 502.0,
-              "dynamicInvestment": 511.0
+              "staticInvestment": "502",
+              "dynamicInvestment": "511"
             },
             {
               "No": 0,
@@ -517,8 +517,8 @@
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "20.7",
-              "staticInvestment": 81.0,
-              "dynamicInvestment": 83.0
+              "staticInvestment": "81",
+              "dynamicInvestment": "83"
             }
           ]
         }
