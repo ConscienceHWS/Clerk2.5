@@ -10,6 +10,8 @@ MinerU 服务管理模块
 """
 
 import asyncio
+import os
+import socket
 import subprocess
 import time
 import threading
@@ -23,11 +25,18 @@ logger = get_logger("pdf_converter_v2.mineru_manager")
 # 服务名称
 MINERU_SERVICE_NAME = "mineru-api.service"
 
+# MinerU API 地址和端口（用于健康检查）
+MINERU_API_HOST = os.getenv("MINERU_API_HOST", "192.168.2.3")
+MINERU_API_PORT = int(os.getenv("MINERU_API_PORT", "8000"))
+
 # 空闲超时时间（秒），超过此时间无任务则停止服务
-IDLE_TIMEOUT_SECONDS = int(__import__('os').getenv("MINERU_IDLE_TIMEOUT", "60"))  # 默认 1 分钟
+IDLE_TIMEOUT_SECONDS = int(os.getenv("MINERU_IDLE_TIMEOUT", "60"))  # 默认 1 分钟
 
 # 检查间隔（秒）
-CHECK_INTERVAL_SECONDS = int(__import__('os').getenv("MINERU_CHECK_INTERVAL", "60"))  # 默认 1 分钟
+CHECK_INTERVAL_SECONDS = int(os.getenv("MINERU_CHECK_INTERVAL", "60"))  # 默认 1 分钟
+
+# 服务启动等待超时（秒）
+SERVICE_START_TIMEOUT = int(os.getenv("MINERU_START_TIMEOUT", "120"))  # 默认 2 分钟
 
 
 class MinerUServiceManager:
@@ -97,33 +106,83 @@ class MinerUServiceManager:
             return False, str(e)
     
     def is_service_active(self) -> bool:
-        """检查服务是否正在运行"""
+        """检查服务是否正在运行（systemd 状态）"""
         success, output = self._run_systemctl("is-active")
         is_active = success and output == "active"
         logger.debug(f"[MinerU管理器] 服务状态: {output} (active={is_active})")
         return is_active
     
+    def is_port_available(self, host: str = None, port: int = None, timeout: float = 2.0) -> bool:
+        """
+        检查 MinerU API 端口是否可连接
+        
+        Args:
+            host: 主机地址，默认使用 MINERU_API_HOST
+            port: 端口号，默认使用 MINERU_API_PORT
+            timeout: 连接超时时间（秒）
+        
+        Returns:
+            True 如果端口可连接
+        """
+        host = host or MINERU_API_HOST
+        port = port or MINERU_API_PORT
+        
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            is_available = result == 0
+            logger.debug(f"[MinerU管理器] 端口检测 {host}:{port} -> {'可用' if is_available else '不可用'}")
+            return is_available
+        except Exception as e:
+            logger.debug(f"[MinerU管理器] 端口检测失败: {e}")
+            return False
+    
+    def is_service_ready(self) -> bool:
+        """
+        检查服务是否完全就绪（systemd active 且端口可连接）
+        """
+        return self.is_service_active() and self.is_port_available()
+    
     def start_service_sync(self) -> bool:
-        """同步启动服务"""
-        if self.is_service_active():
-            logger.debug("[MinerU管理器] 服务已在运行，无需启动")
+        """同步启动服务，等待端口可用"""
+        # 如果服务已完全就绪，无需启动
+        if self.is_service_ready():
+            logger.debug("[MinerU管理器] 服务已就绪，无需启动")
             return True
         
-        logger.info("[MinerU管理器] 正在启动 MinerU 服务...")
-        success, output = self._run_systemctl("start")
-        
-        if success:
-            # 等待服务完全启动（最多等待 30 秒）
-            for i in range(30):
-                time.sleep(1)
-                if self.is_service_active():
-                    logger.info(f"[MinerU管理器] 服务启动成功（等待 {i+1}s）")
-                    return True
-            logger.warning("[MinerU管理器] 服务启动超时（30s）")
-            return False
+        # 如果 systemd 状态是 active 但端口不可用，等待端口
+        if self.is_service_active():
+            logger.info("[MinerU管理器] 服务已启动，等待端口就绪...")
         else:
-            logger.error(f"[MinerU管理器] 服务启动失败: {output}")
-            return False
+            logger.info("[MinerU管理器] 正在启动 MinerU 服务...")
+            success, output = self._run_systemctl("start")
+            if not success:
+                logger.error(f"[MinerU管理器] 服务启动失败: {output}")
+                return False
+        
+        # 等待服务完全启动（systemd active 且端口可连接）
+        start_time = time.time()
+        check_interval = 2  # 每 2 秒检查一次
+        
+        while time.time() - start_time < SERVICE_START_TIMEOUT:
+            if self.is_service_ready():
+                elapsed = time.time() - start_time
+                logger.info(f"[MinerU管理器] 服务启动成功，端口已就绪（等待 {elapsed:.1f}s）")
+                return True
+            
+            # 检查服务是否意外停止
+            if not self.is_service_active():
+                logger.error("[MinerU管理器] 服务启动后意外停止")
+                return False
+            
+            elapsed = time.time() - start_time
+            logger.debug(f"[MinerU管理器] 等待端口就绪... ({elapsed:.0f}s/{SERVICE_START_TIMEOUT}s)")
+            time.sleep(check_interval)
+        
+        logger.warning(f"[MinerU管理器] 服务启动超时（{SERVICE_START_TIMEOUT}s），端口仍不可用")
+        return False
     
     async def start_service(self) -> bool:
         """异步启动服务"""
@@ -259,14 +318,21 @@ class MinerUServiceManager:
         if last_end_time is not None:
             idle_seconds = (datetime.now() - last_end_time).total_seconds()
         
+        service_active = self.is_service_active()
+        port_available = self.is_port_available() if service_active else False
+        
         return {
             "service_name": MINERU_SERVICE_NAME,
-            "service_active": self.is_service_active(),
+            "service_active": service_active,
+            "port_available": port_available,
+            "service_ready": service_active and port_available,
+            "api_endpoint": f"http://{MINERU_API_HOST}:{MINERU_API_PORT}",
             "active_tasks": active_tasks,
             "last_task_end_time": last_end_time.isoformat() if last_end_time else None,
             "idle_seconds": idle_seconds,
             "idle_timeout_seconds": IDLE_TIMEOUT_SECONDS,
             "check_interval_seconds": CHECK_INTERVAL_SECONDS,
+            "service_start_timeout": SERVICE_START_TIMEOUT,
             "monitor_running": self._monitor_thread is not None and self._monitor_thread.is_alive()
         }
 
