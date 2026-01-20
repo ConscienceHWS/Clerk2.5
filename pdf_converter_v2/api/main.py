@@ -75,6 +75,17 @@ except Exception:
 # 获取日志记录器
 logger = get_logger("pdf_converter_v2.api")
 
+# MinerU 服务管理器（延迟导入，避免循环依赖）
+_mineru_manager = None
+
+def get_mineru_manager():
+    """获取 MinerU 服务管理器"""
+    global _mineru_manager
+    if _mineru_manager is None:
+        from ..utils.mineru_service_manager import get_mineru_manager as _get_manager
+        _mineru_manager = _get_manager()
+    return _mineru_manager
+
 app = FastAPI(
     title="PDF转换工具API v2",
     description="将PDF转换为Markdown和JSON格式（使用外部API）",
@@ -92,6 +103,30 @@ app.add_middleware(
 
 # 存储任务状态
 task_status = {}
+
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时初始化"""
+    logger.info("[启动] 正在初始化 MinerU 服务管理器...")
+    try:
+        manager = get_mineru_manager()
+        manager.start_monitor()
+        logger.info("[启动] MinerU 服务管理器初始化完成")
+    except Exception as e:
+        logger.warning(f"[启动] MinerU 服务管理器初始化失败（非致命）: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理"""
+    logger.info("[关闭] 正在停止 MinerU 服务监控...")
+    try:
+        manager = get_mineru_manager()
+        manager.stop_monitor()
+        logger.info("[关闭] MinerU 服务监控已停止")
+    except Exception as e:
+        logger.warning(f"[关闭] 停止 MinerU 服务监控失败: {e}")
 
 
 class ConversionRequest(BaseModel):
@@ -188,6 +223,49 @@ async def root():
 async def health_check():
     """健康检查"""
     return {"status": "healthy", "service": "pdf_converter_v2"}
+
+
+@app.get("/mineru/status")
+async def mineru_status():
+    """获取 MinerU 服务状态"""
+    try:
+        manager = get_mineru_manager()
+        return manager.get_status()
+    except Exception as e:
+        logger.exception(f"获取 MinerU 状态失败: {e}")
+        return {"error": str(e)}
+
+
+@app.post("/mineru/start")
+async def mineru_start():
+    """手动启动 MinerU 服务"""
+    try:
+        manager = get_mineru_manager()
+        success = await manager.start_service()
+        return {
+            "success": success,
+            "message": "服务已启动" if success else "服务启动失败",
+            "status": manager.get_status()
+        }
+    except Exception as e:
+        logger.exception(f"启动 MinerU 服务失败: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/mineru/stop")
+async def mineru_stop():
+    """手动停止 MinerU 服务（仅在无活跃任务时）"""
+    try:
+        manager = get_mineru_manager()
+        success = await manager.stop_service()
+        return {
+            "success": success,
+            "message": "服务已停止" if success else "服务停止失败（可能有活跃任务）",
+            "status": manager.get_status()
+        }
+    except Exception as e:
+        logger.exception(f"停止 MinerU 服务失败: {e}")
+        return {"success": False, "error": str(e)}
 
 
 async def process_conversion_task(
@@ -330,15 +408,60 @@ async def process_conversion_task(
             else:
                 # 没有文本层（扫描件），需要调用外部 OCR API
                 logger.warning(f"[任务 {task_id}] PDF 无文本层（可能是扫描件），调用外部 OCR API")
+                
+                # 确保 MinerU 服务正在运行
+                mineru_mgr = get_mineru_manager()
+                await mineru_mgr.start_service()
+                mineru_mgr.task_started()
+                
+                try:
+                    result = await convert_to_markdown(
+                        input_file=file_path,
+                        output_dir=output_dir,
+                        is_ocr=True,  # 启用 OCR
+                        formula_enable=True,
+                        table_enable=True,
+                        language=DEFAULT_LANGUAGE,
+                        backend=DEFAULT_BACKEND,
+                        url=DEFAULT_API_URL,
+                        embed_images=False,
+                        output_json=True,
+                        start_page_id=DEFAULT_START_PAGE_ID,
+                        end_page_id=DEFAULT_END_PAGE_ID,
+                        parse_method=DEFAULT_PARSE_METHOD,
+                        server_url=DEFAULT_SERVER_URL,
+                        response_format_zip=DEFAULT_RESPONSE_FORMAT_ZIP,
+                        return_middle_json=DEFAULT_RETURN_MIDDLE_JSON,
+                        return_model_output=DEFAULT_RETURN_MODEL_OUTPUT,
+                        return_md=DEFAULT_RETURN_MD,
+                        return_images=DEFAULT_RETURN_IMAGES,
+                        return_content_list=DEFAULT_RETURN_CONTENT_LIST,
+                        forced_document_type=request.doc_type
+                    )
+                finally:
+                    mineru_mgr.task_ended()
+        else:
+            # 其他类型（包括投资类型 fsApproval, fsReview, pdApproval 以及 noiseRec, emRec, opStatus）
+            # 执行转换（v2 使用外部API）
+            # v2 特有的参数通过配置或环境变量获取
+            
+            # 确保 MinerU 服务正在运行
+            mineru_mgr = get_mineru_manager()
+            await mineru_mgr.start_service()
+            mineru_mgr.task_started()
+            
+            try:
                 result = await convert_to_markdown(
                     input_file=file_path,
                     output_dir=output_dir,
-                    is_ocr=True,  # 启用 OCR
+                    # v2: 去除max_pages、公式/表格等前端可调参数
+                    is_ocr=False,
                     formula_enable=True,
                     table_enable=True,
                     language=DEFAULT_LANGUAGE,
                     backend=DEFAULT_BACKEND,
                     url=DEFAULT_API_URL,
+                    # v2: 固定为 False
                     embed_images=False,
                     output_json=True,
                     start_page_id=DEFAULT_START_PAGE_ID,
@@ -353,35 +476,8 @@ async def process_conversion_task(
                     return_content_list=DEFAULT_RETURN_CONTENT_LIST,
                     forced_document_type=request.doc_type
                 )
-        else:
-            # 其他类型（包括投资类型 fsApproval, fsReview, pdApproval 以及 noiseRec, emRec, opStatus）
-            # 执行转换（v2 使用外部API）
-            # v2 特有的参数通过配置或环境变量获取
-            result = await convert_to_markdown(
-                input_file=file_path,
-                output_dir=output_dir,
-                # v2: 去除max_pages、公式/表格等前端可调参数
-                is_ocr=False,
-                formula_enable=True,
-                table_enable=True,
-                language=DEFAULT_LANGUAGE,
-                backend=DEFAULT_BACKEND,
-                url=DEFAULT_API_URL,
-                # v2: 固定为 False
-                embed_images=False,
-                output_json=True,
-                start_page_id=DEFAULT_START_PAGE_ID,
-                end_page_id=DEFAULT_END_PAGE_ID,
-                parse_method=DEFAULT_PARSE_METHOD,
-                server_url=DEFAULT_SERVER_URL,
-                response_format_zip=DEFAULT_RESPONSE_FORMAT_ZIP,
-                return_middle_json=DEFAULT_RETURN_MIDDLE_JSON,
-                return_model_output=DEFAULT_RETURN_MODEL_OUTPUT,
-                return_md=DEFAULT_RETURN_MD,
-                return_images=DEFAULT_RETURN_IMAGES,
-                return_content_list=DEFAULT_RETURN_CONTENT_LIST,
-                forced_document_type=request.doc_type
-            )
+            finally:
+                mineru_mgr.task_ended()
         
         # 停止监控并获取统计结果（基于采集的数据计算）
         monitor.stop()
