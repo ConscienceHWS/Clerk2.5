@@ -105,28 +105,29 @@ app.add_middleware(
 task_status = {}
 
 
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时初始化"""
-    logger.info("[启动] 正在初始化 MinerU 服务管理器...")
-    try:
-        manager = get_mineru_manager()
-        manager.start_monitor()
-        logger.info("[启动] MinerU 服务管理器初始化完成")
-    except Exception as e:
-        logger.warning(f"[启动] MinerU 服务管理器初始化失败（非致命）: {e}")
+# MinerU 定时管理器暂时禁用，保持原有逻辑
+# @app.on_event("startup")
+# async def startup_event():
+#     """应用启动时初始化"""
+#     logger.info("[启动] 正在初始化 MinerU 服务管理器...")
+#     try:
+#         manager = get_mineru_manager()
+#         manager.start_monitor()
+#         logger.info("[启动] MinerU 服务管理器初始化完成")
+#     except Exception as e:
+#         logger.warning(f"[启动] MinerU 服务管理器初始化失败（非致命）: {e}")
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭时清理"""
-    logger.info("[关闭] 正在停止 MinerU 服务监控...")
-    try:
-        manager = get_mineru_manager()
-        manager.stop_monitor()
-        logger.info("[关闭] MinerU 服务监控已停止")
-    except Exception as e:
-        logger.warning(f"[关闭] 停止 MinerU 服务监控失败: {e}")
+# @app.on_event("shutdown")
+# async def shutdown_event():
+#     """应用关闭时清理"""
+#     logger.info("[关闭] 正在停止 MinerU 服务监控...")
+#     try:
+#         manager = get_mineru_manager()
+#         manager.stop_monitor()
+#         logger.info("[关闭] MinerU 服务监控已停止")
+#     except Exception as e:
+#         logger.warning(f"[关闭] 停止 MinerU 服务监控失败: {e}")
 
 
 class ConversionRequest(BaseModel):
@@ -409,59 +410,20 @@ async def process_conversion_task(
                 # 没有文本层（扫描件），需要调用外部 OCR API
                 logger.warning(f"[任务 {task_id}] PDF 无文本层（可能是扫描件），调用外部 OCR API")
                 
-                # 确保 MinerU 服务正在运行
-                mineru_mgr = get_mineru_manager()
-                await mineru_mgr.start_service()
-                mineru_mgr.task_started()
+                # MinerU 服务管理暂时禁用，保持原有逻辑
+                # mineru_mgr = get_mineru_manager()
+                # await mineru_mgr.start_service()
+                # mineru_mgr.task_started()
                 
-                try:
-                    result = await convert_to_markdown(
-                        input_file=file_path,
-                        output_dir=output_dir,
-                        is_ocr=True,  # 启用 OCR
-                        formula_enable=True,
-                        table_enable=True,
-                        language=DEFAULT_LANGUAGE,
-                        backend=DEFAULT_BACKEND,
-                        url=DEFAULT_API_URL,
-                        embed_images=False,
-                        output_json=True,
-                        start_page_id=DEFAULT_START_PAGE_ID,
-                        end_page_id=DEFAULT_END_PAGE_ID,
-                        parse_method=DEFAULT_PARSE_METHOD,
-                        server_url=DEFAULT_SERVER_URL,
-                        response_format_zip=DEFAULT_RESPONSE_FORMAT_ZIP,
-                        return_middle_json=DEFAULT_RETURN_MIDDLE_JSON,
-                        return_model_output=DEFAULT_RETURN_MODEL_OUTPUT,
-                        return_md=DEFAULT_RETURN_MD,
-                        return_images=DEFAULT_RETURN_IMAGES,
-                        return_content_list=DEFAULT_RETURN_CONTENT_LIST,
-                        forced_document_type=request.doc_type
-                    )
-                finally:
-                    mineru_mgr.task_ended()
-        else:
-            # 其他类型（包括投资类型 fsApproval, fsReview, pdApproval 以及 noiseRec, emRec, opStatus）
-            # 执行转换（v2 使用外部API）
-            # v2 特有的参数通过配置或环境变量获取
-            
-            # 确保 MinerU 服务正在运行
-            mineru_mgr = get_mineru_manager()
-            await mineru_mgr.start_service()
-            mineru_mgr.task_started()
-            
-            try:
                 result = await convert_to_markdown(
                     input_file=file_path,
                     output_dir=output_dir,
-                    # v2: 去除max_pages、公式/表格等前端可调参数
-                    is_ocr=False,
+                    is_ocr=True,  # 启用 OCR
                     formula_enable=True,
                     table_enable=True,
                     language=DEFAULT_LANGUAGE,
                     backend=DEFAULT_BACKEND,
                     url=DEFAULT_API_URL,
-                    # v2: 固定为 False
                     embed_images=False,
                     output_json=True,
                     start_page_id=DEFAULT_START_PAGE_ID,
@@ -476,8 +438,41 @@ async def process_conversion_task(
                     return_content_list=DEFAULT_RETURN_CONTENT_LIST,
                     forced_document_type=request.doc_type
                 )
-            finally:
-                mineru_mgr.task_ended()
+        else:
+            # 其他类型（包括投资类型 fsApproval, fsReview, pdApproval 以及 noiseRec, emRec, opStatus）
+            # 执行转换（v2 使用外部API）
+            # v2 特有的参数通过配置或环境变量获取
+            
+            # MinerU 服务管理暂时禁用，保持原有逻辑
+            # mineru_mgr = get_mineru_manager()
+            # await mineru_mgr.start_service()
+            # mineru_mgr.task_started()
+            
+            result = await convert_to_markdown(
+                input_file=file_path,
+                output_dir=output_dir,
+                # v2: 去除max_pages、公式/表格等前端可调参数
+                is_ocr=False,
+                formula_enable=True,
+                table_enable=True,
+                language=DEFAULT_LANGUAGE,
+                backend=DEFAULT_BACKEND,
+                url=DEFAULT_API_URL,
+                # v2: 固定为 False
+                embed_images=False,
+                output_json=True,
+                start_page_id=DEFAULT_START_PAGE_ID,
+                end_page_id=DEFAULT_END_PAGE_ID,
+                parse_method=DEFAULT_PARSE_METHOD,
+                server_url=DEFAULT_SERVER_URL,
+                response_format_zip=DEFAULT_RESPONSE_FORMAT_ZIP,
+                return_middle_json=DEFAULT_RETURN_MIDDLE_JSON,
+                return_model_output=DEFAULT_RETURN_MODEL_OUTPUT,
+                    return_md=DEFAULT_RETURN_MD,
+                return_images=DEFAULT_RETURN_IMAGES,
+                return_content_list=DEFAULT_RETURN_CONTENT_LIST,
+                forced_document_type=request.doc_type
+            )
         
         # 停止监控并获取统计结果（基于采集的数据计算）
         monitor.stop()
