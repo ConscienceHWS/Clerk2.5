@@ -24,7 +24,7 @@ logger = get_logger("pdf_converter_v2.mineru_manager")
 MINERU_SERVICE_NAME = "mineru-api.service"
 
 # 空闲超时时间（秒），超过此时间无任务则停止服务
-IDLE_TIMEOUT_SECONDS = int(__import__('os').getenv("MINERU_IDLE_TIMEOUT", "300"))  # 默认 5 分钟
+IDLE_TIMEOUT_SECONDS = int(__import__('os').getenv("MINERU_IDLE_TIMEOUT", "60"))  # 默认 1 分钟
 
 # 检查间隔（秒）
 CHECK_INTERVAL_SECONDS = int(__import__('os').getenv("MINERU_CHECK_INTERVAL", "60"))  # 默认 1 分钟
