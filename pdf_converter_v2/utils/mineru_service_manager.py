@@ -62,6 +62,10 @@ class MinerUServiceManager:
         self._active_tasks = 0
         self._tasks_lock = threading.Lock()
         
+        # 服务正在启动中的标志（防止启动过程中被停止）
+        self._starting = False
+        self._starting_lock = threading.Lock()
+        
         # 最后一次任务完成时间（或管理器启动时间，用于计算空闲）
         self._last_task_end_time: Optional[datetime] = None
         
@@ -152,37 +156,46 @@ class MinerUServiceManager:
             logger.debug("[MinerU管理器] 服务已就绪，无需启动")
             return True
         
-        # 如果 systemd 状态是 active 但端口不可用，等待端口
-        if self.is_service_active():
-            logger.info("[MinerU管理器] 服务已启动，等待端口就绪...")
-        else:
-            logger.info("[MinerU管理器] 正在启动 MinerU 服务...")
-            success, output = self._run_systemctl("start")
-            if not success:
-                logger.error(f"[MinerU管理器] 服务启动失败: {output}")
-                return False
+        # 设置启动中标志，防止定时任务在启动过程中停止服务
+        with self._starting_lock:
+            self._starting = True
         
-        # 等待服务完全启动（systemd active 且端口可连接）
-        start_time = time.time()
-        check_interval = 2  # 每 2 秒检查一次
-        
-        while time.time() - start_time < SERVICE_START_TIMEOUT:
-            if self.is_service_ready():
+        try:
+            # 如果 systemd 状态是 active 但端口不可用，等待端口
+            if self.is_service_active():
+                logger.info("[MinerU管理器] 服务已启动，等待端口就绪...")
+            else:
+                logger.info("[MinerU管理器] 正在启动 MinerU 服务...")
+                success, output = self._run_systemctl("start")
+                if not success:
+                    logger.error(f"[MinerU管理器] 服务启动失败: {output}")
+                    return False
+            
+            # 等待服务完全启动（systemd active 且端口可连接）
+            start_time = time.time()
+            check_interval = 2  # 每 2 秒检查一次
+            
+            while time.time() - start_time < SERVICE_START_TIMEOUT:
+                if self.is_service_ready():
+                    elapsed = time.time() - start_time
+                    logger.info(f"[MinerU管理器] 服务启动成功，端口已就绪（等待 {elapsed:.1f}s）")
+                    return True
+                
+                # 检查服务是否意外停止
+                if not self.is_service_active():
+                    logger.error("[MinerU管理器] 服务启动后意外停止")
+                    return False
+                
                 elapsed = time.time() - start_time
-                logger.info(f"[MinerU管理器] 服务启动成功，端口已就绪（等待 {elapsed:.1f}s）")
-                return True
+                logger.debug(f"[MinerU管理器] 等待端口就绪... ({elapsed:.0f}s/{SERVICE_START_TIMEOUT}s)")
+                time.sleep(check_interval)
             
-            # 检查服务是否意外停止
-            if not self.is_service_active():
-                logger.error("[MinerU管理器] 服务启动后意外停止")
-                return False
-            
-            elapsed = time.time() - start_time
-            logger.debug(f"[MinerU管理器] 等待端口就绪... ({elapsed:.0f}s/{SERVICE_START_TIMEOUT}s)")
-            time.sleep(check_interval)
-        
-        logger.warning(f"[MinerU管理器] 服务启动超时（{SERVICE_START_TIMEOUT}s），端口仍不可用")
-        return False
+            logger.warning(f"[MinerU管理器] 服务启动超时（{SERVICE_START_TIMEOUT}s），端口仍不可用")
+            return False
+        finally:
+            # 清除启动中标志
+            with self._starting_lock:
+                self._starting = False
     
     async def start_service(self) -> bool:
         """异步启动服务"""
@@ -196,6 +209,12 @@ class MinerUServiceManager:
         if not self.is_service_active():
             logger.debug("[MinerU管理器] 服务未运行，无需停止")
             return True
+        
+        # 检查是否正在启动中
+        with self._starting_lock:
+            if self._starting:
+                logger.warning("[MinerU管理器] 服务正在启动中，不能停止")
+                return False
         
         # 检查是否有活跃任务
         with self._tasks_lock:
@@ -321,9 +340,13 @@ class MinerUServiceManager:
         service_active = self.is_service_active()
         port_available = self.is_port_available() if service_active else False
         
+        with self._starting_lock:
+            is_starting = self._starting
+        
         return {
             "service_name": MINERU_SERVICE_NAME,
             "service_active": service_active,
+            "service_starting": is_starting,
             "port_available": port_available,
             "service_ready": service_active and port_available,
             "api_endpoint": f"http://{MINERU_API_HOST}:{MINERU_API_PORT}",
