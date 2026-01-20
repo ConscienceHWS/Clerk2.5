@@ -53,8 +53,11 @@ class MinerUServiceManager:
         self._active_tasks = 0
         self._tasks_lock = threading.Lock()
         
-        # 最后一次任务完成时间
+        # 最后一次任务完成时间（或管理器启动时间，用于计算空闲）
         self._last_task_end_time: Optional[datetime] = None
+        
+        # 管理器初始化时间（用于首次空闲检测）
+        self._init_time: datetime = datetime.now()
         
         # 定时检查线程
         self._monitor_thread: Optional[threading.Thread] = None
@@ -207,15 +210,15 @@ class MinerUServiceManager:
             return
         
         # 检查空闲时间
-        if last_end_time is None:
-            # 从未有任务完成，检查服务启动后是否一直空闲
-            logger.debug("[MinerU管理器] 尚无任务完成记录，保持服务运行")
-            return
-        
-        idle_seconds = (datetime.now() - last_end_time).total_seconds()
+        # 如果从未有任务完成，使用管理器初始化时间作为参考
+        reference_time = last_end_time if last_end_time is not None else self._init_time
+        idle_seconds = (datetime.now() - reference_time).total_seconds()
         
         if idle_seconds >= IDLE_TIMEOUT_SECONDS:
-            logger.info(f"[MinerU管理器] 服务已空闲 {idle_seconds:.0f}s，超过阈值 {IDLE_TIMEOUT_SECONDS}s，准备停止")
+            if last_end_time is None:
+                logger.info(f"[MinerU管理器] 服务启动后无任务，已空闲 {idle_seconds:.0f}s，超过阈值 {IDLE_TIMEOUT_SECONDS}s，准备停止")
+            else:
+                logger.info(f"[MinerU管理器] 服务已空闲 {idle_seconds:.0f}s，超过阈值 {IDLE_TIMEOUT_SECONDS}s，准备停止")
             self.stop_service_sync()
         else:
             remaining = IDLE_TIMEOUT_SECONDS - idle_seconds
