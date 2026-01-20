@@ -797,19 +797,16 @@ def parse_settlement_summary_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     
     result = []
     
-    def parse_number(value: Any) -> float:
-        """解析数字，支持中文数字格式，保留两位小数"""
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
         if pd.isna(value):
-            return 0.0
+            return "0"
         value_str = str(value).strip()
         # 移除常见的非数字字符（保留小数点、负号）
         value_str = re.sub(r'[^\d.\-]', '', value_str)
         if not value_str or value_str == '-':
-            return 0.0
-        try:
-            return round(float(value_str), 2)
-        except ValueError:
-            return 0.0
+            return "0"
+        return value_str
     
     for idx, row in data_rows.iterrows():
         # 跳过空行
@@ -1033,19 +1030,16 @@ def parse_contract_execution_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     
     result = []
     
-    def parse_number(value: Any) -> float:
-        """解析数字，支持中文数字格式，保留两位小数"""
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
         if pd.isna(value):
-            return 0.0
+            return "0"
         value_str = str(value).strip()
         # 移除常见的非数字字符（保留小数点、负号）
         value_str = re.sub(r'[^\d.\-]', '', value_str)
         if not value_str or value_str == '-':
-            return 0.0
-        try:
-            return round(float(value_str), 2)
-        except ValueError:
-            return 0.0
+            return "0"
+        return value_str
     
     for idx, row in data_rows.iterrows():
         # 跳过空行
@@ -1230,19 +1224,16 @@ def parse_compensation_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     
     result = []
     
-    def parse_number(value: Any) -> float:
-        """解析数字，支持中文数字格式，保留两位小数"""
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
         if pd.isna(value):
-            return 0.0
+            return "0"
         value_str = str(value).strip()
         # 移除常见的非数字字符（保留小数点、负号）
         value_str = re.sub(r'[^\d.\-]', '', value_str)
         if not value_str or value_str == '-':
-            return 0.0
-        try:
-            return round(float(value_str), 2)
-        except ValueError:
-            return 0.0
+            return "0"
+        return value_str
     
     for idx, row in data_rows.iterrows():
         # 跳过空行
@@ -1433,19 +1424,16 @@ def parse_material_purchase_contract1_table(df: pd.DataFrame) -> List[Dict[str, 
     
     result = []
     
-    def parse_number(value: Any) -> float:
-        """解析数字，支持中文数字格式，保留两位小数"""
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
         if pd.isna(value):
-            return 0.0
+            return "0"
         value_str = str(value).strip()
         # 移除常见的非数字字符（保留小数点、负号）
         value_str = re.sub(r'[^\d.\-]', '', value_str)
         if not value_str or value_str == '-':
-            return 0.0
-        try:
-            return round(float(value_str), 2)
-        except ValueError:
-            return 0.0
+            return "0"
+        return value_str
     
     for idx, row in data_rows.iterrows():
         # 跳过空行
@@ -1635,19 +1623,16 @@ def parse_material_purchase_contract2_table(df: pd.DataFrame) -> List[Dict[str, 
     
     result = []
     
-    def parse_number(value: Any) -> float:
-        """解析数字，支持中文数字格式，保留两位小数"""
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
         if pd.isna(value):
-            return 0.0
+            return "0"
         value_str = str(value).strip()
         # 移除常见的非数字字符（保留小数点、负号）
         value_str = re.sub(r'[^\d.\-]', '', value_str)
         if not value_str or value_str == '-':
-            return 0.0
-        try:
-            return round(float(value_str), 2)
-        except ValueError:
-            return 0.0
+            return "0"
+        return value_str
     
     for idx, row in data_rows.iterrows():
         # 跳过空行
@@ -1838,19 +1823,16 @@ def parse_other_service_contract_table(df: pd.DataFrame) -> List[Dict[str, Any]]
     
     result = []
     
-    def parse_number(value: Any) -> float:
-        """解析数字，支持中文数字格式，保留两位小数"""
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
         if pd.isna(value):
-            return 0.0
+            return "0"
         value_str = str(value).strip()
         # 移除常见的非数字字符（保留小数点、负号）
         value_str = re.sub(r'[^\d.\-]', '', value_str)
         if not value_str or value_str == '-':
-            return 0.0
-        try:
-            return round(float(value_str), 2)
-        except ValueError:
-            return 0.0
+            return "0"
+        return value_str
     
     for idx, row in data_rows.iterrows():
         # 跳过空行
@@ -2027,19 +2009,16 @@ def parse_design_review_table(df: pd.DataFrame) -> List[Dict[str, Any]]:
     # 从数据行开始解析（跳过表头行）
     data_rows = df.iloc[header_row_idx + 1:].reset_index(drop=True)
     
-    def parse_number(value: Any) -> float:
-        """解析数字，支持中文数字格式"""
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
         if pd.isna(value):
-            return 0.0
+            return "0"
         value_str = str(value).strip()
         # 移除常见的非数字字符（保留小数点、负号）
         value_str = re.sub(r'[^\d.\-]', '', value_str)
         if not value_str or value_str == '-':
-            return 0.0
-        try:
-            return float(value_str)
-        except ValueError:
-            return 0.0
+            return "0"
+        return value_str
     
     # 先解析所有行
     all_items = []
@@ -2245,19 +2224,16 @@ def parse_design_review_detail_table(df: pd.DataFrame, table_title: str) -> List
         
         return 1  # 默认
     
-    def parse_number(value: Any) -> float:
-        """解析数字"""
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
         if pd.isna(value):
-            return 0.0
+            return "0"
         value_str = str(value).strip()
         # 移除常见的非数字字符（保留小数点、负号）
         value_str = re.sub(r'[^\d.\-]', '', value_str)
         if not value_str or value_str == '-':
-            return 0.0
-        try:
-            return float(value_str)
-        except ValueError:
-            return 0.0
+            return "0"
+        return value_str
     
     # 识别表头行（可能有多行表头，需要扫描多行来找到列索引）
     # 先找到包含 "序号" 的行作为起始行
@@ -2517,18 +2493,15 @@ def parse_design_review_cost_table(df: pd.DataFrame, table_title: str) -> List[D
         
         return 1
     
-    def parse_number(value: Any) -> float:
-        """解析数字"""
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
         if pd.isna(value):
-            return 0.0
+            return "0"
         value_str = str(value).strip()
         value_str = re.sub(r'[^\d.\-]', '', value_str)
         if not value_str or value_str == '-':
-            return 0.0
-        try:
-            return float(value_str)
-        except ValueError:
-            return 0.0
+            return "0"
+        return value_str
     
     # 识别表头行
     header_row_idx = None

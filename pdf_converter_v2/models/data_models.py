@@ -359,13 +359,11 @@ class FeasibilityApprovalInvestment:
         return result
     
     @staticmethod
-    def _parse_number(value: str) -> float:
+    def _parse_number(value: str) -> str:
+        """将数字字符串格式化，保留原始精度"""
         if not value or not value.strip():
-            return 0.0
-        try:
-            return float(value.strip())
-        except ValueError:
-            return 0.0
+            return "0"
+        return value.strip()
     
     @staticmethod
     def _parse_no(value: str) -> int:
@@ -460,13 +458,11 @@ class FeasibilityReviewInvestment:
         return result
     
     @staticmethod
-    def _parse_number(value: str) -> float:
+    def _parse_number(value: str) -> str:
+        """将数字字符串格式化，保留原始精度"""
         if not value or not value.strip():
-            return 0.0
-        try:
-            return float(value.strip())
-        except ValueError:
-            return 0.0
+            return "0"
+        return value.strip()
     
     @staticmethod
     def _parse_no(value: str) -> int:
@@ -551,14 +547,11 @@ class PreliminaryApprovalInvestment:
         return result
     
     @staticmethod
-    def _parse_number(value: str) -> float:
-        """将字符串数字转换为浮点数"""
+    def _parse_number(value: str) -> str:
+        """将数字字符串格式化，保留原始精度"""
         if not value or not value.strip():
-            return 0.0
-        try:
-            return float(value.strip())
-        except ValueError:
-            return 0.0
+            return "0"
+        return value.strip()
     
     @staticmethod
     def _parse_no(value: str) -> int:
