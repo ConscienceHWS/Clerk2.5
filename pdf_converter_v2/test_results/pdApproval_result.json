@@ -4,44 +4,44 @@
     {
       "name": "变电工程",
       "Level": 0,
-      "staticInvestment": 9728.0,
-      "dynamicInvestment": 9910.0,
+      "staticInvestment": "9728",
+      "dynamicInvestment": "9910",
       "items": [
         {
           "No": 1,
           "name": "周村220kV变电站新建工程",
           "Level": 1,
-          "staticInvestment": 9278.0,
-          "dynamicInvestment": 9452.0
+          "staticInvestment": "9278",
+          "dynamicInvestment": "9452"
         },
         {
           "No": 2,
           "name": "凤城220kV变电站周村间隔扩建工程",
           "Level": 1,
-          "staticInvestment": 450.0,
-          "dynamicInvestment": 458.0
+          "staticInvestment": "450",
+          "dynamicInvestment": "458"
         }
       ]
     },
     {
       "name": "线路工程",
       "Level": 0,
-      "staticInvestment": 4678.0,
-      "dynamicInvestment": 4765.0,
+      "staticInvestment": "4678",
+      "dynamicInvestment": "4765",
       "items": [
         {
           "No": 1,
           "name": "凤城—金鼎π入周村变220kV线路工程",
           "Level": 1,
-          "staticInvestment": 2960.0,
-          "dynamicInvestment": 3015.0
+          "staticInvestment": "2960",
+          "dynamicInvestment": "3015"
         },
         {
           "No": 2,
           "name": "凤城—周村220kV线路工程",
           "Level": 1,
-          "staticInvestment": 1718.0,
-          "dynamicInvestment": 1750.0
+          "staticInvestment": "1718",
+          "dynamicInvestment": "1750"
         }
       ]
     }

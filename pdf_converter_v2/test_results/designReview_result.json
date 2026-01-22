@@ -5,44 +5,44 @@
       {
         "name": "变电工程",
         "Level": 0,
-        "staticInvestment": 9728.0,
-        "dynamicInvestment": 9910.0,
+        "staticInvestment": "9728",
+        "dynamicInvestment": "9910",
         "items": [
           {
             "No": 1,
             "name": "周村220kV变电站新建工程",
             "Level": 1,
-            "staticInvestment": 9278.0,
-            "dynamicInvestment": 9452.0
+            "staticInvestment": "9278",
+            "dynamicInvestment": "9452"
           },
           {
             "No": 2,
             "name": "凤城220kV变电站周村间隔扩建工程",
             "Level": 1,
-            "staticInvestment": 450.0,
-            "dynamicInvestment": 458.0
+            "staticInvestment": "450",
+            "dynamicInvestment": "458"
           }
         ]
       },
       {
         "name": "线路工程",
         "Level": 0,
-        "staticInvestment": 4678.0,
-        "dynamicInvestment": 4765.0,
+        "staticInvestment": "4678",
+        "dynamicInvestment": "4765",
         "items": [
           {
             "No": 1,
             "name": "凤城—金鼎π入周村变220kV线路工程",
             "Level": 1,
-            "staticInvestment": 2960.0,
-            "dynamicInvestment": 3015.0
+            "staticInvestment": "2960",
+            "dynamicInvestment": "3015"
           },
           {
             "No": 2,
             "name": "凤城—周村220kV线路工程",
             "Level": 1,
-            "staticInvestment": 1718.0,
-            "dynamicInvestment": 1750.0
+            "staticInvestment": "1718",
+            "dynamicInvestment": "1750"
           }
         ]
       }
@@ -55,28 +55,28 @@
             "No": 1,
             "Level": 1,
             "projectOrExpenseName": "主辅生产工程",
-            "constructionProjectCost": 1537.0,
-            "equipmentPurchaseCost": 4309.0,
-            "installationProjectCost": 1417.0,
-            "otherExpenses": 0.0,
+            "constructionProjectCost": "1537",
+            "equipmentPurchaseCost": "4309",
+            "installationProjectCost": "1417",
+            "otherExpenses": "0",
             "items": [
               {
                 "No": 1,
                 "Level": 2,
                 "projectOrExpenseName": "主要生产工程",
-                "constructionProjectCost": 1188.0,
-                "equipmentPurchaseCost": 4294.0,
-                "installationProjectCost": 1417.0,
-                "otherExpenses": 0.0
+                "constructionProjectCost": "1188",
+                "equipmentPurchaseCost": "4294",
+                "installationProjectCost": "1417",
+                "otherExpenses": "0"
               },
               {
                 "No": 2,
                 "Level": 2,
                 "projectOrExpenseName": "辅助生产工程",
-                "constructionProjectCost": 349.0,
-                "equipmentPurchaseCost": 15.0,
-                "installationProjectCost": 0.0,
-                "otherExpenses": 0.0
+                "constructionProjectCost": "349",
+                "equipmentPurchaseCost": "15",
+                "installationProjectCost": "0",
+                "otherExpenses": "0"
               }
             ]
           },
@@ -84,39 +84,39 @@
             "No": 2,
             "Level": 1,
             "projectOrExpenseName": "与站址有关的单项工程",
-            "constructionProjectCost": 351.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 0.0,
+            "constructionProjectCost": "351",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "0",
             "items": []
           },
           {
             "No": 3,
             "Level": 1,
             "projectOrExpenseName": "编制期价差",
-            "constructionProjectCost": 244.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 39.0,
-            "otherExpenses": 0.0,
+            "constructionProjectCost": "244",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "39",
+            "otherExpenses": "0",
             "items": []
           },
           {
             "No": 4,
             "Level": 1,
             "projectOrExpenseName": "其他费用",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 1229.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "1229",
             "items": [
               {
                 "No": 8,
                 "Level": 2,
                 "projectOrExpenseName": "建设场地征用及清理费",
-                "constructionProjectCost": 0.0,
-                "equipmentPurchaseCost": 0.0,
-                "installationProjectCost": 0.0,
-                "otherExpenses": 326.0
+                "constructionProjectCost": "0",
+                "equipmentPurchaseCost": "0",
+                "installationProjectCost": "0",
+                "otherExpenses": "326"
               }
             ]
           },
@@ -124,48 +124,48 @@
             "No": 5,
             "Level": 1,
             "projectOrExpenseName": "基本预备费",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 137.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "137",
             "items": []
           },
           {
             "No": 6,
             "Level": 1,
             "projectOrExpenseName": "特殊项目",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 15.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "15",
             "items": []
           },
           {
             "No": 7,
             "Level": 1,
             "projectOrExpenseName": "动态费用",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 174.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "174",
             "items": [
               {
                 "No": 1,
                 "Level": 2,
                 "projectOrExpenseName": "价差预备费",
-                "constructionProjectCost": 0.0,
-                "equipmentPurchaseCost": 0.0,
-                "installationProjectCost": 0.0,
-                "otherExpenses": 0.0
+                "constructionProjectCost": "0",
+                "equipmentPurchaseCost": "0",
+                "installationProjectCost": "0",
+                "otherExpenses": "0"
               },
               {
                 "No": 2,
                 "Level": 2,
                 "projectOrExpenseName": "建设期贷款利息",
-                "constructionProjectCost": 0.0,
-                "equipmentPurchaseCost": 0.0,
-                "installationProjectCost": 0.0,
-                "otherExpenses": 174.0
+                "constructionProjectCost": "0",
+                "equipmentPurchaseCost": "0",
+                "installationProjectCost": "0",
+                "otherExpenses": "174"
               }
             ]
           },
@@ -173,10 +173,10 @@
             "No": 16,
             "Level": 1,
             "projectOrExpenseName": "可抵扣固定资产增值税额",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 0.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "0",
             "items": []
           }
         ]
@@ -188,28 +188,28 @@
             "No": 1,
             "Level": 1,
             "projectOrExpenseName": "主辅生产工程",
-            "constructionProjectCost": 59.0,
-            "equipmentPurchaseCost": 228.0,
-            "installationProjectCost": 61.0,
-            "otherExpenses": 0.0,
+            "constructionProjectCost": "59",
+            "equipmentPurchaseCost": "228",
+            "installationProjectCost": "61",
+            "otherExpenses": "0",
             "items": [
               {
                 "No": 1,
                 "Level": 2,
                 "projectOrExpenseName": "主要生产工程",
-                "constructionProjectCost": 35.0,
-                "equipmentPurchaseCost": 228.0,
-                "installationProjectCost": 61.0,
-                "otherExpenses": 0.0
+                "constructionProjectCost": "35",
+                "equipmentPurchaseCost": "228",
+                "installationProjectCost": "61",
+                "otherExpenses": "0"
               },
               {
                 "No": 2,
                 "Level": 2,
                 "projectOrExpenseName": "辅助生产工程",
-                "constructionProjectCost": 24.0,
-                "equipmentPurchaseCost": 0.0,
-                "installationProjectCost": 0.0,
-                "otherExpenses": 0.0
+                "constructionProjectCost": "24",
+                "equipmentPurchaseCost": "0",
+                "installationProjectCost": "0",
+                "otherExpenses": "0"
               }
             ]
           },
@@ -217,39 +217,39 @@
             "No": 2,
             "Level": 1,
             "projectOrExpenseName": "与站址有关的单项工程",
-            "constructionProjectCost": 16.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 0.0,
+            "constructionProjectCost": "16",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "0",
             "items": []
           },
           {
             "No": 3,
             "Level": 1,
             "projectOrExpenseName": "编制期价差",
-            "constructionProjectCost": 18.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 2.0,
-            "otherExpenses": 0.0,
+            "constructionProjectCost": "18",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "2",
+            "otherExpenses": "0",
             "items": []
           },
           {
             "No": 4,
             "Level": 1,
             "projectOrExpenseName": "其他费用",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 53.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "53",
             "items": [
               {
                 "No": 8,
                 "Level": 2,
                 "projectOrExpenseName": "建设场地征用及清理费",
-                "constructionProjectCost": 0.0,
-                "equipmentPurchaseCost": 0.0,
-                "installationProjectCost": 0.0,
-                "otherExpenses": 16.0
+                "constructionProjectCost": "0",
+                "equipmentPurchaseCost": "0",
+                "installationProjectCost": "0",
+                "otherExpenses": "16"
               }
             ]
           },
@@ -257,48 +257,48 @@
             "No": 5,
             "Level": 1,
             "projectOrExpenseName": "基本预备费",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 7.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "7",
             "items": []
           },
           {
             "No": 6,
             "Level": 1,
             "projectOrExpenseName": "特殊项目",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 6.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "6",
             "items": []
           },
           {
             "No": 7,
             "Level": 1,
             "projectOrExpenseName": "动态费用",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 8.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "8",
             "items": [
               {
                 "No": 1,
                 "Level": 2,
                 "projectOrExpenseName": "价差预备费",
-                "constructionProjectCost": 0.0,
-                "equipmentPurchaseCost": 0.0,
-                "installationProjectCost": 0.0,
-                "otherExpenses": 0.0
+                "constructionProjectCost": "0",
+                "equipmentPurchaseCost": "0",
+                "installationProjectCost": "0",
+                "otherExpenses": "0"
               },
               {
                 "No": 2,
                 "Level": 2,
                 "projectOrExpenseName": "建设期贷款利息",
-                "constructionProjectCost": 0.0,
-                "equipmentPurchaseCost": 0.0,
-                "installationProjectCost": 0.0,
-                "otherExpenses": 8.0
+                "constructionProjectCost": "0",
+                "equipmentPurchaseCost": "0",
+                "installationProjectCost": "0",
+                "otherExpenses": "8"
               }
             ]
           },
@@ -306,10 +306,10 @@
             "No": 16,
             "Level": 1,
             "projectOrExpenseName": "可抵扣固定资产增值税额",
-            "constructionProjectCost": 0.0,
-            "equipmentPurchaseCost": 0.0,
-            "installationProjectCost": 0.0,
-            "otherExpenses": 0.0,
+            "constructionProjectCost": "0",
+            "equipmentPurchaseCost": "0",
+            "installationProjectCost": "0",
+            "otherExpenses": "0",
             "items": []
           }
         ]
@@ -323,34 +323,34 @@
             "No": 1,
             "Level": 1,
             "projectOrExpenseName": "输电线路本体工程",
-            "cost": 2265.0,
+            "cost": "2265",
             "items": []
           },
           {
             "No": 2,
             "Level": 1,
             "projectOrExpenseName": "辅助设施工程",
-            "cost": 0.0,
+            "cost": "0",
             "items": []
           },
           {
             "No": 3,
             "Level": 1,
             "projectOrExpenseName": "编制年价差",
-            "cost": 231.0,
+            "cost": "231",
             "items": []
           },
           {
             "No": 4,
             "Level": 1,
             "projectOrExpenseName": "其他费用",
-            "cost": 415.0,
+            "cost": "415",
             "items": [
               {
                 "No": 6,
                 "Level": 2,
                 "projectOrExpenseName": "建设场地征用及清理费",
-                "cost": 174.0
+                "cost": "174"
               }
             ]
           },
@@ -358,33 +358,33 @@
             "No": 5,
             "Level": 1,
             "projectOrExpenseName": "基本预备费",
-            "cost": 44.0,
+            "cost": "44",
             "items": []
           },
           {
             "No": 6,
             "Level": 1,
             "projectOrExpenseName": "特殊项目",
-            "cost": 5.0,
+            "cost": "5",
             "items": []
           },
           {
             "No": 7,
             "Level": 1,
             "projectOrExpenseName": "动态费用",
-            "cost": 55.0,
+            "cost": "55",
             "items": [
               {
                 "No": 1,
                 "Level": 2,
                 "projectOrExpenseName": "价差预备费",
-                "cost": 0.0
+                "cost": "0"
               },
               {
                 "No": 2,
                 "Level": 2,
                 "projectOrExpenseName": "建设期贷款利息",
-                "cost": 55.0
+                "cost": "55"
               }
             ]
           },
@@ -392,7 +392,7 @@
             "No": 14,
             "Level": 1,
             "projectOrExpenseName": "可抵扣固定资产增值税额",
-            "cost": 227.0,
+            "cost": "227",
             "items": []
           }
         ]
@@ -404,34 +404,34 @@
             "No": 1,
             "Level": 1,
             "projectOrExpenseName": "输电线路本体工程",
-            "cost": 1226.0,
+            "cost": "1226",
             "items": []
           },
           {
             "No": 2,
             "Level": 1,
             "projectOrExpenseName": "辅助设施工程",
-            "cost": 0.0,
+            "cost": "0",
             "items": []
           },
           {
             "No": 3,
             "Level": 1,
             "projectOrExpenseName": "编制年价差",
-            "cost": 119.0,
+            "cost": "119",
             "items": []
           },
           {
             "No": 4,
             "Level": 1,
             "projectOrExpenseName": "其他费用",
-            "cost": 343.0,
+            "cost": "343",
             "items": [
               {
                 "No": 6,
                 "Level": 2,
                 "projectOrExpenseName": "建设场地征用及清理费",
-                "cost": 158.0
+                "cost": "158"
               }
             ]
           },
@@ -439,33 +439,33 @@
             "No": 5,
             "Level": 1,
             "projectOrExpenseName": "基本预备费",
-            "cost": 25.0,
+            "cost": "25",
             "items": []
           },
           {
             "No": 6,
             "Level": 1,
             "projectOrExpenseName": "特殊项目",
-            "cost": 5.0,
+            "cost": "5",
             "items": []
           },
           {
             "No": 7,
             "Level": 1,
             "projectOrExpenseName": "动态费用",
-            "cost": 32.0,
+            "cost": "32",
             "items": [
               {
                 "No": 1,
                 "Level": 2,
                 "projectOrExpenseName": "价差预备费",
-                "cost": 0.0
+                "cost": "0"
               },
               {
                 "No": 2,
                 "Level": 2,
                 "projectOrExpenseName": "建设期贷款利息",
-                "cost": 32.0
+                "cost": "32"
               }
             ]
           },
@@ -473,7 +473,7 @@
             "No": 14,
             "Level": 1,
             "projectOrExpenseName": "可抵扣固定资产增值税额",
-            "cost": 128.0,
+            "cost": "128",
             "items": []
           }
         ]

@@ -516,10 +516,10 @@ async def process_conversion_task(
 @app.post("/convert", response_model=ConversionResponse)
 async def convert_file(
     file: Annotated[UploadFile, File(description="上传的PDF或图片文件")],
-    # 新增：类型参数（英文传参） noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval
+    # 新增：类型参数（英文传参） noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | finalAccount
     type: Annotated[
-        Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview", "fsApproval", "fsReview", "pdApproval"]],
-        Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval")
+        Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview", "fsApproval", "fsReview", "pdApproval", "finalAccount"]],
+        Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | finalAccount")
     ] = None,
 ):
     """
