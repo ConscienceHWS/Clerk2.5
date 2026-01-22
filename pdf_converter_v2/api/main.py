@@ -659,6 +659,8 @@ async def convert_file(
         "fsApproval": "fsApproval",
         "fsReview": "fsReview",
         "pdApproval": "pdApproval",
+        # 决算报告
+        "finalAccount": "finalAccount",
     }
     doc_type = None
     if type:
