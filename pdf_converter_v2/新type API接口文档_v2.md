@@ -17,6 +17,7 @@
 | pdApproval | 初设批复概算投资 | `5-（初设批复）晋电建设〔2019〕566号　国网山西省电力公司关于晋城周村220kV输变电工程初步设计的批复.pdf` |
 | designReview | 初设评审概算投资 | `4-（初设评审）中电联电力建设技术经济咨询中心技经〔2019〕201号关于山西周村220kV输变电工程初步设计的评审意见.pdf` |
 | settlementReport | 结算审计报告 | `9-（结算报告）山西晋城周村220kV输变电工程结算审计报告.pdf` |
+| finalAccount | 竣工决算审核报告 | `10-（决算报告）盖章页-山西晋城周村220kV输变电工程竣工决算审核报告（中瑞诚鉴字（2021）第002040号）.pdf` |
 
 ### 文档标题特征识别规则
 
@@ -27,6 +28,7 @@
 | pdApproval | 含"初设批复" | 两层嵌套 |
 | designReview | 含"初设评审" | 两层嵌套 |
 | settlementReport | 含"结算报告"或"审计报告" | 多表对象 |
+| finalAccount | 含"竣工决算"或"决算审核" | 两层嵌套（按项目分组） |
 
 ---
 
@@ -74,6 +76,7 @@ Content-Type: multipart/form-data
 | `pdApproval` | 初设批复概算投资 | 嵌套结构 |
 | `designReview` | 初设评审概算投资 | 嵌套结构 |
 | `settlementReport` | 结算审计报告 | 对象结构（多表） |
+| `finalAccount` | 竣工决算审核报告 | 嵌套结构（按项目分组） |
 | `noiseRec` | 噪声检测记录 | 专用结构 |
 | `emRec` | 电磁检测记录 | 专用结构 |
 | `opStatus` | 工况信息 | 专用结构 |
@@ -473,7 +476,77 @@ GET /task/{task_id}/json
 
 ---
 
-### 5.5 结算审计报告 (settlementReport)
+### 5.5 竣工决算审核报告 (finalAccount)
+
+按项目分组的两层嵌套结构，提取单项工程投资完成情况。
+
+```json
+{
+  "document_type": "finalAccount",
+  "data": [
+    {
+      "No": 1,
+      "name": "周村220kV输变电工程变电站新建工程",
+      "items": [
+        {
+          "feeName": "建筑安装工程",
+          "estimatedCost": "35880000.00",
+          "approvedFinalAccountExcludingVat": "25251424.77",
+          "vatAmount": "2272628.23",
+          "costVariance": "8355947.00",
+          "varianceRate": "23.29%"
+        },
+        {
+          "feeName": "设备购置",
+          "estimatedCost": "43090000.00",
+          "approvedFinalAccountExcludingVat": "48823212.30",
+          "vatAmount": "6347015.53",
+          "costVariance": "-12080227.83",
+          "varianceRate": "-28.03%"
+        },
+        {
+          "feeName": "其他费用",
+          "estimatedCost": "15550000.00",
+          "approvedFinalAccountExcludingVat": "11728700.03",
+          "vatAmount": "418272.16",
+          "costVariance": "3403027.81",
+          "varianceRate": "21.88%"
+        }
+      ]
+    },
+    {
+      "No": 2,
+      "name": "周村间隔扩建工程",
+      "items": [...]
+    }
+  ]
+}
+```
+
+**第一层（项目）字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| No | Integer | 项目序号（如1、2、3、4） |
+| name | String | 项目名称（审计内容） |
+| items | Array | 费用明细列表 |
+
+**第二层（费用明细）字段说明**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| feeName | String | 费用项目（建筑安装工程、设备购置、其他费用） |
+| estimatedCost | String | 概算金额（元） |
+| approvedFinalAccountExcludingVat | String | 决算金额审定不含税（元） |
+| vatAmount | String | 增值税额（元） |
+| costVariance | String | 超节支金额（元），正数表示节支，负数表示超支 |
+| varianceRate | String | 超节支率（如"23.29%"或"-28.03%"） |
+
+> **说明**: 该文档为扫描件，通过 OCR 识别后提取"单项工程的投资完成情况"章节中的各项目投资表格数据。
+
+---
+
+### 5.6 结算审计报告 (settlementReport)
 
 对象结构，包含多个表格数据。
 
