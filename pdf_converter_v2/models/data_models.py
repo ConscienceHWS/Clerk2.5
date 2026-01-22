@@ -563,3 +563,50 @@ class PreliminaryApprovalInvestment:
         except ValueError:
             return 0
 
+
+class FinalAccountItem:
+    """决算报告单项工程投资完成情况数据模型"""
+    def __init__(self):
+        self.no: int = 0  # 序号（项目序号）
+        self.name: str = ""  # 项目名称（审计内容）
+        self.feeName: str = ""  # 费用项目（建筑安装工程、设备购置、其他费用）
+        self.estimatedCost: str = ""  # 概算金额
+        self.approvedFinalAccountExcludingVat: str = ""  # 决算金额审定不含税
+        self.vatAmount: str = ""  # 增值税额
+        self.costVariance: str = ""  # 超节支金额
+        self.varianceRate: str = ""  # 超节支率
+    
+    def to_dict(self):
+        return {
+            "No": self.no,
+            "name": self.name,
+            "feeName": self.feeName,
+            "estimatedCost": self.estimatedCost,
+            "approvedFinalAccountExcludingVat": self.approvedFinalAccountExcludingVat,
+            "vatAmount": self.vatAmount,
+            "costVariance": self.costVariance,
+            "varianceRate": self.varianceRate
+        }
+
+
+class FinalAccountRecord:
+    """决算报告记录数据模型
+    
+    返回结构：扁平的数组，每个元素代表一条费用明细
+    [{
+        "No": int,  # 序号（项目序号，如1、2、3、4）
+        "name": str,  # 项目名称（如"周村220kV输变电工程变电站新建工程"）
+        "feeName": str,  # 费用项目（如"建筑安装工程"、"设备购置"、"其他费用"）
+        "estimatedCost": str,  # 概算金额
+        "approvedFinalAccountExcludingVat": str,  # 决算金额审定不含税
+        "vatAmount": str,  # 增值税额
+        "costVariance": str,  # 超节支金额
+        "varianceRate": str,  # 超节支率
+    }, ...]
+    """
+    def __init__(self):
+        self.items: List[FinalAccountItem] = []
+    
+    def to_dict(self):
+        """转换为扁平数组结构"""
+        return [item.to_dict() for item in self.items]

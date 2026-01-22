@@ -89,6 +89,14 @@ TABLE_TYPE_RULES: Dict[str, List[dict]] = {
             "match_mode": "all",
         },
     ],
+    # 决算报告类
+    "finalAccount": [
+        {
+            "name": "单项工程投资完成情况",
+            "keywords": ["费用项目", "概算金额", "决算金额", "审定金额", "增值税额", "超", "节"],
+            "match_mode": "all",
+        },
+    ],
 }
 
 
@@ -2699,6 +2707,187 @@ def _group_items_by_name(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return result
 
 
+def parse_final_account_table(df: pd.DataFrame, project_name: str, project_no: int) -> List[Dict[str, Any]]:
+    """
+    解析 finalAccount 类型的单项工程投资完成情况表格。
+    
+    表格结构：
+    费用项目 | 概算金额 | 决算金额(审定金额-不含税) | 增值税额 | 超(-)节(+)支金额 | 超(-)节(+)支率
+    
+    Args:
+        df: 表格 DataFrame
+        project_name: 项目名称（从标题提取，如"周村220kV输变电工程变电站新建工程"）
+        project_no: 项目序号（如1、2、3、4）
+    
+    返回格式:
+    [{
+        "No": int,  # 序号（项目序号）
+        "name": str,  # 项目名称（审计内容）
+        "feeName": str,  # 费用项目
+        "estimatedCost": str,  # 概算金额
+        "approvedFinalAccountExcludingVat": str,  # 决算金额审定不含税
+        "vatAmount": str,  # 增值税额
+        "costVariance": str,  # 超节支金额
+        "varianceRate": str,  # 超节支率
+    }, ...]
+    """
+    if df.empty:
+        return []
+    
+    def parse_number(value: Any) -> str:
+        """解析数字，返回字符串保留原始精度"""
+        if pd.isna(value):
+            return "0"
+        value_str = str(value).strip()
+        # 移除非数字字符（保留负号和小数点）
+        value_str = re.sub(r'[^\d.\-]', '', value_str)
+        if not value_str or value_str == '-':
+            return "0"
+        return value_str
+    
+    def parse_rate(value: Any) -> str:
+        """解析百分比，返回字符串"""
+        if pd.isna(value):
+            return "0%"
+        value_str = str(value).strip()
+        # 移除非数字字符（保留负号、小数点和百分号）
+        if '%' not in value_str:
+            # 提取数字部分并添加百分号
+            num_str = re.sub(r'[^\d.\-]', '', value_str)
+            if num_str and num_str != '-':
+                return f"{num_str}%"
+            return "0%"
+        return value_str
+    
+    # 识别表头行
+    header_row_idx = None
+    for i in range(min(5, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        row_text_no_space = row_text.replace(" ", "")
+        # 匹配表头特征
+        if "费用项目" in row_text_no_space and "概算金额" in row_text_no_space:
+            header_row_idx = i
+            break
+        elif "概算金额" in row_text_no_space and "决算金额" in row_text_no_space:
+            header_row_idx = i
+            break
+    
+    if header_row_idx is None:
+        # 检查是否有多行表头（如"决算金额"跨行）
+        for i in range(min(3, len(df))):
+            row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+            if "1" in row_text and "2" in row_text and "3" in row_text:
+                # 这是列序号行，表头在前面
+                header_row_idx = i
+                break
+        if header_row_idx is None:
+            header_row_idx = 0
+            logger.warning(f"[表格解析] 未找到明确表头，使用第一行作为表头")
+    
+    # 从表头行识别列索引
+    header_row = df.iloc[header_row_idx].astype(str).str.strip()
+    
+    col_fee_name = None  # 费用项目
+    col_estimated = None  # 概算金额
+    col_approved = None  # 审定金额(不含税)
+    col_vat = None  # 增值税额
+    col_variance = None  # 超节支金额
+    col_variance_rate = None  # 超节支率
+    
+    for idx, cell in enumerate(header_row):
+        cell_no_space = cell.replace(" ", "")
+        if "费用项目" in cell_no_space:
+            col_fee_name = idx
+        elif "概算金额" in cell_no_space or cell_no_space == "1":
+            col_estimated = idx
+        elif "审定金额" in cell_no_space or "不含税" in cell_no_space or cell_no_space == "2":
+            col_approved = idx
+        elif "增值税额" in cell_no_space or "增值税" in cell_no_space or cell_no_space == "3":
+            col_vat = idx
+        elif "超" in cell_no_space and "节" in cell_no_space and "金额" in cell_no_space:
+            col_variance = idx
+        elif cell_no_space == "4=1-2-3":
+            col_variance = idx
+        elif "超" in cell_no_space and "节" in cell_no_space and "率" in cell_no_space:
+            col_variance_rate = idx
+        elif cell_no_space == "5=4/1":
+            col_variance_rate = idx
+    
+    # 如果无法识别列，使用默认索引（根据OCR输出的表格结构）
+    if col_fee_name is None:
+        col_fee_name = 0
+    if col_estimated is None:
+        col_estimated = 1
+    if col_approved is None:
+        col_approved = 2
+    if col_vat is None:
+        col_vat = 3
+    if col_variance is None:
+        col_variance = 4
+    if col_variance_rate is None:
+        col_variance_rate = 5
+    
+    logger.info(f"[表格解析] 列索引: 费用项目={col_fee_name}, 概算金额={col_estimated}, "
+                f"审定不含税={col_approved}, 增值税={col_vat}, 超节支金额={col_variance}, 超节支率={col_variance_rate}")
+    
+    # 跳过表头行（可能有多行表头）
+    # 找到数据开始行（第一个包含"建筑安装"或"设备购置"的行）
+    data_start_idx = header_row_idx + 1
+    for i in range(header_row_idx + 1, min(header_row_idx + 5, len(df))):
+        row_text = " ".join(df.iloc[i].astype(str).str.strip().tolist())
+        if "建筑安装" in row_text or "设备购置" in row_text or "其他费用" in row_text:
+            data_start_idx = i
+            break
+        # 跳过列序号行（如 "1 | 2 | 3 | 4=1-2-3 | 5=4/1"）
+        if re.match(r'^[\d\s=\-/]+$', row_text.replace(" ", "")):
+            continue
+    
+    # 从数据行开始解析
+    data_rows = df.iloc[data_start_idx:].reset_index(drop=True)
+    
+    result = []
+    for idx, row in data_rows.iterrows():
+        if row.isna().all():
+            continue
+        
+        fee_name = row.iloc[col_fee_name] if col_fee_name < len(row) else None
+        estimated = row.iloc[col_estimated] if col_estimated < len(row) else None
+        approved = row.iloc[col_approved] if col_approved < len(row) else None
+        vat = row.iloc[col_vat] if col_vat < len(row) else None
+        variance = row.iloc[col_variance] if col_variance < len(row) else None
+        variance_rate = row.iloc[col_variance_rate] if col_variance_rate < len(row) else None
+        
+        # 解析费用项目名称
+        fee_name_str = str(fee_name).strip() if fee_name is not None and not pd.isna(fee_name) else ""
+        
+        if not fee_name_str:
+            continue
+        
+        # 跳过合计行
+        if any(kw in fee_name_str for kw in ["合计", "总计", "小计"]):
+            continue
+        
+        # 只保留主要费用项目：建筑安装工程、设备购置、其他费用
+        valid_fee_names = ["建筑安装工程", "建筑安装", "设备购置", "其他费用"]
+        is_valid = any(kw in fee_name_str for kw in valid_fee_names)
+        if not is_valid:
+            continue
+        
+        result.append({
+            "No": project_no,
+            "name": project_name,
+            "feeName": fee_name_str,
+            "estimatedCost": parse_number(estimated),
+            "approvedFinalAccountExcludingVat": parse_number(approved),
+            "vatAmount": parse_number(vat),
+            "costVariance": parse_number(variance),
+            "varianceRate": parse_rate(variance_rate),
+        })
+    
+    logger.info(f"[表格解析] 解析完成: 项目名称={project_name}, 共 {len(result)} 条数据")
+    return result
+
+
 def parse_settlement_report_tables(
     merged_tables: List[Tuple[int, pd.DataFrame, str, int]]
 ) -> Dict[str, List[Dict[str, Any]]]:
@@ -2769,7 +2958,7 @@ def parse_settlement_report_tables(
 def extract_and_filter_tables_for_pdf(
     pdf_path: str,
     base_output_dir: str,
-    doc_type: Literal["settlementReport", "designReview"],
+    doc_type: Literal["settlementReport", "designReview", "finalAccount"],
 ) -> Dict[str, Any]:
     """
     从指定 PDF 提取所有表格 + 合并后的表格 + 筛选后的表格，全部落盘。

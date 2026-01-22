@@ -349,6 +349,27 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
             else:
                 logger.error("[JSON转换] 投资估算解析失败：parse_investment_record 返回 None")
                 result = {"document_type": forced_document_type, "data": [], "error": "投资估算解析失败"}
+        elif forced_document_type == "finalAccount":
+            # 决算报告类型处理
+            logger.info(f"[JSON转换] 处理决算报告类型: {forced_document_type}")
+            logger.debug(f"[JSON转换] Markdown内容长度: {len(markdown_content)} 字符")
+            
+            from .investment_parser import parse_final_account_record
+            final_account_record = parse_final_account_record(markdown_content)
+            
+            if final_account_record:
+                data = final_account_record.to_dict()
+                logger.info(f"[JSON转换] 决算报告解析成功，共 {len(data)} 条记录")
+                
+                # 输出前3条记录的摘要
+                if data:
+                    for idx, item in enumerate(data[:3]):
+                        logger.debug(f"[JSON转换] 记录 {idx+1}: No={item.get('No', '')}, Name={item.get('name', '')}, feeName={item.get('feeName', '')}")
+                
+                result = {"document_type": forced_document_type, "data": data}
+            else:
+                logger.error("[JSON转换] 决算报告解析失败：parse_final_account_record 返回 None")
+                result = {"document_type": forced_document_type, "data": [], "error": "决算报告解析失败"}
         else:
             result = {"document_type": forced_document_type, "data": {}}
         

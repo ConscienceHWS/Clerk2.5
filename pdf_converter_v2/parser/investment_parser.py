@@ -15,7 +15,9 @@ from ..models.data_models import (
     FeasibilityApprovalInvestment,
     FeasibilityReviewInvestment,
     PreliminaryApprovalInvestment,
-    InvestmentItem
+    InvestmentItem,
+    FinalAccountRecord,
+    FinalAccountItem
 )
 from .table_parser import extract_table_with_rowspan_colspan
 
@@ -802,3 +804,281 @@ def parse_investment_record(markdown_content: str, investment_type: Optional[str
     
     logger.info("=" * 80)
     return result
+
+
+def parse_final_account_record(markdown_content: str) -> Optional[FinalAccountRecord]:
+    """
+    解析决算报告中的单项工程投资完成情况表格
+    
+    从OCR输出的Markdown中提取表格数据：
+    - 表格结构：费用项目 | 概算金额 | 决算金额(审定-不含税) | 增值税额 | 超节支金额 | 超节支率
+    - 需要提取4个单项工程的投资完成情况
+    
+    Args:
+        markdown_content: OCR转换后的Markdown内容
+    
+    Returns:
+        FinalAccountRecord 对象，包含所有单项工程的费用明细
+    """
+    logger.info("=" * 80)
+    logger.info("[决算报告] 开始解析决算报告")
+    logger.info(f"[决算报告] Markdown内容长度: {len(markdown_content)} 字符")
+    
+    record = FinalAccountRecord()
+    
+    # 使用正则表达式提取单项工程名称和对应的表格
+    # 匹配模式：数字序号 + 工程名称（在"单项工程的投资完成情况"章节内）
+    project_patterns = [
+        # 匹配 "1、周村 220kV 输变电工程变电站新建工程" 格式
+        (r'(\d+)[、\.．]\s*(.+?(?:工程|扩建))(?:\n|$)', 1),
+        # 匹配 "# 1、周村220kV变电站新建工程" 格式（带标题标记）
+        (r'#\s*(\d+)[、\.．]\s*(.+?(?:工程|扩建))(?:\n|$)', 2),
+    ]
+    
+    # 找到"单项工程的投资完成情况"章节的起始位置
+    section_start = 0
+    section_patterns = [
+        r'单项工程的?(?:投资)?完成情况',
+        r'#\s*单项工程',
+    ]
+    for pattern in section_patterns:
+        match = re.search(pattern, markdown_content)
+        if match:
+            section_start = match.start()
+            logger.info(f"[决算报告] 找到单项工程章节起始位置: {section_start}")
+            break
+    
+    # 找到所有项目标题及其位置
+    project_positions = []
+    for pattern, priority in project_patterns:
+        for match in re.finditer(pattern, markdown_content):
+            # 只处理单项工程章节内的项目
+            if match.start() < section_start:
+                continue
+            project_no = int(match.group(1))
+            project_name = match.group(2).strip()
+            # 清理项目名称中的多余空格和特殊字符
+            project_name = re.sub(r'\s+', '', project_name)
+            project_name = re.sub(r'\\[()\[\]]', '', project_name)
+            # 清理LaTeX数学公式格式
+            project_name = re.sub(r'\\mathrm\{([^}]+)\}', r'\1', project_name)
+            project_name = re.sub(r'\\[a-zA-Z]+', '', project_name)
+            project_positions.append({
+                "no": project_no,
+                "name": project_name,
+                "start": match.start(),
+                "end": match.end(),
+                "priority": priority
+            })
+    
+    # 按位置排序并去重
+    project_positions.sort(key=lambda x: x["start"])
+    seen_positions = set()
+    unique_projects = []
+    for proj in project_positions:
+        # 避免重复的项目（位置相近的同名项目）
+        key = (proj["no"], proj["start"] // 100)
+        if key not in seen_positions:
+            seen_positions.add(key)
+            unique_projects.append(proj)
+    
+    logger.info(f"[决算报告] 找到 {len(unique_projects)} 个单项工程")
+    for proj in unique_projects:
+        logger.debug(f"[决算报告] 项目 {proj['no']}: {proj['name']}")
+    
+    # 提取HTML表格及其位置
+    table_pattern = r'<table[^>]*>(.*?)</table>'
+    table_matches = list(re.finditer(table_pattern, markdown_content, re.DOTALL | re.IGNORECASE))
+    logger.info(f"[决算报告] 找到 {len(table_matches)} 个HTML表格")
+    
+    # 解析每个表格
+    for table_idx, table_match in enumerate(table_matches):
+        table_html = table_match.group(1)
+        table_pos = table_match.start()
+        
+        # 检查是否为单项工程投资完成情况表格
+        if not _is_final_account_table(table_html, table_pos, section_start):
+            logger.debug(f"[决算报告] 表格 {table_idx + 1} 不是单项工程投资完成情况表格，跳过")
+            continue
+        
+        # 查找最近的项目
+        matched_project = None
+        for proj in unique_projects:
+            if proj["end"] < table_pos:
+                matched_project = proj
+        
+        if not matched_project:
+            # 如果没有找到匹配的项目，使用表格索引作为项目序号
+            logger.warning(f"[决算报告] 表格 {table_idx + 1} 未找到对应的项目名称")
+            matched_project = {"no": table_idx + 1, "name": f"未知工程{table_idx + 1}"}
+        
+        logger.info(f"[决算报告] 解析表格 {table_idx + 1}，关联项目: {matched_project['no']}-{matched_project['name']}")
+        
+        # 解析表格内容
+        items = _parse_final_account_table_html(table_html, matched_project["no"], matched_project["name"])
+        record.items.extend(items)
+    
+    logger.info(f"[决算报告] 解析完成，共 {len(record.items)} 条记录")
+    logger.info("=" * 80)
+    
+    return record
+
+
+def _is_final_account_table(table_html: str, table_pos: int, section_start: int) -> bool:
+    """
+    判断表格是否为单项工程投资完成情况表格
+    
+    特征：
+    1. 位于"单项工程的投资完成情况"章节内
+    2. 包含"费用项目"、"概算金额"、"决算金额"、"超"、"节"等关键词
+    
+    Args:
+        table_html: 表格HTML内容
+        table_pos: 表格在Markdown中的位置
+        section_start: 单项工程章节的起始位置
+    """
+    # 表格必须在单项工程章节内
+    if table_pos < section_start:
+        return False
+    
+    table_text = table_html.lower()
+    
+    # 必须包含的关键词
+    required_keywords = ["概算金额", "决算金额"]
+    # 至少包含一个的关键词
+    optional_keywords = ["费用项目", "建筑安装", "设备购置", "其他费用", "审定金额"]
+    
+    has_required = all(kw.lower() in table_text for kw in required_keywords)
+    has_optional = any(kw.lower() in table_text for kw in optional_keywords)
+    
+    return has_required and has_optional
+
+
+def _parse_final_account_table_html(table_html: str, project_no: int, project_name: str) -> List[FinalAccountItem]:
+    """
+    解析HTML表格内容
+    
+    表格结构：
+    费用项目 | 概算金额 | 审定金额(不含税) | 增值税额 | 超节支金额 | 超节支率
+    
+    Args:
+        table_html: HTML表格内容
+        project_no: 项目序号
+        project_name: 项目名称
+    
+    Returns:
+        FinalAccountItem 列表
+    """
+    items = []
+    
+    # 提取所有行
+    row_pattern = r'<tr[^>]*>(.*?)</tr>'
+    rows = re.findall(row_pattern, table_html, re.DOTALL | re.IGNORECASE)
+    
+    if not rows:
+        return items
+    
+    # 提取每行的单元格
+    cell_pattern = r'<td[^>]*>(.*?)</td>'
+    
+    # 跳过表头行（通常前2-3行是表头）
+    data_start_idx = 0
+    for i, row in enumerate(rows):
+        cells = re.findall(cell_pattern, row, re.DOTALL | re.IGNORECASE)
+        row_text = " ".join(cells).lower()
+        # 检测数据开始行（包含"建筑安装"等费用项目名称）
+        if "建筑安装" in row_text or "设备购置" in row_text or "其他费用" in row_text:
+            data_start_idx = i
+            break
+        # 跳过表头行（包含"1"、"2"、"3"等列序号）
+        if re.match(r'^[\d\s=\-/]+$', row_text.replace(" ", "")):
+            continue
+    
+    # 解析数据行
+    for row in rows[data_start_idx:]:
+        cells = re.findall(cell_pattern, row, re.DOTALL | re.IGNORECASE)
+        if len(cells) < 2:
+            continue
+        
+        # 清理单元格内容
+        cells = [_clean_cell_text(cell) for cell in cells]
+        
+        # 跳过空行
+        if not any(cells):
+            continue
+        
+        # 获取费用项目名称（第一列）
+        fee_name = cells[0] if len(cells) > 0 else ""
+        
+        # 跳过合计行
+        if any(kw in fee_name for kw in ["合计", "总计", "小计"]):
+            continue
+        
+        # 只保留主要费用项目
+        valid_fee_names = ["建筑安装工程", "建筑安装", "设备购置", "其他费用"]
+        is_valid = any(kw in fee_name for kw in valid_fee_names)
+        if not is_valid:
+            continue
+        
+        # 创建记录项
+        item = FinalAccountItem()
+        item.no = project_no
+        item.name = project_name
+        item.feeName = fee_name
+        
+        # 解析数值列
+        # 根据列数确定索引
+        if len(cells) >= 6:
+            item.estimatedCost = _parse_number_str(cells[1])
+            item.approvedFinalAccountExcludingVat = _parse_number_str(cells[2])
+            item.vatAmount = _parse_number_str(cells[3])
+            item.costVariance = _parse_number_str(cells[4])
+            item.varianceRate = _parse_rate_str(cells[5])
+        elif len(cells) >= 5:
+            item.estimatedCost = _parse_number_str(cells[1])
+            item.approvedFinalAccountExcludingVat = _parse_number_str(cells[2])
+            item.vatAmount = _parse_number_str(cells[3])
+            item.costVariance = _parse_number_str(cells[4])
+            item.varianceRate = ""
+        
+        items.append(item)
+        logger.debug(f"[决算报告] 解析记录: {project_name} - {fee_name} = {item.estimatedCost}")
+    
+    return items
+
+
+def _clean_cell_text(cell: str) -> str:
+    """清理单元格文本，移除HTML标签和多余空格"""
+    # 移除HTML标签
+    text = re.sub(r'<[^>]+>', '', cell)
+    # 移除多余空格
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def _parse_number_str(value: str) -> str:
+    """解析数字字符串，保留原始精度"""
+    if not value or not value.strip():
+        return "0"
+    value = value.strip()
+    # 移除千分位逗号
+    value = value.replace(',', '')
+    # 移除非数字字符（保留负号和小数点）
+    cleaned = re.sub(r'[^\d.\-]', '', value)
+    if not cleaned or cleaned == '-':
+        return "0"
+    return cleaned
+
+
+def _parse_rate_str(value: str) -> str:
+    """解析百分比字符串"""
+    if not value or not value.strip():
+        return "0%"
+    value = value.strip()
+    if '%' not in value:
+        # 提取数字部分并添加百分号
+        num_str = re.sub(r'[^\d.\-]', '', value)
+        if num_str and num_str != '-':
+            return f"{num_str}%"
+        return "0%"
+    return value
