@@ -576,10 +576,13 @@ class FinalAccountItem:
         self.costVariance: str = ""  # 超节支金额
         self.varianceRate: str = ""  # 超节支率
     
-    def to_dict(self):
-        return {
-            "No": self.no,
-            "name": self.name,
+    def to_dict(self, include_project_info: bool = True):
+        """转换为字典
+        
+        Args:
+            include_project_info: 是否包含项目序号和名称（分组后不需要）
+        """
+        result = {
             "feeName": self.feeName,
             "estimatedCost": self.estimatedCost,
             "approvedFinalAccountExcludingVat": self.approvedFinalAccountExcludingVat,
@@ -587,26 +590,47 @@ class FinalAccountItem:
             "costVariance": self.costVariance,
             "varianceRate": self.varianceRate
         }
+        if include_project_info:
+            result["No"] = self.no
+            result["name"] = self.name
+        return result
 
 
 class FinalAccountRecord:
     """决算报告记录数据模型
     
-    返回结构：扁平的数组，每个元素代表一条费用明细
+    返回结构：按项目分组的嵌套数组
     [{
         "No": int,  # 序号（项目序号，如1、2、3、4）
         "name": str,  # 项目名称（如"周村220kV输变电工程变电站新建工程"）
-        "feeName": str,  # 费用项目（如"建筑安装工程"、"设备购置"、"其他费用"）
-        "estimatedCost": str,  # 概算金额
-        "approvedFinalAccountExcludingVat": str,  # 决算金额审定不含税
-        "vatAmount": str,  # 增值税额
-        "costVariance": str,  # 超节支金额
-        "varianceRate": str,  # 超节支率
+        "items": [{  # 费用明细列表
+            "feeName": str,  # 费用项目（如"建筑安装工程"、"设备购置"、"其他费用"）
+            "estimatedCost": str,  # 概算金额
+            "approvedFinalAccountExcludingVat": str,  # 决算金额审定不含税
+            "vatAmount": str,  # 增值税额
+            "costVariance": str,  # 超节支金额
+            "varianceRate": str,  # 超节支率
+        }, ...]
     }, ...]
     """
     def __init__(self):
         self.items: List[FinalAccountItem] = []
     
     def to_dict(self):
-        """转换为扁平数组结构"""
-        return [item.to_dict() for item in self.items]
+        """转换为按项目分组的嵌套结构"""
+        from collections import OrderedDict
+        
+        # 按项目序号分组
+        grouped: OrderedDict[int, dict] = OrderedDict()
+        
+        for item in self.items:
+            if item.no not in grouped:
+                grouped[item.no] = {
+                    "No": item.no,
+                    "name": item.name,
+                    "items": []
+                }
+            # 添加费用明细（不包含项目序号和名称）
+            grouped[item.no]["items"].append(item.to_dict(include_project_info=False))
+        
+        return list(grouped.values())
