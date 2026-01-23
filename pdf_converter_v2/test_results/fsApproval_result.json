@@ -10,6 +10,10 @@
       "constructionScaleOpticalCable": "124.2",
       "staticInvestment": "19850",
       "dynamicInvestment": "20222",
+      "constructionProjectCost": "2238",
+      "equipmentPurchaseCost": "5237",
+      "installationProjectCost": "8415",
+      "otherExpenses": "3369",
       "items": [
         {
           "No": 1,
@@ -21,6 +25,10 @@
           "constructionScaleOpticalCable": "",
           "staticInvestment": "10055",
           "dynamicInvestment": "10244",
+          "constructionProjectCost": "2238",
+          "equipmentPurchaseCost": "4740",
+          "installationProjectCost": "1351",
+          "otherExpenses": "1341",
           "items": [
             {
               "No": 0,
@@ -31,7 +39,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "9630",
-              "dynamicInvestment": "9810"
+              "dynamicInvestment": "9810",
+              "constructionProjectCost": "2224",
+              "equipmentPurchaseCost": "4488",
+              "installationProjectCost": "1252",
+              "otherExpenses": "1296"
             },
             {
               "No": 0,
@@ -42,7 +54,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "243",
-              "dynamicInvestment": "248"
+              "dynamicInvestment": "248",
+              "constructionProjectCost": "14",
+              "equipmentPurchaseCost": "126",
+              "installationProjectCost": "67",
+              "otherExpenses": "27"
             },
             {
               "No": 0,
@@ -53,7 +69,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "91",
-              "dynamicInvestment": "93"
+              "dynamicInvestment": "93",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "63",
+              "installationProjectCost": "16",
+              "otherExpenses": "9"
             },
             {
               "No": 0,
@@ -64,7 +84,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "91",
-              "dynamicInvestment": "93"
+              "dynamicInvestment": "93",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "63",
+              "installationProjectCost": "16",
+              "otherExpenses": "9"
             }
           ]
         },
@@ -78,6 +102,10 @@
           "constructionScaleOpticalCable": "",
           "staticInvestment": "8734",
           "dynamicInvestment": "8897",
+          "constructionProjectCost": "0",
+          "equipmentPurchaseCost": "0",
+          "installationProjectCost": "6623",
+          "otherExpenses": "1939",
           "items": [
             {
               "No": 0,
@@ -88,7 +116,11 @@
               "constructionScaleOverheadLine": "25.2",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "2321",
-              "dynamicInvestment": "2364"
+              "dynamicInvestment": "2364",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "1697",
+              "otherExpenses": "578"
             },
             {
               "No": 0,
@@ -99,7 +131,11 @@
               "constructionScaleOverheadLine": "49.91",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "6413",
-              "dynamicInvestment": "6533"
+              "dynamicInvestment": "6533",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "4926",
+              "otherExpenses": "1361"
             }
           ]
         },
@@ -113,6 +149,10 @@
           "constructionScaleOpticalCable": "124.2",
           "staticInvestment": "1061",
           "dynamicInvestment": "1081",
+          "constructionProjectCost": "0",
+          "equipmentPurchaseCost": "497",
+          "installationProjectCost": "441",
+          "otherExpenses": "89",
           "items": [
             {
               "No": 0,
@@ -123,7 +163,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "680",
-              "dynamicInvestment": "693"
+              "dynamicInvestment": "693",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "497",
+              "installationProjectCost": "102",
+              "otherExpenses": "55"
             },
             {
               "No": 0,
@@ -134,7 +178,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "124.2",
               "staticInvestment": "381",
-              "dynamicInvestment": "388"
+              "dynamicInvestment": "388",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "339",
+              "otherExpenses": "34"
             }
           ]
         }
@@ -149,6 +197,10 @@
       "constructionScaleOpticalCable": "19",
       "staticInvestment": "4461",
       "dynamicInvestment": "4623",
+      "constructionProjectCost": "0",
+      "equipmentPurchaseCost": "137",
+      "installationProjectCost": "3265",
+      "otherExpenses": "968",
       "items": [
         {
           "No": 1,
@@ -160,6 +212,10 @@
           "constructionScaleOpticalCable": "",
           "staticInvestment": "65",
           "dynamicInvestment": "67",
+          "constructionProjectCost": "0",
+          "equipmentPurchaseCost": "0",
+          "installationProjectCost": "44",
+          "otherExpenses": "19",
           "items": [
             {
               "No": 0,
@@ -170,7 +226,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "35",
-              "dynamicInvestment": "36"
+              "dynamicInvestment": "36",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "24",
+              "otherExpenses": "10"
             },
             {
               "No": 0,
@@ -181,7 +241,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "30",
-              "dynamicInvestment": "31"
+              "dynamicInvestment": "31",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "20",
+              "otherExpenses": "9"
             }
           ]
         },
@@ -195,6 +259,10 @@
           "constructionScaleOpticalCable": "",
           "staticInvestment": "4160",
           "dynamicInvestment": "4316",
+          "constructionProjectCost": "0",
+          "equipmentPurchaseCost": "0",
+          "installationProjectCost": "3149",
+          "otherExpenses": "929",
           "items": [
             {
               "No": 0,
@@ -205,7 +273,11 @@
               "constructionScaleOverheadLine": "13",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "2933",
-              "dynamicInvestment": "3043"
+              "dynamicInvestment": "3043",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "2283",
+              "otherExpenses": "592"
             },
             {
               "No": 0,
@@ -216,7 +288,11 @@
               "constructionScaleOverheadLine": "15",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "1227",
-              "dynamicInvestment": "1273"
+              "dynamicInvestment": "1273",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "866",
+              "otherExpenses": "337"
             }
           ]
         },
@@ -230,6 +306,10 @@
           "constructionScaleOpticalCable": "19",
           "staticInvestment": "236",
           "dynamicInvestment": "240",
+          "constructionProjectCost": "0",
+          "equipmentPurchaseCost": "137",
+          "installationProjectCost": "72",
+          "otherExpenses": "20",
           "items": [
             {
               "No": 0,
@@ -240,7 +320,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "167",
-              "dynamicInvestment": "170"
+              "dynamicInvestment": "170",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "137",
+              "installationProjectCost": "11",
+              "otherExpenses": "13"
             },
             {
               "No": 0,
@@ -251,7 +335,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "19",
               "staticInvestment": "69",
-              "dynamicInvestment": "70"
+              "dynamicInvestment": "70",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "61",
+              "otherExpenses": "7"
             }
           ]
         }
@@ -266,6 +354,10 @@
       "constructionScaleOpticalCable": "36.7",
       "staticInvestment": "13119",
       "dynamicInvestment": "13364",
+      "constructionProjectCost": "1662",
+      "equipmentPurchaseCost": "4828",
+      "installationProjectCost": "4079",
+      "otherExpenses": "2114",
       "items": [
         {
           "No": 1,
@@ -277,6 +369,10 @@
           "constructionScaleOpticalCable": "",
           "staticInvestment": "9076",
           "dynamicInvestment": "9246",
+          "constructionProjectCost": "1662",
+          "equipmentPurchaseCost": "4507",
+          "installationProjectCost": "1370",
+          "otherExpenses": "1187",
           "items": [
             {
               "No": 0,
@@ -287,7 +383,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "8679",
-              "dynamicInvestment": "8841"
+              "dynamicInvestment": "8841",
+              "constructionProjectCost": "1653",
+              "equipmentPurchaseCost": "4264",
+              "installationProjectCost": "1284",
+              "otherExpenses": "1144"
             },
             {
               "No": 0,
@@ -298,7 +398,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "205",
-              "dynamicInvestment": "209"
+              "dynamicInvestment": "209",
+              "constructionProjectCost": "9",
+              "equipmentPurchaseCost": "111",
+              "installationProjectCost": "54",
+              "otherExpenses": "23"
             },
             {
               "No": 0,
@@ -309,7 +413,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "96",
-              "dynamicInvestment": "98"
+              "dynamicInvestment": "98",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "66",
+              "installationProjectCost": "16",
+              "otherExpenses": "10"
             },
             {
               "No": 0,
@@ -320,7 +428,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "96",
-              "dynamicInvestment": "98"
+              "dynamicInvestment": "98",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "66",
+              "installationProjectCost": "16",
+              "otherExpenses": "10"
             }
           ]
         },
@@ -334,6 +446,10 @@
           "constructionScaleOpticalCable": "",
           "staticInvestment": "3545",
           "dynamicInvestment": "3611",
+          "constructionProjectCost": "0",
+          "equipmentPurchaseCost": "0",
+          "installationProjectCost": "2598",
+          "otherExpenses": "878",
           "items": [
             {
               "No": 0,
@@ -344,7 +460,11 @@
               "constructionScaleOverheadLine": "5.7",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "717",
-              "dynamicInvestment": "730"
+              "dynamicInvestment": "730",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "555",
+              "otherExpenses": "148"
             },
             {
               "No": 0,
@@ -355,7 +475,11 @@
               "constructionScaleOverheadLine": "28",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "2828",
-              "dynamicInvestment": "2881"
+              "dynamicInvestment": "2881",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "2043",
+              "otherExpenses": "730"
             }
           ]
         },
@@ -369,6 +493,10 @@
           "constructionScaleOpticalCable": "36.7",
           "staticInvestment": "498",
           "dynamicInvestment": "507",
+          "constructionProjectCost": "0",
+          "equipmentPurchaseCost": "321",
+          "installationProjectCost": "111",
+          "otherExpenses": "49",
           "items": [
             {
               "No": 0,
@@ -379,7 +507,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "416",
-              "dynamicInvestment": "424"
+              "dynamicInvestment": "424",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "321",
+              "installationProjectCost": "39",
+              "otherExpenses": "40"
             },
             {
               "No": 0,
@@ -390,7 +522,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "36.7",
               "staticInvestment": "82",
-              "dynamicInvestment": "83"
+              "dynamicInvestment": "83",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "72",
+              "otherExpenses": "9"
             }
           ]
         }
@@ -405,6 +541,10 @@
       "constructionScaleOpticalCable": "20.7",
       "staticInvestment": "14557",
       "dynamicInvestment": "14829",
+      "constructionProjectCost": "1869",
+      "equipmentPurchaseCost": "4819",
+      "installationProjectCost": "5137",
+      "otherExpenses": "2261",
       "items": [
         {
           "No": 1,
@@ -416,6 +556,10 @@
           "constructionScaleOpticalCable": "",
           "staticInvestment": "9317",
           "dynamicInvestment": "9491",
+          "constructionProjectCost": "1869",
+          "equipmentPurchaseCost": "4481",
+          "installationProjectCost": "1379",
+          "otherExpenses": "1230",
           "items": [
             {
               "No": 0,
@@ -426,7 +570,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "8889",
-              "dynamicInvestment": "9055"
+              "dynamicInvestment": "9055",
+              "constructionProjectCost": "1798",
+              "equipmentPurchaseCost": "4245",
+              "installationProjectCost": "1324",
+              "otherExpenses": "1180"
             },
             {
               "No": 0,
@@ -437,7 +585,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "341",
-              "dynamicInvestment": "347"
+              "dynamicInvestment": "347",
+              "constructionProjectCost": "71",
+              "equipmentPurchaseCost": "168",
+              "installationProjectCost": "47",
+              "otherExpenses": "42"
             },
             {
               "No": 0,
@@ -448,7 +600,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "87",
-              "dynamicInvestment": "89"
+              "dynamicInvestment": "89",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "68",
+              "installationProjectCost": "8",
+              "otherExpenses": "8"
             }
           ]
         },
@@ -462,6 +618,10 @@
           "constructionScaleOpticalCable": "",
           "staticInvestment": "4657",
           "dynamicInvestment": "4744",
+          "constructionProjectCost": "0",
+          "equipmentPurchaseCost": "0",
+          "installationProjectCost": "3587",
+          "otherExpenses": "978",
           "items": [
             {
               "No": 0,
@@ -472,7 +632,11 @@
               "constructionScaleOverheadLine": "8.7",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "2945",
-              "dynamicInvestment": "3000"
+              "dynamicInvestment": "3000",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "2316",
+              "otherExpenses": "571"
             },
             {
               "No": 0,
@@ -483,7 +647,11 @@
               "constructionScaleOverheadLine": "12",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "1712",
-              "dynamicInvestment": "1744"
+              "dynamicInvestment": "1744",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "1271",
+              "otherExpenses": "407"
             }
           ]
         },
@@ -497,6 +665,10 @@
           "constructionScaleOpticalCable": "20.7",
           "staticInvestment": "583",
           "dynamicInvestment": "594",
+          "constructionProjectCost": "0",
+          "equipmentPurchaseCost": "338",
+          "installationProjectCost": "171",
+          "otherExpenses": "53",
           "items": [
             {
               "No": 0,
@@ -507,7 +679,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
               "staticInvestment": "502",
-              "dynamicInvestment": "511"
+              "dynamicInvestment": "511",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "338",
+              "installationProjectCost": "99",
+              "otherExpenses": "46"
             },
             {
               "No": 0,
@@ -518,7 +694,11 @@
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "20.7",
               "staticInvestment": "81",
-              "dynamicInvestment": "83"
+              "dynamicInvestment": "83",
+              "constructionProjectCost": "0",
+              "equipmentPurchaseCost": "0",
+              "installationProjectCost": "72",
+              "otherExpenses": "7"
             }
           ]
         }

@@ -1,0 +1,125 @@
+{
+  "document_type": "finalAccount",
+  "data": [
+    {
+      "No": 1,
+      "name": "周村220kV输变电工程变电站新建工程",
+      "items": [
+        {
+          "feeName": "建筑安装工程",
+          "estimatedCost": "35880000.00",
+          "approvedFinalAccountExcludingVat": "25251424.77",
+          "vatAmount": "2272628.23",
+          "costVariance": "8355947.00",
+          "varianceRate": "23.29%"
+        },
+        {
+          "feeName": "设备购置",
+          "estimatedCost": "43090000.00",
+          "approvedFinalAccountExcludingVat": "48823212.30",
+          "vatAmount": "6347015.53",
+          "costVariance": "-12080227.83",
+          "varianceRate": "-28.03%"
+        },
+        {
+          "feeName": "其他费用",
+          "estimatedCost": "15550000.00",
+          "approvedFinalAccountExcludingVat": "11728700.03",
+          "vatAmount": "418272.16",
+          "costVariance": "3403027.81",
+          "varianceRate": "21.88%"
+        }
+      ]
+    },
+    {
+      "No": 2,
+      "name": "周村间隔扩建工程",
+      "items": [
+        {
+          "feeName": "建筑安装工程",
+          "estimatedCost": "1560000.00",
+          "approvedFinalAccountExcludingVat": "775159.63",
+          "vatAmount": "69764.37",
+          "costVariance": "715076.00",
+          "varianceRate": "45.84%"
+        },
+        {
+          "feeName": "设备购置",
+          "estimatedCost": "2280000.00",
+          "approvedFinalAccountExcludingVat": "2704669.75",
+          "vatAmount": "351607.07",
+          "costVariance": "-776276.82",
+          "varianceRate": "-34.05%"
+        },
+        {
+          "feeName": "其他费用",
+          "estimatedCost": "740000.00",
+          "approvedFinalAccountExcludingVat": "338796.88",
+          "vatAmount": "16851.69",
+          "costVariance": "384351.43",
+          "varianceRate": "51.94%"
+        }
+      ]
+    },
+    {
+      "No": 3,
+      "name": "凤城～金鼎入周村变220kV线路工程",
+      "items": [
+        {
+          "feeName": "建筑安装工程",
+          "estimatedCost": "24960000.00",
+          "approvedFinalAccountExcludingVat": "21778576.55",
+          "vatAmount": "2207161.90",
+          "costVariance": "974261.55",
+          "varianceRate": "3.90%"
+        },
+        {
+          "feeName": "设备购置",
+          "estimatedCost": "0",
+          "approvedFinalAccountExcludingVat": "0",
+          "vatAmount": "0",
+          "costVariance": "0",
+          "varianceRate": "0%"
+        },
+        {
+          "feeName": "其他费用",
+          "estimatedCost": "5190000.00",
+          "approvedFinalAccountExcludingVat": "2419878.12",
+          "vatAmount": "69422.11",
+          "costVariance": "2700699.77",
+          "varianceRate": "52.04%"
+        }
+      ]
+    },
+    {
+      "No": 4,
+      "name": "凤城～周村220kV线路新建工程",
+      "items": [
+        {
+          "feeName": "建筑安装工程",
+          "estimatedCost": "13450000.00",
+          "approvedFinalAccountExcludingVat": "13527908.45",
+          "vatAmount": "1410452.37",
+          "costVariance": "-1488360.82",
+          "varianceRate": "-11.07%"
+        },
+        {
+          "feeName": "设备购置",
+          "estimatedCost": "0",
+          "approvedFinalAccountExcludingVat": "0",
+          "vatAmount": "0",
+          "costVariance": "0",
+          "varianceRate": "0%"
+        },
+        {
+          "feeName": "其他费用",
+          "estimatedCost": "4050000.00",
+          "approvedFinalAccountExcludingVat": "1429649.79",
+          "vatAmount": "48239.61",
+          "costVariance": "2572110.60",
+          "varianceRate": "63.51%"
+        }
+      ]
+    }
+  ]
+}

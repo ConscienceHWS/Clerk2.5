@@ -23,7 +23,7 @@
 
 | type | 标题关键词 | 返回结构 |
 |------|-----------|----------|
-| fsApproval | 含"可研批复" | 三层嵌套 + 建设规模 |
+| fsApproval | 含"可研批复" | 三层嵌套 + 建设规模 + 费用明细 |
 | fsReview | 含"可研评审" | 两层嵌套 |
 | pdApproval | 含"初设批复" | 两层嵌套 |
 | designReview | 含"初设评审" | 两层嵌套 |
@@ -150,7 +150,7 @@ GET /task/{task_id}/json
 
 ### 5.1 可研批复投资估算 (fsApproval)
 
-三层嵌套结构，包含建设规模字段。
+三层嵌套结构，包含建设规模字段和费用明细字段。
 
 ```json
 {
@@ -163,8 +163,12 @@ GET /task/{task_id}/json
       "constructionScaleBay": "1",
       "constructionScaleOverheadLine": "75.11",
       "constructionScaleOpticalCable": "124.2",
-      "staticInvestment": 19850.0,
-      "dynamicInvestment": 20222.0,
+      "staticInvestment": "19850",
+      "dynamicInvestment": "20222",
+      "constructionProjectCost": "2238",
+      "equipmentPurchaseCost": "5237",
+      "installationProjectCost": "8415",
+      "otherExpenses": "3369",
       "items": [
         {
           "No": 1,
@@ -174,8 +178,12 @@ GET /task/{task_id}/json
           "constructionScaleBay": "1",
           "constructionScaleOverheadLine": "",
           "constructionScaleOpticalCable": "",
-          "staticInvestment": 10055.0,
-          "dynamicInvestment": 10244.0,
+          "staticInvestment": "10055",
+          "dynamicInvestment": "10244",
+          "constructionProjectCost": "2238",
+          "equipmentPurchaseCost": "4740",
+          "installationProjectCost": "1351",
+          "otherExpenses": "1341",
           "items": [
             {
               "No": 0,
@@ -185,8 +193,12 @@ GET /task/{task_id}/json
               "constructionScaleBay": "",
               "constructionScaleOverheadLine": "",
               "constructionScaleOpticalCable": "",
-              "staticInvestment": 9630.0,
-              "dynamicInvestment": 9810.0
+              "staticInvestment": "9630",
+              "dynamicInvestment": "9810",
+              "constructionProjectCost": "2224",
+              "equipmentPurchaseCost": "4488",
+              "installationProjectCost": "1252",
+              "otherExpenses": "1296"
             }
           ]
         }
@@ -206,8 +218,12 @@ GET /task/{task_id}/json
 | constructionScaleBay | String | 建设规模-间隔（个） |
 | constructionScaleOverheadLine | String | 建设规模-架空线（公里） |
 | constructionScaleOpticalCable | String | 建设规模-光缆（公里） |
-| staticInvestment | Number | 静态投资（万元） |
-| dynamicInvestment | Number | 动态投资（万元） |
+| staticInvestment | String | 静态投资（万元） |
+| dynamicInvestment | String | 动态投资（万元） |
+| constructionProjectCost | String | 建筑工程费（万元） |
+| equipmentPurchaseCost | String | 设备购置费（万元） |
+| installationProjectCost | String | 安装工程费（万元） |
+| otherExpenses | String | 其他费用-合计（万元） |
 | items | Array | 子项目列表 |
 
 ---
