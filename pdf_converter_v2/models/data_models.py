@@ -236,13 +236,19 @@ class InvestmentItem:
         self.constructionScaleOpticalCable: str = ""  # 建设规模-光缆（仅可研批复）
         self.staticInvestment: str = ""  # 静态投资（元）
         self.dynamicInvestment: str = ""  # 动态投资（元）
+        # 新增费用字段（仅可研批复）
+        self.constructionProjectCost: str = ""  # 建筑工程费（元）
+        self.equipmentPurchaseCost: str = ""  # 设备购置费（元）
+        self.installationProjectCost: str = ""  # 安装工程费（元）
+        self.otherExpenses: str = ""  # 其他费用-合计（元）
     
-    def to_dict(self, include_construction_scale: bool = False):
+    def to_dict(self, include_construction_scale: bool = False, include_cost_breakdown: bool = False):
         """
         转换为字典
         
         Args:
             include_construction_scale: 是否包含建设规模字段（可研批复需要）
+            include_cost_breakdown: 是否包含费用明细字段（可研批复需要）
         """
         result = {
             "No": self.no,
@@ -258,6 +264,13 @@ class InvestmentItem:
             result["constructionScaleBay"] = self.constructionScaleBay
             result["constructionScaleSubstation"] = self.constructionScaleSubstation
             result["constructionScaleOpticalCable"] = self.constructionScaleOpticalCable
+        
+        # 如果需要费用明细字段，添加到输出（用于可研批复）
+        if include_cost_breakdown:
+            result["constructionProjectCost"] = self.constructionProjectCost
+            result["equipmentPurchaseCost"] = self.equipmentPurchaseCost
+            result["installationProjectCost"] = self.installationProjectCost
+            result["otherExpenses"] = self.otherExpenses
         
         return result
 
@@ -308,6 +321,10 @@ class FeasibilityApprovalInvestment:
                     "constructionScaleOpticalCable": item.constructionScaleOpticalCable or "",
                     "staticInvestment": self._parse_number(item.staticInvestment),
                     "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                    "constructionProjectCost": self._parse_number(item.constructionProjectCost),
+                    "equipmentPurchaseCost": self._parse_number(item.equipmentPurchaseCost),
+                    "installationProjectCost": self._parse_number(item.installationProjectCost),
+                    "otherExpenses": self._parse_number(item.otherExpenses),
                     "items": []
                 }
             elif item.level == "2" and current_top_category is not None:
@@ -326,6 +343,10 @@ class FeasibilityApprovalInvestment:
                     "constructionScaleOpticalCable": item.constructionScaleOpticalCable or "",
                     "staticInvestment": self._parse_number(item.staticInvestment),
                     "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                    "constructionProjectCost": self._parse_number(item.constructionProjectCost),
+                    "equipmentPurchaseCost": self._parse_number(item.equipmentPurchaseCost),
+                    "installationProjectCost": self._parse_number(item.installationProjectCost),
+                    "otherExpenses": self._parse_number(item.otherExpenses),
                     "items": []
                 }
             elif item.level == "3" and current_sub_category is not None:
@@ -340,6 +361,10 @@ class FeasibilityApprovalInvestment:
                     "constructionScaleOpticalCable": item.constructionScaleOpticalCable or "",
                     "staticInvestment": self._parse_number(item.staticInvestment),
                     "dynamicInvestment": self._parse_number(item.dynamicInvestment),
+                    "constructionProjectCost": self._parse_number(item.constructionProjectCost),
+                    "equipmentPurchaseCost": self._parse_number(item.equipmentPurchaseCost),
+                    "installationProjectCost": self._parse_number(item.installationProjectCost),
+                    "otherExpenses": self._parse_number(item.otherExpenses),
                 })
             elif item.level == "0":
                 # 合计行 - 跳过

@@ -276,6 +276,11 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
     optical_cable_idx = -1
     static_investment_idx = -1
     dynamic_investment_idx = -1
+    # 新增费用列索引
+    construction_project_cost_idx = -1  # 建筑工程费
+    equipment_purchase_cost_idx = -1  # 设备购置费
+    installation_project_cost_idx = -1  # 安装工程费
+    other_expenses_idx = -1  # 其他费用（合计）
     
     # 扫描前几行（最多5行）来识别列索引
     for row_idx in range(min(5, len(target_table))):
@@ -304,6 +309,18 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
                 static_investment_idx = col_idx
             elif "动态投资" in cell_text_no_space and dynamic_investment_idx == -1:
                 dynamic_investment_idx = col_idx
+            # 新增费用字段识别
+            elif "建筑工程费" in cell_text_no_space and construction_project_cost_idx == -1:
+                construction_project_cost_idx = col_idx
+            elif "设备购置费" in cell_text_no_space and equipment_purchase_cost_idx == -1:
+                equipment_purchase_cost_idx = col_idx
+            elif "安装工程费" in cell_text_no_space and installation_project_cost_idx == -1:
+                installation_project_cost_idx = col_idx
+            elif ("其他费用" in cell_text_no_space or "合计" == cell_text_no_space) and other_expenses_idx == -1:
+                # 其他费用列通常标题为"合计"或"其他费用"
+                # 注意：表头可能有"合计"列在"其他费用"下面
+                if "其他费用" in cell_text_no_space:
+                    other_expenses_idx = col_idx
         
         # 如果这一行包含"序号"或"工程或费用名称"，记录为表头结束行
         if ("序号" in row_text or "工程或费用名称" in row_text_no_space) and header_row_idx == -1:
@@ -325,6 +342,9 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
     logger.info(f"[可研批复投资] 列索引: 序号={no_idx}, 名称={name_idx}, "
                f"架空线={overhead_line_idx}, 间隔={bay_idx}, 变电={substation_idx}, "
                f"光缆={optical_cable_idx}, 静态投资={static_investment_idx}, 动态投资={dynamic_investment_idx}")
+    logger.info(f"[可研批复投资] 费用列索引: 建筑工程费={construction_project_cost_idx}, "
+               f"设备购置费={equipment_purchase_cost_idx}, 安装工程费={installation_project_cost_idx}, "
+               f"其他费用={other_expenses_idx}")
     
     if header_row_idx == -1:
         logger.warning("[可研批复投资] 未找到表头行")
@@ -376,6 +396,19 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
             
             if dynamic_investment_idx >= 0 and dynamic_investment_idx < len(row):
                 item.dynamicInvestment = clean_number_string(str(row[dynamic_investment_idx]))
+            
+            # 提取费用明细
+            if construction_project_cost_idx >= 0 and construction_project_cost_idx < len(row):
+                item.constructionProjectCost = clean_number_string(str(row[construction_project_cost_idx]))
+            
+            if equipment_purchase_cost_idx >= 0 and equipment_purchase_cost_idx < len(row):
+                item.equipmentPurchaseCost = clean_number_string(str(row[equipment_purchase_cost_idx]))
+            
+            if installation_project_cost_idx >= 0 and installation_project_cost_idx < len(row):
+                item.installationProjectCost = clean_number_string(str(row[installation_project_cost_idx]))
+            
+            if other_expenses_idx >= 0 and other_expenses_idx < len(row):
+                item.otherExpenses = clean_number_string(str(row[other_expenses_idx]))
             
             record.items.append(item)
             logger.info(f"[可研批复投资] 解析到数据: No={item.no}, Name={item.name}, Level={item.level}")
