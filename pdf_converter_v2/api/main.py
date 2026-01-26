@@ -92,6 +92,22 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# 添加验证错误处理器，记录详细错误信息
+from fastapi.exceptions import RequestValidationError
+from starlette.requests import Request
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """捕获 422 验证错误并记录详细信息"""
+    logger.error(f"[验证错误] URL: {request.url}")
+    logger.error(f"[验证错误] Method: {request.method}")
+    logger.error(f"[验证错误] Headers: {dict(request.headers)}")
+    logger.error(f"[验证错误] 错误详情: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": str(exc.body) if hasattr(exc, 'body') else None}
+    )
+
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
