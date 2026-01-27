@@ -1,0 +1,37 @@
+{
+  "code": 0,
+  "message": "成功识别出 10 个文本片段",
+  "data": {
+    "texts": [
+      "GET",
+      "uosrpeimauo[/prp}/n",
+      "POST",
+      "/ocr Ocr Image",
+      "对base64编码的图片进行OCR识别",
+      "。image_base64:base64编码的图片数据（可以包含data:image/xxx;base64，前缀）",
+      "image_format：图片格式（png，jpg，jpeg），默认为png",
+      "返回识别出的文本列表和GPU监控信息",
+      "Parameters",
+      "No parameters"
+    ],
+    "full_text": "GET\nuosrpeimauo[/prp}/n\nPOST\n/ocr Ocr Image\n对base64编码的图片进行OCR识别\n。image_base64:base64编码的图片数据（可以包含data:image/xxx;base64，前缀）\nimage_format：图片格式（png，jpg，jpeg），默认为png\n返回识别出的文本列表和GPU监控信息\nParameters\nNo parameters"
+  },
+  "gpu_info": {
+    "gpu_index": 0,
+    "gpu_memory_used": 2851078144,
+    "gpu_utilization": 1.0,
+    "gpu_memory_total": 17171480576,
+    "gpu_name": "NVIDIA GeForce RTX 4070 Ti SUPER",
+    "gpu_memory_used_avg": 2480756053,
+    "gpu_memory_used_max": 2851078144,
+    "gpu_utilization_max": 9.0,
+    "system_load_avg_1min": 3.0752766927083335,
+    "system_load_max_1min": 3.17724609375,
+    "system_load_avg_5min": 2.6670735677083335,
+    "system_load_max_5min": 2.68359375,
+    "system_load_avg_15min": 2.3341064453125,
+    "system_load_max_15min": 2.33837890625,
+    "sample_count": 12,
+    "duration": 5.966740131378174
+  }
+}

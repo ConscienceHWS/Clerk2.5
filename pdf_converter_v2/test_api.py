@@ -16,9 +16,10 @@ import os
 import sys
 import json
 import time
+import base64
 import requests
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 # API 配置
 API_BASE_URL = "http://47.101.133.94:14213"
@@ -29,12 +30,12 @@ TEST_DIR = Path(__file__).parent / "test"
 # 测试用例：文件名 -> 文档类型
 TEST_CASES = {
     # 新增投资类型
-    "2-（可研批复）晋电发展〔2017〕831号+国网山西省电力公司关于临汾古县、晋城周村220kV输变电等工程可行性研究报告的批复.pdf.pdf": "fsApproval",
+    # "2-（可研批复）晋电发展〔2017〕831号+国网山西省电力公司关于临汾古县、晋城周村220kV输变电等工程可行性研究报告的批复.pdf.pdf": "fsApproval",
     # "1-（可研评审）晋电经研规划〔2017〕187号(盖章)国网山西经研院关于山西晋城周村220kV输变电工程可行性研究报告的评审意见.pdf": "fsReview",
     # "5-（初设批复）晋电建设〔2019〕566号　国网山西省电力公司关于晋城周村220kV输变电工程初步设计的批复 .pdf": "pdApproval",
     # 现有类型
     # "9-（结算报告）山西晋城周村220kV输变电工程结算审计报告.pdf": "settlementReport",
-    # "4-（初设评审）中电联电力建设技术经济咨询中心技经〔2019〕201号关于山西周村220kV输变电工程初步设计的评审意见.pdf": "designReview",
+    "4-（初设评审）中电联电力建设技术经济咨询中心技经〔2019〕201号关于山西周村220kV输变电工程初步设计的评审意见.pdf": "designReview",
     # 决算报告
     # "10-（决算报告）盖章页-山西晋城周村220kV输变电工程竣工决算审核报告（中瑞诚鉴字（2021）第002040号）.pdf": "finalAccount",
 }
@@ -331,6 +332,126 @@ def test_single(document_type: str):
     print_result(False, f"未找到类型 {document_type} 的测试文件")
 
 
+def test_ocr(image_path: Optional[str] = None) -> bool:
+    """
+    测试 OCR 接口
+    
+    Args:
+        image_path: 图片路径，默认使用 test/image.png
+    
+    Returns:
+        是否测试成功
+    """
+    print_header("测试 OCR 接口")
+    
+    # 检查 API
+    if not check_health():
+        print("\n❌ API 不可用")
+        return False
+    
+    # 确定图片路径
+    if image_path is None:
+        image_path = TEST_DIR / "image.png"
+    else:
+        image_path = Path(image_path)
+    
+    print(f"  📷 图片路径: {image_path}")
+    
+    if not image_path.exists():
+        print_result(False, f"图片不存在: {image_path}")
+        return False
+    
+    # 读取图片并转为 base64
+    try:
+        with open(image_path, "rb") as f:
+            image_data = f.read()
+        image_base64 = base64.b64encode(image_data).decode("utf-8")
+        print(f"  📦 图片大小: {len(image_data)} bytes")
+        print(f"  🔤 Base64长度: {len(image_base64)} 字符")
+    except Exception as e:
+        print_result(False, f"读取图片失败: {e}")
+        return False
+    
+    # 确定图片格式
+    suffix = image_path.suffix.lower()
+    format_map = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg"}
+    image_format = format_map.get(suffix, "png")
+    print(f"  🖼️  图片格式: {image_format}")
+    
+    # 调用 OCR 接口
+    print(f"\n  📤 调用 OCR 接口...")
+    try:
+        start_time = time.time()
+        response = requests.post(
+            f"{API_BASE_URL}/ocr",
+            json={
+                "image_base64": image_base64,
+                "image_format": image_format
+            },
+            timeout=120
+        )
+        elapsed = time.time() - start_time
+        
+        if response.status_code == 200:
+            result = response.json()
+            print_result(True, f"OCR 识别成功 (耗时: {elapsed:.2f}s)")
+            
+            # 显示识别结果（支持两种返回格式）
+            # 格式1: {"texts": [...], "gpu_info": {...}}
+            # 格式2: {"code": 0, "data": {"texts": [...]}, "gpu_info": {...}}
+            if "data" in result and isinstance(result.get("data"), dict):
+                texts: List[str] = result.get("data", {}).get("texts", [])
+            else:
+                texts: List[str] = result.get("texts", [])
+            gpu_info = result.get("gpu_info", {})
+            
+            print(f"\n  📝 识别结果 ({len(texts)} 个文本块):")
+            for i, text in enumerate(texts[:10]):  # 最多显示前10个
+                # 截断长文本
+                display_text = text[:50] + "..." if len(text) > 50 else text
+                print(f"       [{i+1}] {display_text}")
+            
+            if len(texts) > 10:
+                print(f"       ... 还有 {len(texts) - 10} 个文本块")
+            
+            # 显示 GPU 信息
+            if gpu_info:
+                print(f"\n  💻 GPU 监控信息:")
+                gpu_util = gpu_info.get('gpu_utilization', gpu_info.get('gpu_util_avg', 'N/A'))
+                if isinstance(gpu_util, float):
+                    gpu_util = f"{gpu_util:.1f}"
+                print(f"       GPU利用率: {gpu_util}%")
+                
+                mem_used = gpu_info.get('gpu_memory_used_max', gpu_info.get('memory_used_max', 'N/A'))
+                if isinstance(mem_used, (int, float)):
+                    mem_used = f"{mem_used / (1024**2):.0f}"  # 转为 MB
+                print(f"       显存使用峰值: {mem_used} MB")
+                
+                gpu_name = gpu_info.get('gpu_name', 'N/A')
+                print(f"       GPU型号: {gpu_name}")
+            
+            # 保存完整结果
+            output_dir = Path(__file__).parent / "test_results"
+            output_dir.mkdir(exist_ok=True)
+            output_file = output_dir / "ocr_result.json"
+            
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+            print(f"\n  💾 结果已保存: {output_file}")
+            
+            return True
+        else:
+            print_result(False, f"OCR 失败: {response.status_code} - {response.text}")
+            return False
+            
+    except requests.exceptions.Timeout:
+        print_result(False, "OCR 请求超时")
+        return False
+    except Exception as e:
+        print_result(False, f"OCR 异常: {e}")
+        return False
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         # 测试指定类型
@@ -339,9 +460,16 @@ if __name__ == "__main__":
             print("用法:")
             print("  python test_api.py          # 运行所有测试")
             print("  python test_api.py <type>   # 测试指定类型")
+            print("  python test_api.py ocr      # 测试 OCR 接口")
+            print("  python test_api.py ocr <image_path>  # 测试 OCR（指定图片）")
             print("\n可用类型:")
             for dtype in set(TEST_CASES.values()):
                 print(f"  - {dtype}")
+            print("  - ocr  (OCR 图片识别)")
+        elif doc_type == "ocr":
+            # 测试 OCR 接口
+            image_path = sys.argv[2] if len(sys.argv) > 2 else None
+            test_ocr(image_path)
         else:
             test_single(doc_type)
     else:
