@@ -1,37 +1,42 @@
 {
   "code": 0,
-  "message": "成功识别出 10 个文本片段",
+  "message": "成功识别出 15 个文本片段",
   "data": {
     "texts": [
-      "GET",
-      "uosrpeimauo[/prp}/n",
-      "POST",
-      "/ocr Ocr Image",
-      "对base64编码的图片进行OCR识别",
-      "。image_base64:base64编码的图片数据（可以包含data:image/xxx;base64，前缀）",
-      "image_format：图片格式（png，jpg，jpeg），默认为png",
-      "返回识别出的文本列表和GPU监控信息",
-      "Parameters",
-      "No parameters"
+      "湖北工程",
+      "中国电建",
+      "ＨｒＰＥＣ",
+      "POWERCHINA",
+      "42-X14551K-A03",
+      "襄阳连云220kV输变电工程",
+      "可行性研究",
+      "第三卷",
+      "线路路径选择及工程设想报告",
+      "（收口版）",
+      "湖北省电力规划设计研究院有限公司",
+      "工程设计证书：住建部综合资质甲级第A142005511号",
+      "工程勘察证书：住建部综合类甲级第B142005511号",
+      "工程资信证书：中咨协甲212021010917号",
+      "二O二四年七月武汉"
     ],
-    "full_text": "GET\nuosrpeimauo[/prp}/n\nPOST\n/ocr Ocr Image\n对base64编码的图片进行OCR识别\n。image_base64:base64编码的图片数据（可以包含data:image/xxx;base64，前缀）\nimage_format：图片格式（png，jpg，jpeg），默认为png\n返回识别出的文本列表和GPU监控信息\nParameters\nNo parameters"
+    "full_text": "湖北工程\n中国电建\nＨｒＰＥＣ\nPOWERCHINA\n42-X14551K-A03\n襄阳连云220kV输变电工程\n可行性研究\n第三卷\n线路路径选择及工程设想报告\n（收口版）\n湖北省电力规划设计研究院有限公司\n工程设计证书：住建部综合资质甲级第A142005511号\n工程勘察证书：住建部综合类甲级第B142005511号\n工程资信证书：中咨协甲212021010917号\n二O二四年七月武汉"
   },
   "gpu_info": {
     "gpu_index": 0,
-    "gpu_memory_used": 2851078144,
-    "gpu_utilization": 1.0,
+    "gpu_memory_used": 4918870016,
+    "gpu_utilization": 3.6153846153846154,
     "gpu_memory_total": 17171480576,
     "gpu_name": "NVIDIA GeForce RTX 4070 Ti SUPER",
-    "gpu_memory_used_avg": 2480756053,
-    "gpu_memory_used_max": 2851078144,
-    "gpu_utilization_max": 9.0,
-    "system_load_avg_1min": 3.0752766927083335,
-    "system_load_max_1min": 3.17724609375,
-    "system_load_avg_5min": 2.6670735677083335,
-    "system_load_max_5min": 2.68359375,
-    "system_load_avg_15min": 2.3341064453125,
-    "system_load_max_15min": 2.33837890625,
-    "sample_count": 12,
-    "duration": 5.966740131378174
+    "gpu_memory_used_avg": 2693307785,
+    "gpu_memory_used_max": 4918870016,
+    "gpu_utilization_max": 41.0,
+    "system_load_avg_1min": 1.5588191105769231,
+    "system_load_max_1min": 1.57666015625,
+    "system_load_avg_5min": 2.3150916466346154,
+    "system_load_max_5min": 2.32373046875,
+    "system_load_avg_15min": 2.0947265625,
+    "system_load_max_15min": 2.09716796875,
+    "sample_count": 13,
+    "duration": 6.565105199813843
   }
 }

@@ -337,7 +337,10 @@ def test_ocr(image_path: Optional[str] = None) -> bool:
     测试 OCR 接口
     
     Args:
-        image_path: 图片路径，默认使用 test/image.png
+        image_path: 图片路径或包含base64数据的txt文件路径，默认使用 test/image.png
+                   支持格式：
+                   - 图片文件：.png, .jpg, .jpeg
+                   - txt文件：包含base64编码的图片数据（可带data:image/xxx;base64,前缀）
     
     Returns:
         是否测试成功
@@ -355,28 +358,64 @@ def test_ocr(image_path: Optional[str] = None) -> bool:
     else:
         image_path = Path(image_path)
     
-    print(f"  📷 图片路径: {image_path}")
+    print(f"  📷 文件路径: {image_path}")
     
     if not image_path.exists():
-        print_result(False, f"图片不存在: {image_path}")
+        print_result(False, f"文件不存在: {image_path}")
         return False
     
-    # 读取图片并转为 base64
-    try:
-        with open(image_path, "rb") as f:
-            image_data = f.read()
-        image_base64 = base64.b64encode(image_data).decode("utf-8")
-        print(f"  📦 图片大小: {len(image_data)} bytes")
-        print(f"  🔤 Base64长度: {len(image_base64)} 字符")
-    except Exception as e:
-        print_result(False, f"读取图片失败: {e}")
-        return False
-    
-    # 确定图片格式
     suffix = image_path.suffix.lower()
-    format_map = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg"}
-    image_format = format_map.get(suffix, "png")
-    print(f"  🖼️  图片格式: {image_format}")
+    
+    # 判断是 txt 文件还是图片文件
+    if suffix == ".txt":
+        # 从 txt 文件读取 base64 数据
+        print(f"  📄 文件类型: txt (base64 数据)")
+        try:
+            with open(image_path, "r", encoding="utf-8") as f:
+                image_base64 = f.read().strip()
+            
+            # 解析 data URI，提取格式和 base64 数据
+            if image_base64.startswith("data:"):
+                # 格式: data:image/png;base64,xxxxx
+                if "," in image_base64:
+                    header, image_base64 = image_base64.split(",", 1)
+                    # 从 header 中提取图片格式
+                    if "image/png" in header:
+                        image_format = "png"
+                    elif "image/jpeg" in header or "image/jpg" in header:
+                        image_format = "jpeg"
+                    else:
+                        image_format = "png"  # 默认
+                    print(f"  🖼️  图片格式 (从data URI解析): {image_format}")
+                else:
+                    image_format = "png"
+                    print(f"  🖼️  图片格式 (默认): {image_format}")
+            else:
+                image_format = "png"
+                print(f"  🖼️  图片格式 (默认): {image_format}")
+            
+            print(f"  🔤 Base64长度: {len(image_base64)} 字符")
+            
+        except Exception as e:
+            print_result(False, f"读取txt文件失败: {e}")
+            return False
+    else:
+        # 读取图片文件并转为 base64
+        print(f"  📄 文件类型: 图片文件")
+        try:
+            with open(image_path, "rb") as f:
+                image_data = f.read()
+            image_base64 = base64.b64encode(image_data).decode("utf-8")
+            print(f"  📦 图片大小: {len(image_data)} bytes")
+            print(f"  🔤 Base64长度: {len(image_base64)} 字符")
+        except Exception as e:
+            print_result(False, f"读取图片失败: {e}")
+            return False
+        
+        # 确定图片格式
+        format_map = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg"}
+        image_format = format_map.get(suffix, "png")
+        print(f"  🖼️  图片格式: {image_format}")
     
     # 调用 OCR 接口
     print(f"\n  📤 调用 OCR 接口...")
