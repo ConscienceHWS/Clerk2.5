@@ -332,7 +332,12 @@ def test_single(document_type: str):
     print_result(False, f"未找到类型 {document_type} 的测试文件")
 
 
-def test_ocr(image_path: Optional[str] = None) -> bool:
+def test_ocr(
+    image_path: Optional[str] = None,
+    remove_watermark: bool = False,
+    light_threshold: int = 200,
+    saturation_threshold: int = 30
+) -> bool:
     """
     测试 OCR 接口
     
@@ -341,6 +346,9 @@ def test_ocr(image_path: Optional[str] = None) -> bool:
                    支持格式：
                    - 图片文件：.png, .jpg, .jpeg
                    - txt文件：包含base64编码的图片数据（可带data:image/xxx;base64,前缀）
+        remove_watermark: 是否去除水印
+        light_threshold: 水印亮度阈值（0-255），默认200
+        saturation_threshold: 水印饱和度阈值（0-255），默认30
     
     Returns:
         是否测试成功
@@ -419,14 +427,23 @@ def test_ocr(image_path: Optional[str] = None) -> bool:
     
     # 调用 OCR 接口
     print(f"\n  📤 调用 OCR 接口...")
+    # 构建请求参数
+    request_data = {
+        "image_base64": image_base64,
+        "image_format": image_format
+    }
+    
+    if remove_watermark:
+        request_data["remove_watermark"] = True
+        request_data["watermark_light_threshold"] = light_threshold
+        request_data["watermark_saturation_threshold"] = saturation_threshold
+        print(f"  🔧 去水印: 是 (亮度阈值={light_threshold}, 饱和度阈值={saturation_threshold})")
+    
     try:
         start_time = time.time()
         response = requests.post(
             f"{API_BASE_URL}/ocr",
-            json={
-                "image_base64": image_base64,
-                "image_format": image_format
-            },
+            json=request_data,
             timeout=120
         )
         elapsed = time.time() - start_time
@@ -500,15 +517,41 @@ if __name__ == "__main__":
             print("  python test_api.py          # 运行所有测试")
             print("  python test_api.py <type>   # 测试指定类型")
             print("  python test_api.py ocr      # 测试 OCR 接口")
-            print("  python test_api.py ocr <image_path>  # 测试 OCR（指定图片）")
+            print("  python test_api.py ocr <image_path>  # 测试 OCR（指定图片或txt）")
+            print("  python test_api.py ocr <image_path> --nowm  # 测试 OCR 并去水印")
+            print("  python test_api.py ocr <image_path> --nowm --light=180 --sat=40  # 自定义阈值")
             print("\n可用类型:")
             for dtype in set(TEST_CASES.values()):
                 print(f"  - {dtype}")
             print("  - ocr  (OCR 图片识别)")
+            print("\nOCR 去水印参数:")
+            print("  --nowm         启用去水印")
+            print("  --light=N      亮度阈值（0-255，默认200）")
+            print("  --sat=N        饱和度阈值（0-255，默认30）")
         elif doc_type == "ocr":
-            # 测试 OCR 接口
-            image_path = sys.argv[2] if len(sys.argv) > 2 else None
-            test_ocr(image_path)
+            # 解析 OCR 参数
+            image_path = None
+            remove_watermark = False
+            light_threshold = 200
+            saturation_threshold = 30
+            
+            for arg in sys.argv[2:]:
+                if arg == "--nowm":
+                    remove_watermark = True
+                elif arg.startswith("--light="):
+                    try:
+                        light_threshold = int(arg.split("=")[1])
+                    except ValueError:
+                        print(f"警告: 无效的亮度阈值 {arg}，使用默认值 200")
+                elif arg.startswith("--sat="):
+                    try:
+                        saturation_threshold = int(arg.split("=")[1])
+                    except ValueError:
+                        print(f"警告: 无效的饱和度阈值 {arg}，使用默认值 30")
+                elif not arg.startswith("--"):
+                    image_path = arg
+            
+            test_ocr(image_path, remove_watermark, light_threshold, saturation_threshold)
         else:
             test_single(doc_type)
     else:

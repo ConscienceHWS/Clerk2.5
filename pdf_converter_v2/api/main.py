@@ -200,6 +200,9 @@ class OCRRequest(BaseModel):
     """OCR识别请求模型"""
     image_base64: str  # base64编码的图片数据
     image_format: Optional[str] = "png"  # 图片格式：png, jpg, jpeg
+    remove_watermark: Optional[bool] = False  # 是否去除水印
+    watermark_light_threshold: Optional[int] = 200  # 水印亮度阈值（0-255），高于此值的浅色像素可能是水印
+    watermark_saturation_threshold: Optional[int] = 30  # 水印饱和度阈值（0-255），低于此值的低饱和度像素可能是水印
 
 
 class OCRResponse(BaseModel):
@@ -875,6 +878,9 @@ async def ocr_image(request: OCRRequest):
     
     - **image_base64**: base64编码的图片数据（可以包含data:image/xxx;base64,前缀）
     - **image_format**: 图片格式（png, jpg, jpeg），默认为png
+    - **remove_watermark**: 是否去除水印，默认为false
+    - **watermark_light_threshold**: 水印亮度阈值（0-255），默认200，高于此值的浅色像素可能是水印
+    - **watermark_saturation_threshold**: 水印饱和度阈值（0-255），默认30，低于此值的低饱和度像素可能是水印
     
     返回识别出的文本列表和GPU监控信息
     """
@@ -933,6 +939,30 @@ async def ocr_image(request: OCRRequest):
         with open(image_path, "wb") as f:
             f.write(image_bytes)
         logger.info(f"[OCR] 图片已保存: {image_path}")
+        
+        # 如果需要去水印，进行预处理
+        if request.remove_watermark:
+            try:
+                from ..utils.image_preprocessor import remove_watermark, check_opencv_available
+                
+                if check_opencv_available():
+                    logger.info(f"[OCR] 开始去水印处理，亮度阈值: {request.watermark_light_threshold}, 饱和度阈值: {request.watermark_saturation_threshold}")
+                    
+                    # 去水印后的图片路径
+                    nowm_image_path = os.path.join(temp_dir, f"ocr_image_nowm{ext}")
+                    
+                    image_path = remove_watermark(
+                        image_path,
+                        output_path=nowm_image_path,
+                        light_threshold=request.watermark_light_threshold or 200,
+                        saturation_threshold=request.watermark_saturation_threshold or 30,
+                        method="hsv"
+                    )
+                    logger.info(f"[OCR] 去水印完成: {image_path}")
+                else:
+                    logger.warning("[OCR] OpenCV 未安装，跳过去水印处理")
+            except Exception as e:
+                logger.warning(f"[OCR] 去水印处理失败，使用原图继续: {e}")
         
         # 调用PaddleOCR进行识别（监控线程在此期间持续采集数据）
         from ..utils.paddleocr_fallback import call_paddleocr_ocr
