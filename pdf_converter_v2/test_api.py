@@ -339,7 +339,8 @@ def test_ocr(
     saturation_threshold: int = 30,
     crop_header_footer: bool = False,
     header_ratio: float = 0.05,
-    footer_ratio: float = 0.05
+    footer_ratio: float = 0.05,
+    auto_detect_header_footer: bool = False
 ) -> bool:
     """
     测试 OCR 接口
@@ -355,6 +356,7 @@ def test_ocr(
         crop_header_footer: 是否裁剪页眉页脚
         header_ratio: 页眉裁剪比例（0-1），默认0.05
         footer_ratio: 页脚裁剪比例（0-1），默认0.05
+        auto_detect_header_footer: 是否自动检测页眉页脚边界
     
     Returns:
         是否测试成功
@@ -441,9 +443,13 @@ def test_ocr(
     
     if crop_header_footer:
         request_data["crop_header_footer"] = True
-        request_data["header_ratio"] = header_ratio
-        request_data["footer_ratio"] = footer_ratio
-        print(f"  ✂️  裁剪页眉页脚: 是 (顶部={header_ratio*100:.0f}%, 底部={footer_ratio*100:.0f}%)")
+        if auto_detect_header_footer:
+            request_data["auto_detect_header_footer"] = True
+            print(f"  ✂️  裁剪页眉页脚: 自动检测模式")
+        else:
+            request_data["header_ratio"] = header_ratio
+            request_data["footer_ratio"] = footer_ratio
+            print(f"  ✂️  裁剪页眉页脚: 是 (顶部={header_ratio*100:.0f}%, 底部={footer_ratio*100:.0f}%)")
     
     if remove_watermark:
         request_data["remove_watermark"] = True
@@ -542,7 +548,8 @@ if __name__ == "__main__":
             print("  --light=N      亮度阈值（0-255，默认200）")
             print("  --sat=N        饱和度阈值（0-255，默认30）")
             print("\nOCR 裁剪页眉页脚参数:")
-            print("  --crop         启用裁剪页眉页脚")
+            print("  --crop         启用裁剪页眉页脚（固定比例模式）")
+            print("  --crop-auto    启用裁剪页眉页脚（自动检测模式）")
             print("  --header=N     页眉裁剪比例（0-1，默认0.05表示5%）")
             print("  --footer=N     页脚裁剪比例（0-1，默认0.05表示5%）")
         elif doc_type == "ocr":
@@ -554,12 +561,16 @@ if __name__ == "__main__":
             crop_header_footer = False
             header_ratio = 0.05
             footer_ratio = 0.05
+            auto_detect_header_footer = False
             
             for arg in sys.argv[2:]:
                 if arg == "--nowm":
                     remove_watermark = True
                 elif arg == "--crop":
                     crop_header_footer = True
+                elif arg == "--crop-auto":
+                    crop_header_footer = True
+                    auto_detect_header_footer = True
                 elif arg.startswith("--light="):
                     try:
                         light_threshold = int(arg.split("=")[1])
@@ -590,7 +601,8 @@ if __name__ == "__main__":
                 saturation_threshold,
                 crop_header_footer,
                 header_ratio,
-                footer_ratio
+                footer_ratio,
+                auto_detect_header_footer
             )
         else:
             test_single(doc_type)

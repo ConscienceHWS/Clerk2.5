@@ -206,6 +206,7 @@ class OCRRequest(BaseModel):
     crop_header_footer: Optional[bool] = False  # 是否裁剪页眉页脚
     header_ratio: Optional[float] = 0.05  # 页眉裁剪比例（0-1），默认5%
     footer_ratio: Optional[float] = 0.05  # 页脚裁剪比例（0-1），默认5%
+    auto_detect_header_footer: Optional[bool] = False  # 是否自动检测页眉页脚边界
 
 
 class OCRResponse(BaseModel):
@@ -887,6 +888,7 @@ async def ocr_image(request: OCRRequest):
     - **crop_header_footer**: 是否裁剪页眉页脚，默认为false
     - **header_ratio**: 页眉裁剪比例（0-1），默认0.05表示裁剪顶部5%
     - **footer_ratio**: 页脚裁剪比例（0-1），默认0.05表示裁剪底部5%
+    - **auto_detect_header_footer**: 是否自动检测页眉页脚边界，默认为false（启用后忽略header_ratio和footer_ratio）
     
     返回识别出的文本列表和GPU监控信息
     """
@@ -952,7 +954,10 @@ async def ocr_image(request: OCRRequest):
                 from ..utils.image_preprocessor import crop_header_footer, check_opencv_available
                 
                 if check_opencv_available():
-                    logger.info(f"[OCR] 开始裁剪页眉页脚，顶部比例: {request.header_ratio}, 底部比例: {request.footer_ratio}")
+                    if request.auto_detect_header_footer:
+                        logger.info("[OCR] 开始自动检测并裁剪页眉页脚")
+                    else:
+                        logger.info(f"[OCR] 开始裁剪页眉页脚，顶部比例: {request.header_ratio}, 底部比例: {request.footer_ratio}")
                     
                     # 裁剪后的图片路径
                     cropped_image_path = os.path.join(temp_dir, f"ocr_image_cropped{ext}")
@@ -961,7 +966,8 @@ async def ocr_image(request: OCRRequest):
                         image_path,
                         output_path=cropped_image_path,
                         header_ratio=request.header_ratio or 0.05,
-                        footer_ratio=request.footer_ratio or 0.05
+                        footer_ratio=request.footer_ratio or 0.05,
+                        auto_detect=request.auto_detect_header_footer or False
                     )
                     logger.info(f"[OCR] 裁剪页眉页脚完成: {image_path}")
                 else:
