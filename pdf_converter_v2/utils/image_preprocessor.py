@@ -247,3 +247,69 @@ def enhance_for_ocr(
 def check_opencv_available() -> bool:
     """检查 OpenCV 是否可用"""
     return CV2_AVAILABLE
+
+
+def crop_header_footer(
+    image_path: str,
+    output_path: Optional[str] = None,
+    header_ratio: float = 0.05,
+    footer_ratio: float = 0.05
+) -> str:
+    """
+    裁剪图片的页眉和页脚区域
+    
+    通过按比例裁剪图片顶部和底部来去除页眉页脚
+    
+    Args:
+        image_path: 输入图片路径
+        output_path: 输出图片路径，默认在原文件名后加 _cropped
+        header_ratio: 页眉裁剪比例（0-1），默认0.05表示裁剪顶部5%
+        footer_ratio: 页脚裁剪比例（0-1），默认0.05表示裁剪底部5%
+    
+    Returns:
+        处理后的图片路径
+    """
+    if not CV2_AVAILABLE:
+        logger.warning("[裁剪页眉页脚] OpenCV 未安装，跳过处理")
+        return image_path
+    
+    logger.info(f"[裁剪页眉页脚] 开始处理: {image_path}")
+    logger.info(f"[裁剪页眉页脚] 页眉比例: {header_ratio}, 页脚比例: {footer_ratio}")
+    
+    # 读取图片
+    img = cv2.imread(image_path)
+    if img is None:
+        logger.error(f"[裁剪页眉页脚] 无法读取图片: {image_path}")
+        return image_path
+    
+    height, width = img.shape[:2]
+    logger.info(f"[裁剪页眉页脚] 原始尺寸: {width}x{height}")
+    
+    # 计算裁剪区域
+    header_pixels = int(height * header_ratio)
+    footer_pixels = int(height * footer_ratio)
+    
+    # 裁剪图片（保留中间部分）
+    top = header_pixels
+    bottom = height - footer_pixels
+    
+    if top >= bottom:
+        logger.warning("[裁剪页眉页脚] 裁剪区域无效，跳过处理")
+        return image_path
+    
+    result = img[top:bottom, :]
+    
+    new_height = result.shape[0]
+    logger.info(f"[裁剪页眉页脚] 裁剪后尺寸: {width}x{new_height}")
+    logger.info(f"[裁剪页眉页脚] 裁剪了顶部 {header_pixels}px，底部 {footer_pixels}px")
+    
+    # 确定输出路径
+    if output_path is None:
+        path = Path(image_path)
+        output_path = str(path.parent / f"{path.stem}_cropped{path.suffix}")
+    
+    # 保存结果
+    cv2.imwrite(output_path, result)
+    logger.info(f"[裁剪页眉页脚] 处理完成，保存到: {output_path}")
+    
+    return output_path

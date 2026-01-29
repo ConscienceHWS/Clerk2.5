@@ -336,7 +336,10 @@ def test_ocr(
     image_path: Optional[str] = None,
     remove_watermark: bool = False,
     light_threshold: int = 200,
-    saturation_threshold: int = 30
+    saturation_threshold: int = 30,
+    crop_header_footer: bool = False,
+    header_ratio: float = 0.05,
+    footer_ratio: float = 0.05
 ) -> bool:
     """
     测试 OCR 接口
@@ -349,6 +352,9 @@ def test_ocr(
         remove_watermark: 是否去除水印
         light_threshold: 水印亮度阈值（0-255），默认200
         saturation_threshold: 水印饱和度阈值（0-255），默认30
+        crop_header_footer: 是否裁剪页眉页脚
+        header_ratio: 页眉裁剪比例（0-1），默认0.05
+        footer_ratio: 页脚裁剪比例（0-1），默认0.05
     
     Returns:
         是否测试成功
@@ -432,6 +438,12 @@ def test_ocr(
         "image_base64": image_base64,
         "image_format": image_format
     }
+    
+    if crop_header_footer:
+        request_data["crop_header_footer"] = True
+        request_data["header_ratio"] = header_ratio
+        request_data["footer_ratio"] = footer_ratio
+        print(f"  ✂️  裁剪页眉页脚: 是 (顶部={header_ratio*100:.0f}%, 底部={footer_ratio*100:.0f}%)")
     
     if remove_watermark:
         request_data["remove_watermark"] = True
@@ -519,7 +531,8 @@ if __name__ == "__main__":
             print("  python test_api.py ocr      # 测试 OCR 接口")
             print("  python test_api.py ocr <image_path>  # 测试 OCR（指定图片或txt）")
             print("  python test_api.py ocr <image_path> --nowm  # 测试 OCR 并去水印")
-            print("  python test_api.py ocr <image_path> --nowm --light=180 --sat=40  # 自定义阈值")
+            print("  python test_api.py ocr <image_path> --crop  # 测试 OCR 并裁剪页眉页脚")
+            print("  python test_api.py ocr <image_path> --nowm --crop  # 同时去水印和裁剪")
             print("\n可用类型:")
             for dtype in set(TEST_CASES.values()):
                 print(f"  - {dtype}")
@@ -528,16 +541,25 @@ if __name__ == "__main__":
             print("  --nowm         启用去水印")
             print("  --light=N      亮度阈值（0-255，默认200）")
             print("  --sat=N        饱和度阈值（0-255，默认30）")
+            print("\nOCR 裁剪页眉页脚参数:")
+            print("  --crop         启用裁剪页眉页脚")
+            print("  --header=N     页眉裁剪比例（0-1，默认0.05表示5%）")
+            print("  --footer=N     页脚裁剪比例（0-1，默认0.05表示5%）")
         elif doc_type == "ocr":
             # 解析 OCR 参数
             image_path = None
             remove_watermark = False
             light_threshold = 200
             saturation_threshold = 30
+            crop_header_footer = False
+            header_ratio = 0.05
+            footer_ratio = 0.05
             
             for arg in sys.argv[2:]:
                 if arg == "--nowm":
                     remove_watermark = True
+                elif arg == "--crop":
+                    crop_header_footer = True
                 elif arg.startswith("--light="):
                     try:
                         light_threshold = int(arg.split("=")[1])
@@ -548,10 +570,28 @@ if __name__ == "__main__":
                         saturation_threshold = int(arg.split("=")[1])
                     except ValueError:
                         print(f"警告: 无效的饱和度阈值 {arg}，使用默认值 30")
+                elif arg.startswith("--header="):
+                    try:
+                        header_ratio = float(arg.split("=")[1])
+                    except ValueError:
+                        print(f"警告: 无效的页眉比例 {arg}，使用默认值 0.05")
+                elif arg.startswith("--footer="):
+                    try:
+                        footer_ratio = float(arg.split("=")[1])
+                    except ValueError:
+                        print(f"警告: 无效的页脚比例 {arg}，使用默认值 0.05")
                 elif not arg.startswith("--"):
                     image_path = arg
             
-            test_ocr(image_path, remove_watermark, light_threshold, saturation_threshold)
+            test_ocr(
+                image_path, 
+                remove_watermark, 
+                light_threshold, 
+                saturation_threshold,
+                crop_header_footer,
+                header_ratio,
+                footer_ratio
+            )
         else:
             test_single(doc_type)
     else:

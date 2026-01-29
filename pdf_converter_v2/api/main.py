@@ -203,6 +203,9 @@ class OCRRequest(BaseModel):
     remove_watermark: Optional[bool] = False  # 是否去除水印
     watermark_light_threshold: Optional[int] = 200  # 水印亮度阈值（0-255），高于此值的浅色像素可能是水印
     watermark_saturation_threshold: Optional[int] = 30  # 水印饱和度阈值（0-255），低于此值的低饱和度像素可能是水印
+    crop_header_footer: Optional[bool] = False  # 是否裁剪页眉页脚
+    header_ratio: Optional[float] = 0.05  # 页眉裁剪比例（0-1），默认5%
+    footer_ratio: Optional[float] = 0.05  # 页脚裁剪比例（0-1），默认5%
 
 
 class OCRResponse(BaseModel):
@@ -881,6 +884,9 @@ async def ocr_image(request: OCRRequest):
     - **remove_watermark**: 是否去除水印，默认为false
     - **watermark_light_threshold**: 水印亮度阈值（0-255），默认200，高于此值的浅色像素可能是水印
     - **watermark_saturation_threshold**: 水印饱和度阈值（0-255），默认30，低于此值的低饱和度像素可能是水印
+    - **crop_header_footer**: 是否裁剪页眉页脚，默认为false
+    - **header_ratio**: 页眉裁剪比例（0-1），默认0.05表示裁剪顶部5%
+    - **footer_ratio**: 页脚裁剪比例（0-1），默认0.05表示裁剪底部5%
     
     返回识别出的文本列表和GPU监控信息
     """
@@ -939,6 +945,29 @@ async def ocr_image(request: OCRRequest):
         with open(image_path, "wb") as f:
             f.write(image_bytes)
         logger.info(f"[OCR] 图片已保存: {image_path}")
+        
+        # 如果需要裁剪页眉页脚，先进行裁剪
+        if request.crop_header_footer:
+            try:
+                from ..utils.image_preprocessor import crop_header_footer, check_opencv_available
+                
+                if check_opencv_available():
+                    logger.info(f"[OCR] 开始裁剪页眉页脚，顶部比例: {request.header_ratio}, 底部比例: {request.footer_ratio}")
+                    
+                    # 裁剪后的图片路径
+                    cropped_image_path = os.path.join(temp_dir, f"ocr_image_cropped{ext}")
+                    
+                    image_path = crop_header_footer(
+                        image_path,
+                        output_path=cropped_image_path,
+                        header_ratio=request.header_ratio or 0.05,
+                        footer_ratio=request.footer_ratio or 0.05
+                    )
+                    logger.info(f"[OCR] 裁剪页眉页脚完成: {image_path}")
+                else:
+                    logger.warning("[OCR] OpenCV 未安装，跳过裁剪页眉页脚")
+            except Exception as e:
+                logger.warning(f"[OCR] 裁剪页眉页脚失败，使用原图继续: {e}")
         
         # 如果需要去水印，进行预处理
         if request.remove_watermark:
