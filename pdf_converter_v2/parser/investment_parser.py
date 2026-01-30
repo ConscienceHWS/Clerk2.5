@@ -224,8 +224,11 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
             table_text += " ".join([str(cell) for cell in row])
         # 移除空格后再匹配
         table_text_no_space = table_text.replace(" ", "")
-        # 选择包含"工程或费用名称"和"静态投资"的表格
-        if "工程或费用名称" in table_text_no_space and "静态投资" in table_text_no_space:
+        # 选择包含"工程或费用名称"或"项目名称"，且包含"静态投资"或"静态合计"的表格
+        has_name_col = ("工程或费用名称" in table_text_no_space or "项目名称" in table_text_no_space)
+        has_investment_col = ("静态投资" in table_text_no_space or "静态合计" in table_text_no_space)
+        
+        if has_name_col and has_investment_col:
             all_matching_tables.append((table_idx, table))
             logger.info(f"[可研批复投资] 找到投资估算表格 (表格{table_idx+1}), 行数: {len(table)}")
     
@@ -295,7 +298,7 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
             
             if "序号" in cell_text and no_idx == -1:
                 no_idx = col_idx
-            elif ("工程或费用名称" in cell_text_no_space) and name_idx == -1:
+            elif ("工程或费用名称" in cell_text_no_space or "项目名称" in cell_text_no_space) and name_idx == -1:
                 name_idx = col_idx
             elif "架空线" in cell_text_no_space and overhead_line_idx == -1:
                 overhead_line_idx = col_idx
@@ -305,9 +308,9 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
                 substation_idx = col_idx
             elif "光缆" in cell_text and optical_cable_idx == -1:
                 optical_cable_idx = col_idx
-            elif "静态投资" in cell_text_no_space and static_investment_idx == -1:
+            elif ("静态投资" in cell_text_no_space or "静态合计" in cell_text_no_space) and static_investment_idx == -1:
                 static_investment_idx = col_idx
-            elif "动态投资" in cell_text_no_space and dynamic_investment_idx == -1:
+            elif ("动态投资" in cell_text_no_space or "动态合计" in cell_text_no_space) and dynamic_investment_idx == -1:
                 dynamic_investment_idx = col_idx
             # 新增费用字段识别
             elif "建筑工程费" in cell_text_no_space and construction_project_cost_idx == -1:
@@ -322,8 +325,8 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
                 if "其他费用" in cell_text_no_space:
                     other_expenses_idx = col_idx
         
-        # 如果这一行包含"序号"或"工程或费用名称"，记录为表头结束行
-        if ("序号" in row_text or "工程或费用名称" in row_text_no_space) and header_row_idx == -1:
+        # 如果这一行包含"序号"或"工程或费用名称"或"项目名称"，记录为表头结束行
+        if ("序号" in row_text or "工程或费用名称" in row_text_no_space or "项目名称" in row_text_no_space) and header_row_idx == -1:
             header_row_idx = row_idx
     
     # 表头结束行应该是最后一个包含表头内容的行
