@@ -6,7 +6,7 @@ PDF Converter API 测试脚本
 - fsApproval: 可研批复
 - fsReview: 可研评审  
 - pdApproval: 初设批复
-- safety_fsApproval: 安评可研批复
+- safetyFsApproval: 安评可研批复
 
 以及现有类型：
 - settlementReport: 结算报告
@@ -35,7 +35,7 @@ TEST_DIR = Path(__file__).parent / "test"
 #   "文件名": "类型" - 旧格式，去水印False，只保留表格True
 TEST_CASES = {
     # 新增投资类型
-    "鄂电司发展〔2024〕124号　国网湖北省电力有限公司关于襄阳连云220千伏输变电工程可行性研究报告的批复.pdf": ("safety_fsApproval", True, True),  # 需要去水印 + 只保留表格附件
+    "鄂电司发展〔2024〕124号　国网湖北省电力有限公司关于襄阳连云220千伏输变电工程可行性研究报告的批复.pdf": ("safetyFsApproval", True,False),  # 需要去水印 + 只保留表格附件
     # "2-（可研批复）晋电发展〔2017〕831号+国网山西省电力公司关于临汾古县、晋城周村220kV输变电等工程可行性研究报告的批复.pdf.pdf": "fsApproval",
     # "1-（可研评审）晋电经研规划〔2017〕187号(盖章)国网山西经研院关于山西晋城周村220kV输变电工程可行性研究报告的评审意见.pdf": "fsReview",
     # "5-（初设批复）晋电建设〔2019〕566号　国网山西省电力公司关于晋城周村220kV输变电工程初步设计的批复 .pdf": "pdApproval",
@@ -199,7 +199,7 @@ def validate_result(result: Dict[str, Any], expected_type: str) -> bool:
         return False
     
     # 对于投资类型，检查嵌套结构
-    if expected_type in ["fsApproval", "fsReview", "pdApproval", "safety_fsApproval"]:
+    if expected_type in ["fsApproval", "fsReview", "pdApproval", "safetyFsApproval"]:
         if not isinstance(data, list):
             print_result(False, f"数据格式错误: 期望 list, 实际 {type(data).__name__}")
             return False

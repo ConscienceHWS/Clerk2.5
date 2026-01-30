@@ -426,7 +426,7 @@ async def process_conversion_task(
         tables_info = None
         
         # 针对投资估算类型，需要先切割附件页
-        if request.doc_type in ("fsApproval", "fsReview", "pdApproval", "safety_fsApproval"):
+        if request.doc_type in ("fsApproval", "fsReview", "pdApproval", "safetyFsApproval"):
             logger.info(f"[任务 {task_id}] 文档类型 {request.doc_type}，需要先切割附件页")
             
             # 导入附件页切割函数
@@ -649,10 +649,10 @@ async def process_conversion_task(
 @app.post("/convert", response_model=ConversionResponse)
 async def convert_file(
     file: Annotated[UploadFile, File(description="上传的PDF或图片文件")],
-    # 新增：类型参数（英文传参） noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | finalAccount | safety_fsApproval
+    # 新增：类型参数（英文传参） noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | finalAccount | safetyFsApproval
     type: Annotated[
-        Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview", "fsApproval", "fsReview", "pdApproval", "finalAccount", "safety_fsApproval"]],
-        Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | finalAccount | safety_fsApproval")
+        Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview", "fsApproval", "fsReview", "pdApproval", "finalAccount", "safetyFsApproval"]],
+        Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | finalAccount | safetyFsApproval")
     ] = None,
     # 新增：去水印参数
     remove_watermark: Annotated[
@@ -708,7 +708,7 @@ async def convert_file(
       * fsReview - 可研评审投资估算
       * pdApproval - 初设批复概算投资
       * finalAccount - 决算报告
-      * safety_fsApproval - 安评可研批复投资估算
+      * safetyFsApproval - 安评可研批复投资估算
     - **remove_watermark**: 是否去除水印（仅对图片有效），默认为false
     - **watermark_light_threshold**: 水印亮度阈值（0-255），默认200
     - **watermark_saturation_threshold**: 水印饱和度阈值（0-255），默认30
@@ -838,7 +838,7 @@ async def convert_file(
         # 决算报告
         "finalAccount": "finalAccount",
         # 安评类
-        "safety_fsApproval": "safety_fsApproval",
+        "safetyFsApproval": "safetyFsApproval",
     }
     doc_type = None
     if type:

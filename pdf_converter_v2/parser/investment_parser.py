@@ -442,6 +442,37 @@ def parse_safety_feasibility_approval_investment(markdown_content: str) -> Feasi
         logger.warning("[安全可研批复投资] 未能提取出任何表格内容")
         return record
     
+    # 首先尝试提取项目基本信息表格
+    for table_idx, table in enumerate(tables):
+        if len(table) < 2:
+            continue
+        
+        table_text = ""
+        for row in table:
+            table_text += " ".join([str(cell) for cell in row])
+        table_text_no_space = table_text.replace(" ", "").replace("(", "（").replace(")", "）")
+        
+        # 查找包含"工程(项目)名称"的表格
+        if "工程（项目）名称" in table_text_no_space or "工程项目名称" in table_text_no_space:
+            logger.info(f"[安全可研批复投资] 找到项目信息表格 (表格{table_idx+1})")
+            
+            # 提取项目信息
+            for row in table:
+                if len(row) >= 2:
+                    key = str(row[0]).strip()
+                    value = str(row[1]).strip() if len(row) > 1 else ""
+                    
+                    if "工程" in key and "名称" in key:
+                        record.projectName = value
+                        logger.info(f"[安全可研批复投资] 提取工程名称: {value}")
+                    elif "项目单位" in key:
+                        record.projectUnit = value
+                        logger.info(f"[安全可研批复投资] 提取项目单位: {value}")
+                    elif "设计单位" in key:
+                        record.designUnit = value
+                        logger.info(f"[安全可研批复投资] 提取设计单位: {value}")
+            break
+    
     # 找到所有投资估算表格并合并
     all_matching_tables = []
     for table_idx, table in enumerate(tables):
@@ -1040,8 +1071,8 @@ def parse_investment_record(markdown_content: str, investment_type: Optional[str
     result = None
     if investment_type == "fsApproval":
         result = parse_feasibility_approval_investment(markdown_content)
-    elif investment_type == "safety_fsApproval":
-        # safety_fsApproval 使用独立的解析逻辑（湖北省格式）
+    elif investment_type == "safetyFsApproval":
+        # safetyFsApproval 使用独立的解析逻辑（湖北省格式）
         result = parse_safety_feasibility_approval_investment(markdown_content)
     elif investment_type == "fsReview":
         result = parse_feasibility_review_investment(markdown_content)

@@ -283,9 +283,18 @@ class FeasibilityApprovalInvestment:
     - Level 0: 顶层大类（如"山西晋城周村220千伏输变电工程"）
     - Level 1: 二级分类（如"变电工程"、"线路工程"），有自己的 items
     - Level 2: 具体项目（如"周村220千伏变电站新建工程"）
+    
+    项目信息（可选，用于 safetyFsApproval 类型）：
+    - projectName: 工程(项目)名称
+    - projectUnit: 项目单位
+    - designUnit: 设计单位
     """
     def __init__(self):
         self.items: List[InvestmentItem] = []
+        # 项目基本信息（safetyFsApproval 专用）
+        self.projectName: Optional[str] = None
+        self.projectUnit: Optional[str] = None
+        self.designUnit: Optional[str] = None
     
     def to_dict(self):
         """转换为嵌套结构，与 designReview 保持一致
@@ -405,7 +414,18 @@ class FeasibilityApprovalInvestment:
         if current_top_category is not None:
             result.append(current_top_category)
         
-        return result
+        # 如果有项目信息，返回包含项目信息的字典；否则直接返回数据列表
+        if self.projectName or self.projectUnit or self.designUnit:
+            return {
+                "projectInfo": {
+                    "projectName": self.projectName or "",
+                    "projectUnit": self.projectUnit or "",
+                    "designUnit": self.designUnit or ""
+                },
+                "data": result
+            }
+        else:
+            return result
     
     @staticmethod
     def _parse_number(value: str) -> str:
