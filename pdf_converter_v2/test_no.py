@@ -51,6 +51,12 @@ USE_OCR = True  # 是否启用 OCR
 OCR_LANG = 'chi_sim+eng'  # OCR 语言
 DEBUG_MODE = True  # 是否启用调试模式（显示每页的文本内容）
 
+# 去水印配置
+REMOVE_WATERMARK = False  # 是否对切割后的附件页PDF去水印
+WATERMARK_LIGHT_THRESHOLD = 200  # 水印亮度阈值（0-255），高于此值的浅色像素可能是水印
+WATERMARK_SATURATION_THRESHOLD = 30  # 水印饱和度阈值（0-255），低于此值的低饱和度像素可能是水印
+WATERMARK_DPI = 200  # PDF转图片的DPI（用于去水印）
+
 # 附件页识别关键词
 ATTACHMENT_START_KEYWORDS = [
     '附件:',
@@ -339,7 +345,9 @@ def extract_pages(pdf_path: str, page_numbers: list, output_path: str):
     logger.info(f"[附件切割] 已保存到: {output_path}")
     print(f"✓ 已保存到: {output_path}")
 
-def split_attachment_pages(pdf_path: str, output_dir: Path, use_ocr: bool = False, debug: bool = False):
+def split_attachment_pages(pdf_path: str, output_dir: Path, use_ocr: bool = False, debug: bool = False, 
+                          remove_watermark: bool = False, watermark_light_threshold: int = 200,
+                          watermark_saturation_threshold: int = 30, watermark_dpi: int = 200):
     """
     查找并切割附件页
     
@@ -348,6 +356,10 @@ def split_attachment_pages(pdf_path: str, output_dir: Path, use_ocr: bool = Fals
         output_dir: 输出目录
         use_ocr: 是否使用 OCR
         debug: 是否输出调试信息
+        remove_watermark: 是否对切割后的附件页PDF去水印
+        watermark_light_threshold: 水印亮度阈值（0-255）
+        watermark_saturation_threshold: 水印饱和度阈值（0-255）
+        watermark_dpi: PDF转图片的DPI
     """
     logger.info(f"[附件切割] 开始处理PDF: {pdf_path}")
     
@@ -386,7 +398,57 @@ def split_attachment_pages(pdf_path: str, output_dir: Path, use_ocr: bool = Fals
     logger.info(f"[附件切割] 切割完成: {len(attachment_pages)} 页附件已保存")
     print(f"\n✓ 切割完成！")
     print(f"附件页数: {len(attachment_pages)} 页")
-    print(f"输出目录: {output_dir.absolute()}")
+    print(f"输出文件: {output_file}")
+    
+    # 如果启用去水印，对切割后的附件页PDF进行去水印处理
+    if remove_watermark:
+        logger.info(f"[附件切割] 开始对附件页PDF进行去水印处理...")
+        print("\n" + "=" * 60)
+        print("开始去水印处理")
+        print("=" * 60)
+        
+        try:
+            # 导入去水印模块
+            import sys
+            from pathlib import Path as PathLib
+            sys.path.insert(0, str(PathLib(__file__).parent))
+            
+            from utils.pdf_watermark_remover import remove_watermark_from_pdf
+            
+            # 去水印后的PDF路径
+            nowm_output_file = output_dir / f"{output_file.stem}_nowm.pdf"
+            
+            logger.info(f"[附件切割] 去水印参数: 亮度阈值={watermark_light_threshold}, 饱和度阈值={watermark_saturation_threshold}, DPI={watermark_dpi}")
+            print(f"去水印参数:")
+            print(f"  - 亮度阈值: {watermark_light_threshold}")
+            print(f"  - 饱和度阈值: {watermark_saturation_threshold}")
+            print(f"  - DPI: {watermark_dpi}")
+            
+            # 执行去水印
+            success = remove_watermark_from_pdf(
+                input_pdf=str(output_file),
+                output_pdf=str(nowm_output_file),
+                light_threshold=watermark_light_threshold,
+                saturation_threshold=watermark_saturation_threshold,
+                dpi=watermark_dpi
+            )
+            
+            if success and nowm_output_file.exists():
+                logger.info(f"[附件切割] 去水印完成: {nowm_output_file}")
+                print(f"\n✓ 去水印完成！")
+                print(f"去水印后的文件: {nowm_output_file}")
+            else:
+                logger.warning(f"[附件切割] 去水印失败")
+                print(f"\n⚠ 去水印失败，请检查日志")
+        except ImportError as e:
+            logger.error(f"[附件切割] 导入去水印模块失败: {e}")
+            print(f"\n⚠ 去水印模块导入失败: {e}")
+            print("请确保 utils/pdf_watermark_remover.py 文件存在")
+        except Exception as e:
+            logger.exception(f"[附件切割] 去水印处理失败: {e}")
+            print(f"\n⚠ 去水印处理失败: {e}")
+    
+    print(f"\n输出目录: {output_dir.absolute()}")
 
 if __name__ == '__main__':
     logger.info("[附件切割] " + "=" * 50)
@@ -396,6 +458,18 @@ if __name__ == '__main__':
     print("=" * 60)
     print("PDF 附件页识别和切割工具")
     print("=" * 60)
+    
+    # 显示配置信息
+    print("\n配置信息:")
+    print(f"  - PDF文件: {PDF_PATH}")
+    print(f"  - 输出目录: {OUTPUT_DIR}")
+    print(f"  - OCR: {'启用' if USE_OCR else '禁用'}")
+    print(f"  - 调试模式: {'启用' if DEBUG_MODE else '禁用'}")
+    print(f"  - 去水印: {'启用' if REMOVE_WATERMARK else '禁用'}")
+    if REMOVE_WATERMARK:
+        print(f"    * 亮度阈值: {WATERMARK_LIGHT_THRESHOLD}")
+        print(f"    * 饱和度阈值: {WATERMARK_SATURATION_THRESHOLD}")
+        print(f"    * DPI: {WATERMARK_DPI}")
     
     # 检查依赖
     if not TESSERACT_AVAILABLE and USE_OCR:
@@ -412,7 +486,25 @@ if __name__ == '__main__':
         print("安装方法:")
         print("  pip install PyPDF2\n")
     
+    if REMOVE_WATERMARK:
+        print("\n⚠ 去水印功能需要以下依赖:")
+        print("  - OpenCV (cv2)")
+        print("  - Pillow (PIL)")
+        print("  - pdf2image")
+        print("  - PyPDF2")
+        print("安装命令:")
+        print("  pip install opencv-python pillow pdf2image PyPDF2\n")
+    
     # 执行切割
-    logger.info(f"[附件切割] 配置: PDF={PDF_PATH}, 输出={OUTPUT_DIR}, OCR={USE_OCR}, DEBUG={DEBUG_MODE}")
-    split_attachment_pages(PDF_PATH, OUTPUT_DIR, use_ocr=USE_OCR, debug=DEBUG_MODE)
+    logger.info(f"[附件切割] 配置: PDF={PDF_PATH}, 输出={OUTPUT_DIR}, OCR={USE_OCR}, DEBUG={DEBUG_MODE}, 去水印={REMOVE_WATERMARK}")
+    split_attachment_pages(
+        PDF_PATH, 
+        OUTPUT_DIR, 
+        use_ocr=USE_OCR, 
+        debug=DEBUG_MODE,
+        remove_watermark=REMOVE_WATERMARK,
+        watermark_light_threshold=WATERMARK_LIGHT_THRESHOLD,
+        watermark_saturation_threshold=WATERMARK_SATURATION_THRESHOLD,
+        watermark_dpi=WATERMARK_DPI
+    )
     logger.info("[附件切割] 程序执行完成")
