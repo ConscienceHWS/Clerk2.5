@@ -40,7 +40,7 @@ def remove_watermark_from_pdf(
         from pdf2image import convert_from_path
         from PIL import Image
         import PyPDF2
-        from ..utils.image_preprocessor import remove_watermark, check_opencv_available
+        from utils.image_preprocessor import remove_watermark, check_opencv_available
         
         # 检查OpenCV是否可用
         if not check_opencv_available():
