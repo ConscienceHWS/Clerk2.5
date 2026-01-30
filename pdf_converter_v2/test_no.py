@@ -57,12 +57,49 @@ WATERMARK_LIGHT_THRESHOLD = 200  # 水印亮度阈值（0-255），高于此值�
 WATERMARK_SATURATION_THRESHOLD = 30  # 水印饱和度阈值（0-255），低于此值的低饱和度像素可能是水印
 WATERMARK_DPI = 200  # PDF转图片的DPI（用于去水印）
 
+# 表格附件过滤配置
+TABLE_ONLY = True  # 是否只保留包含表格的附件页（过滤掉示意图、评审意见等）
+
 # 附件页识别关键词
 ATTACHMENT_START_KEYWORDS = [
     '附件:',
     '附件：',
     '附 件:',
     '附 件：',
+]
+
+# 表格附件识别关键词（用于过滤只保留包含表格的附件）
+TABLE_ATTACHMENT_KEYWORDS = [
+    '项目表',
+    '投资估算',
+    '工程投资',
+    '建设规模',
+    '技术方案',
+    '变电工程',
+    '线路工程',
+    '静态投资',
+    '动态投资',
+    '单位造价',
+    '设备购置费',
+    '安装工程费',
+    '建筑工程费',
+    '其他费用',
+    '基本预备费',
+]
+
+# 非表格附件识别关键词（用于识别需要跳过的附件）
+NON_TABLE_ATTACHMENT_KEYWORDS = [
+    '示意图',
+    '接入系统示意图',
+    '母线间隔排列图',
+    '评审意见',
+    '技术监督意见',
+    '参会单位',
+    '人员一览表',
+    '经济性评价',
+    '财务合规',
+    '审核结果',
+    '预算编制衔接',
 ]
 
 def ocr_page_image(image) -> str:
@@ -148,6 +185,63 @@ def extract_page_text(page, use_ocr: bool = False) -> str:
     
     logger.warning(f"[附件切割] 第{page.page_number}页: 无法提取文本（OCR未启用或不可用）")
     return ""
+
+def is_table_attachment_page(text: str, page) -> bool:
+    """
+    判断是否是包含表格的附件页
+    
+    Args:
+        text: 页面文本
+        page: pdfplumber page 对象
+    
+    Returns:
+        bool: 是否是表格附件页
+    """
+    if not text:
+        return False
+    
+    text_no_space = text.replace(' ', '').replace('\u3000', '')
+    
+    # 检查是否包含非表格附件关键词（如示意图、评审意见等）
+    for keyword in NON_TABLE_ATTACHMENT_KEYWORDS:
+        keyword_no_space = keyword.replace(' ', '').replace('\u3000', '')
+        if keyword_no_space in text_no_space:
+            logger.debug(f"[附件切割] 检测到非表格附件关键词: {keyword}")
+            return False
+    
+    # 检查是否包含表格附件关键词
+    has_table_keyword = False
+    for keyword in TABLE_ATTACHMENT_KEYWORDS:
+        keyword_no_space = keyword.replace(' ', '').replace('\u3000', '')
+        if keyword_no_space in text_no_space:
+            logger.debug(f"[附件切割] 检测到表格关键词: {keyword}")
+            has_table_keyword = True
+            break
+    
+    # 如果有表格关键词，直接返回True
+    if has_table_keyword:
+        return True
+    
+    # 检查页面是否包含表格（使用pdfplumber的表格检测）
+    if page is not None:
+        try:
+            tables = page.extract_tables()
+            if tables and len(tables) > 0:
+                # 检查表格是否足够大（至少有3行3列的数据表格）
+                for table in tables:
+                    if table and len(table) >= 3:
+                        # 检查是否有多列
+                        non_empty_rows = [row for row in table if row and any(cell for cell in row if cell)]
+                        if len(non_empty_rows) >= 3:
+                            row_with_most_cols = max(non_empty_rows, key=lambda r: len([c for c in r if c]))
+                            if len([c for c in row_with_most_cols if c]) >= 3:
+                                logger.debug(f"[附件切割] 检测到表格: {len(non_empty_rows)}行")
+                                return True
+        except Exception as e:
+            logger.warning(f"[附件切割] 表格检测失败: {e}")
+    
+    return False
+
 
 def is_attachment_start_page(text: str) -> bool:
     """
@@ -347,7 +441,8 @@ def extract_pages(pdf_path: str, page_numbers: list, output_path: str):
 
 def split_attachment_pages(pdf_path: str, output_dir: Path, use_ocr: bool = False, debug: bool = False, 
                           remove_watermark: bool = False, watermark_light_threshold: int = 200,
-                          watermark_saturation_threshold: int = 30, watermark_dpi: int = 200):
+                          watermark_saturation_threshold: int = 30, watermark_dpi: int = 200,
+                          table_only: bool = False):
     """
     查找并切割附件页
     
@@ -360,8 +455,10 @@ def split_attachment_pages(pdf_path: str, output_dir: Path, use_ocr: bool = Fals
         watermark_light_threshold: 水印亮度阈值（0-255）
         watermark_saturation_threshold: 水印饱和度阈值（0-255）
         watermark_dpi: PDF转图片的DPI
+        table_only: 是否只保留包含表格的附件页（过滤掉示意图、评审意见等）
     """
     logger.info(f"[附件切割] 开始处理PDF: {pdf_path}")
+    logger.info(f"[附件切割] 只保留表格附件: {'是' if table_only else '否'}")
     
     # 查找附件开始页
     attachment_start = find_attachment_start_page(pdf_path, use_ocr=use_ocr, debug=debug)
@@ -371,16 +468,65 @@ def split_attachment_pages(pdf_path: str, output_dir: Path, use_ocr: bool = Fals
         print("\n未找到附件页")
         return
     
-    # 获取总页数
+    # 获取总页数和筛选表格附件页
     with pdfplumber.open(pdf_path) as pdf:
         total_pages = len(pdf.pages)
-    
-    # 附件页范围：从附件开始页到最后一页
-    attachment_pages = list(range(attachment_start, total_pages + 1))
-    
-    logger.info(f"[附件切割] 附件页范围: {attachment_start}-{total_pages}, 共 {len(attachment_pages)} 页")
-    print(f"\n附件页范围: 第 {attachment_start} 页 到 第 {total_pages} 页")
-    print(f"共 {len(attachment_pages)} 页")
+        
+        if table_only:
+            # 只保留包含表格的附件页
+            logger.info(f"[附件切割] 启用表格附件过滤，开始筛选...")
+            print(f"\n启用表格附件过滤，开始筛选...")
+            
+            attachment_pages = []
+            current_table_section = []  # 当前表格区段的页面
+            in_table_section = False  # 是否在表格区段内
+            
+            for page_num in range(attachment_start, total_pages + 1):
+                page = pdf.pages[page_num - 1]
+                text = extract_page_text(page, use_ocr=use_ocr)
+                
+                is_table_page = is_table_attachment_page(text, page)
+                
+                if debug:
+                    print(f"  页面 {page_num}: {'表格页' if is_table_page else '非表格页'}")
+                
+                if is_table_page:
+                    if not in_table_section:
+                        # 开始新的表格区段
+                        in_table_section = True
+                        current_table_section = [page_num]
+                        logger.debug(f"[附件切割] 开始表格区段: 第 {page_num} 页")
+                    else:
+                        # 继续当前表格区段
+                        current_table_section.append(page_num)
+                else:
+                    if in_table_section:
+                        # 结束当前表格区段，保存
+                        attachment_pages.extend(current_table_section)
+                        logger.info(f"[附件切割] 表格区段结束: {current_table_section[0]}-{current_table_section[-1]}")
+                        current_table_section = []
+                        in_table_section = False
+            
+            # 处理最后一个表格区段
+            if in_table_section and current_table_section:
+                attachment_pages.extend(current_table_section)
+                logger.info(f"[附件切割] 最后表格区段: {current_table_section[0]}-{current_table_section[-1]}")
+            
+            if not attachment_pages:
+                logger.warning(f"[附件切割] 未找到包含表格的附件页")
+                print("\n未找到包含表格的附件页")
+                return
+            
+            logger.info(f"[附件切割] 筛选后的表格附件页: {attachment_pages}")
+            print(f"\n筛选后的表格附件页: {attachment_pages}")
+            print(f"共 {len(attachment_pages)} 页")
+        else:
+            # 附件页范围：从附件开始页到最后一页
+            attachment_pages = list(range(attachment_start, total_pages + 1))
+            
+            logger.info(f"[附件切割] 附件页范围: {attachment_start}-{total_pages}, 共 {len(attachment_pages)} 页")
+            print(f"\n附件页范围: 第 {attachment_start} 页 到 第 {total_pages} 页")
+            print(f"共 {len(attachment_pages)} 页")
     
     # 切割附件页
     print("\n" + "=" * 60)
@@ -391,7 +537,13 @@ def split_attachment_pages(pdf_path: str, output_dir: Path, use_ocr: bool = Fals
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # 保存所有附件页为一个文件
-    output_file = output_dir / f"{pdf_path.stem}_附件页_{attachment_start}-{total_pages}.pdf"
+    if table_only:
+        # 表格附件模式：使用筛选后的页面范围
+        page_range_str = f"{min(attachment_pages)}_{max(attachment_pages)}" if attachment_pages else "none"
+        output_file = output_dir / f"{pdf_path.stem}_表格附件页_{page_range_str}.pdf"
+    else:
+        output_file = output_dir / f"{pdf_path.stem}_附件页_{attachment_start}-{total_pages}.pdf"
+    
     logger.info(f"[附件切割] 输出文件: {output_file}")
     extract_pages(pdf_path, attachment_pages, output_file)
     
@@ -465,6 +617,7 @@ if __name__ == '__main__':
     print(f"  - 输出目录: {OUTPUT_DIR}")
     print(f"  - OCR: {'启用' if USE_OCR else '禁用'}")
     print(f"  - 调试模式: {'启用' if DEBUG_MODE else '禁用'}")
+    print(f"  - 只保留表格附件: {'启用' if TABLE_ONLY else '禁用'}")
     print(f"  - 去水印: {'启用' if REMOVE_WATERMARK else '禁用'}")
     if REMOVE_WATERMARK:
         print(f"    * 亮度阈值: {WATERMARK_LIGHT_THRESHOLD}")
@@ -496,7 +649,7 @@ if __name__ == '__main__':
         print("  pip install opencv-python pillow pdf2image PyPDF2\n")
     
     # 执行切割
-    logger.info(f"[附件切割] 配置: PDF={PDF_PATH}, 输出={OUTPUT_DIR}, OCR={USE_OCR}, DEBUG={DEBUG_MODE}, 去水印={REMOVE_WATERMARK}")
+    logger.info(f"[附件切割] 配置: PDF={PDF_PATH}, 输出={OUTPUT_DIR}, OCR={USE_OCR}, DEBUG={DEBUG_MODE}, 表格附件={TABLE_ONLY}, 去水印={REMOVE_WATERMARK}")
     split_attachment_pages(
         PDF_PATH, 
         OUTPUT_DIR, 
@@ -505,6 +658,7 @@ if __name__ == '__main__':
         remove_watermark=REMOVE_WATERMARK,
         watermark_light_threshold=WATERMARK_LIGHT_THRESHOLD,
         watermark_saturation_threshold=WATERMARK_SATURATION_THRESHOLD,
-        watermark_dpi=WATERMARK_DPI
+        watermark_dpi=WATERMARK_DPI,
+        table_only=TABLE_ONLY
     )
     logger.info("[附件切割] 程序执行完成")

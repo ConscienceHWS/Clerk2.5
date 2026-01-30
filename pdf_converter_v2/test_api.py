@@ -27,15 +27,20 @@ API_BASE_URL = "http://47.101.133.94:14213"
 # 测试文件配置
 TEST_DIR = Path(__file__).parent / "test"
 
-# 测试用例：文件名 -> 文档类型
+# 测试用例：文件名 -> (文档类型, 是否去水印, 是否只保留表格附件)
+# 格式: 
+#   "文件名": ("类型", 去水印, 只保留表格) - 完整格式
+#   "文件名": ("类型", 去水印) - 兼容格式，只保留表格默认True
+#   "文件名": "类型" - 旧格式，去水印False，只保留表格True
 TEST_CASES = {
     # 新增投资类型
+    "鄂电司发展〔2024〕124号　国网湖北省电力有限公司关于襄阳连云220千伏输变电工程可行性研究报告的批复.pdf": ("fsApproval", True, True),  # 需要去水印 + 只保留表格附件
     # "2-（可研批复）晋电发展〔2017〕831号+国网山西省电力公司关于临汾古县、晋城周村220kV输变电等工程可行性研究报告的批复.pdf.pdf": "fsApproval",
     # "1-（可研评审）晋电经研规划〔2017〕187号(盖章)国网山西经研院关于山西晋城周村220kV输变电工程可行性研究报告的评审意见.pdf": "fsReview",
     # "5-（初设批复）晋电建设〔2019〕566号　国网山西省电力公司关于晋城周村220kV输变电工程初步设计的批复 .pdf": "pdApproval",
     # 现有类型
     # "9-（结算报告）山西晋城周村220kV输变电工程结算审计报告.pdf": "settlementReport",
-    "4-（初设评审）中电联电力建设技术经济咨询中心技经〔2019〕201号关于山西周村220kV输变电工程初步设计的评审意见.pdf": "designReview",
+    # "4-（初设评审）中电联电力建设技术经济咨询中心技经〔2019〕201号关于山西周村220kV输变电工程初步设计的评审意见.pdf": "designReview",
     # 决算报告
     # "10-（决算报告）盖章页-山西晋城周村220kV输变电工程竣工决算审核报告（中瑞诚鉴字（2021）第002040号）.pdf": "finalAccount",
 }
@@ -70,16 +75,36 @@ def check_health() -> bool:
         return False
 
 
-def upload_file(file_path: Path, document_type: str) -> Optional[str]:
-    """上传文件并获取任务 ID"""
+def upload_file(file_path: Path, document_type: str, remove_watermark: bool = False, table_only: bool = True) -> Optional[str]:
+    """上传文件并获取任务 ID
+    
+    Args:
+        file_path: 文件路径
+        document_type: 文档类型
+        remove_watermark: 是否去水印
+        table_only: 是否只保留表格附件
+    """
     print(f"\n  📤 上传文件: {file_path.name}")
     print(f"     类型: {document_type}")
+    if remove_watermark:
+        print(f"     去水印: 是")
+    if table_only:
+        print(f"     只保留表格: 是")
     
     try:
         with open(file_path, "rb") as f:
             files = {"file": (file_path.name, f, "application/pdf")}
             # 使用 data 发送表单参数，参数名是 type（不是 document_type）
             data = {"type": document_type}
+            
+            # 添加去水印参数
+            if remove_watermark:
+                data["remove_watermark"] = "true"
+                data["watermark_light_threshold"] = "200"
+                data["watermark_saturation_threshold"] = "30"
+            
+            # 添加只保留表格参数
+            data["table_only"] = "true" if table_only else "false"
             
             response = requests.post(
                 f"{API_BASE_URL}/convert",
@@ -218,13 +243,24 @@ def validate_result(result: Dict[str, Any], expected_type: str) -> bool:
     return True
 
 
-def test_single_file(file_path: Path, document_type: str) -> bool:
-    """测试单个文件"""
+def test_single_file(file_path: Path, document_type: str, remove_watermark: bool = False, table_only: bool = True) -> bool:
+    """测试单个文件
+    
+    Args:
+        file_path: 文件路径
+        document_type: 文档类型
+        remove_watermark: 是否去水印
+        table_only: 是否只保留表格附件
+    """
     print_header(f"测试: {document_type}")
     print(f"  文件: {file_path.name}")
+    if remove_watermark:
+        print(f"  去水印: 是")
+    if table_only:
+        print(f"  只保留表格: 是")
     
     # 1. 上传文件
-    task_id = upload_file(file_path, document_type)
+    task_id = upload_file(file_path, document_type, remove_watermark, table_only)
     if not task_id:
         return False
     
@@ -276,7 +312,23 @@ def run_all_tests():
     skipped = 0
     
     # 运行每个测试用例
-    for filename, document_type in TEST_CASES.items():
+    for filename, config in TEST_CASES.items():
+        # 解析配置格式
+        if isinstance(config, tuple):
+            if len(config) >= 3:
+                document_type, remove_watermark, table_only = config[:3]
+            elif len(config) == 2:
+                document_type, remove_watermark = config
+                table_only = True  # 默认只保留表格
+            else:
+                document_type = config[0]
+                remove_watermark = False
+                table_only = True
+        else:
+            document_type = config
+            remove_watermark = False
+            table_only = True
+        
         file_path = TEST_DIR / filename
         
         if not file_path.exists():
@@ -288,7 +340,7 @@ def run_all_tests():
         total += 1
         
         try:
-            if test_single_file(file_path, document_type):
+            if test_single_file(file_path, document_type, remove_watermark, table_only):
                 passed += 1
             else:
                 failed += 1
@@ -319,11 +371,27 @@ def test_single(document_type: str):
         return
     
     # 查找对应的文件
-    for filename, dtype in TEST_CASES.items():
+    for filename, config in TEST_CASES.items():
+        # 解析配置格式
+        if isinstance(config, tuple):
+            if len(config) >= 3:
+                dtype, remove_watermark, table_only = config[:3]
+            elif len(config) == 2:
+                dtype, remove_watermark = config
+                table_only = True
+            else:
+                dtype = config[0]
+                remove_watermark = False
+                table_only = True
+        else:
+            dtype = config
+            remove_watermark = False
+            table_only = True
+        
         if dtype == document_type:
             file_path = TEST_DIR / filename
             if file_path.exists():
-                test_single_file(file_path, document_type)
+                test_single_file(file_path, document_type, remove_watermark, table_only)
                 return
             else:
                 print_result(False, f"文件不存在: {filename}")
