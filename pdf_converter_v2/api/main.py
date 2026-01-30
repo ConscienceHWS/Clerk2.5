@@ -159,7 +159,7 @@ class ConversionRequest(BaseModel):
     footer_ratio: Optional[float] = 0.05
     auto_detect_header_footer: Optional[bool] = False
     # 新增：附件页切割参数
-    table_only: Optional[bool] = True  # 是否只保留包含表格的附件页（默认True，过滤掉示意图、评审意见等）
+    table_only: Optional[bool] = False  # 是否只保留包含表格的附件页（默认False）
 
 
 class ConversionResponse(BaseModel):
@@ -685,8 +685,8 @@ async def convert_file(
     ] = False,
     table_only: Annotated[
         Optional[bool],
-        Form(description="是否只保留包含表格的附件页，默认为true（过滤掉示意图、评审意见等非表格内容）")
-    ] = True,
+        Form(description="是否只保留包含表格的附件页，默认为false")
+    ] = False,
 ):
     """
     转换PDF/图片文件（异步处理）
@@ -716,7 +716,7 @@ async def convert_file(
     - **header_ratio**: 页眉裁剪比例（0-1），默认0.05
     - **footer_ratio**: 页脚裁剪比例（0-1），默认0.05
     - **auto_detect_header_footer**: 是否自动检测页眉页脚边界，默认为false
-    - **table_only**: 是否只保留包含表格的附件页，默认为true（过滤掉示意图、评审意见等非表格内容）
+    - **table_only**: 是否只保留包含表格的附件页，默认为false
     
     注意：v2 版本内部使用外部API进行转换，v2特有的配置参数（如API URL、backend等）
     通过环境变量或配置文件设置，不通过API参数传入。
