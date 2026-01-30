@@ -200,6 +200,20 @@ def validate_result(result: Dict[str, Any], expected_type: str) -> bool:
     
     # 对于投资类型，检查嵌套结构
     if expected_type in ["fsApproval", "fsReview", "pdApproval", "safetyFsApproval"]:
+        # 检查是否是新格式（包含 projectInfo）
+        project_info = None
+        if isinstance(data, dict) and "data" in data:
+            # 新格式：{"projectInfo": {...}, "data": [...]}
+            project_info = data.get("projectInfo")
+            data = data["data"]
+            
+            if project_info:
+                print(f"\n  📋 项目信息:")
+                print(f"     工程名称: {project_info.get('projectName', '')}")
+                print(f"     项目单位: {project_info.get('projectUnit', '')}")
+                print(f"     设计单位: {project_info.get('designUnit', '')}")
+        
+        # 验证数据格式
         if not isinstance(data, list):
             print_result(False, f"数据格式错误: 期望 list, 实际 {type(data).__name__}")
             return False
