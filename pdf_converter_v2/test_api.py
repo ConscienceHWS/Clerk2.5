@@ -6,6 +6,7 @@ PDF Converter API 测试脚本
 - fsApproval: 可研批复
 - fsReview: 可研评审  
 - pdApproval: 初设批复
+- safety_fsApproval: 安评可研批复
 
 以及现有类型：
 - settlementReport: 结算报告
@@ -198,7 +199,7 @@ def validate_result(result: Dict[str, Any], expected_type: str) -> bool:
         return False
     
     # 对于投资类型，检查嵌套结构
-    if expected_type in ["fsApproval", "fsReview", "pdApproval"]:
+    if expected_type in ["fsApproval", "fsReview", "pdApproval", "safety_fsApproval"]:
         if not isinstance(data, list):
             print_result(False, f"数据格式错误: 期望 list, 实际 {type(data).__name__}")
             return False
