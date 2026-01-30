@@ -294,13 +294,37 @@ class FeasibilityApprovalInvestment:
         Level="2" 的项目作为二级分类（Level: 1），有自己的 items
         Level="3" 的项目作为具体项目（Level: 2），放入二级分类的 items
         Level="0" 的项目（合计）跳过
+        
+        特殊处理：如果表格没有 Level=1 的顶层大类（如湖北省格式），
+        自动创建一个虚拟顶层大类来包含所有 Level=2 的项目
         """
         if not self.items:
             return []
         
+        # 检查是否有 Level=1 的顶层大类
+        has_level_1 = any(item.level == "1" for item in self.items)
+        
         result = []
         current_top_category = None  # Level 0 顶层大类
         current_sub_category = None  # Level 1 二级分类
+        
+        # 如果没有 Level=1 的顶层大类，创建一个虚拟的
+        if not has_level_1:
+            current_top_category = {
+                "name": "项目总表",
+                "Level": 0,
+                "constructionScaleSubstation": "",
+                "constructionScaleBay": "",
+                "constructionScaleOverheadLine": "",
+                "constructionScaleOpticalCable": "",
+                "staticInvestment": "",
+                "dynamicInvestment": "",
+                "constructionProjectCost": "",
+                "equipmentPurchaseCost": "",
+                "installationProjectCost": "",
+                "otherExpenses": "",
+                "items": []
+            }
         
         for item in self.items:
             if item.level == "1":
