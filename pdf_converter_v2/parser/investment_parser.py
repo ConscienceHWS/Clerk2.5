@@ -819,7 +819,8 @@ def parse_investment_record(markdown_content: str, investment_type: Optional[str
     logger.info(f"[投资估算] 调用解析函数: {investment_type}")
     
     result = None
-    if investment_type == "fsApproval":
+    if investment_type == "fsApproval" or investment_type == "safety_fsApproval":
+        # fsApproval 和 safety_fsApproval 使用相同的解析逻辑
         result = parse_feasibility_approval_investment(markdown_content)
     elif investment_type == "fsReview":
         result = parse_feasibility_review_investment(markdown_content)
