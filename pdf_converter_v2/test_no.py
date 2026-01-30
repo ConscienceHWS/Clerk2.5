@@ -45,7 +45,7 @@ except ImportError:
     logger.info("[附件切割] 安装命令: pip install PyPDF2")
 
 # 配置
-PDF_PATH = '/home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2/2-数据源/4-（初设评审）中电联电力建设技术经济咨询中心技经〔2019〕201号关于山西周村220kV输变电工程初步设计的评审意见.pdf'
+PDF_PATH = '/home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2/3-数据/鄂电司发展〔2024〕124号　国网湖北省电力有限公司关于襄阳连云220千伏输变电工程可行性研究报告的批复.pdf'
 OUTPUT_DIR = Path('附件页')
 USE_OCR = True  # 是否启用 OCR
 OCR_LANG = 'chi_sim+eng'  # OCR 语言

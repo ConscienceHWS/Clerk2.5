@@ -150,6 +150,14 @@ class ConversionRequest(BaseModel):
     """转换请求模型（v2 精简版）"""
     # 新增：强制文档类型（正式全称）
     doc_type: Optional[str] = None
+    # 新增：去水印参数
+    remove_watermark: Optional[bool] = False
+    watermark_light_threshold: Optional[int] = 200
+    watermark_saturation_threshold: Optional[int] = 30
+    crop_header_footer: Optional[bool] = False
+    header_ratio: Optional[float] = 0.05
+    footer_ratio: Optional[float] = 0.05
+    auto_detect_header_footer: Optional[bool] = False
 
 
 class ConversionResponse(BaseModel):
@@ -314,6 +322,103 @@ async def process_conversion_task(
         task_status[task_id]["message"] = "开始处理文件..."
         
         logger.info(f"[任务 {task_id}] 开始处理: {file_path}")
+        
+        # 文件预处理（支持图片和PDF）
+        from pathlib import Path as PathLib
+        file_suffix = PathLib(file_path).suffix.lower()
+        is_image = file_suffix in ['.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.tif']
+        is_pdf = file_suffix == '.pdf'
+        
+        # 图片预处理：去水印或裁剪页眉页脚
+        if is_image and (request.remove_watermark or request.crop_header_footer):
+            logger.info(f"[任务 {task_id}] 检测到图片文件，开始预处理...")
+            preprocessed_path = file_path
+            
+            # 裁剪页眉页脚
+            if request.crop_header_footer:
+                try:
+                    from ..utils.image_preprocessor import crop_header_footer, check_opencv_available
+                    
+                    if check_opencv_available():
+                        if request.auto_detect_header_footer:
+                            logger.info(f"[任务 {task_id}] 开始自动检测并裁剪页眉页脚")
+                        else:
+                            logger.info(f"[任务 {task_id}] 开始裁剪页眉页脚，顶部比例: {request.header_ratio}, 底部比例: {request.footer_ratio}")
+                        
+                        # 裁剪后的图片路径
+                        cropped_path = str(PathLib(output_dir) / f"preprocessed_cropped{file_suffix}")
+                        
+                        preprocessed_path = await asyncio.to_thread(
+                            crop_header_footer,
+                            preprocessed_path,
+                            output_path=cropped_path,
+                            header_ratio=request.header_ratio or 0.05,
+                            footer_ratio=request.footer_ratio or 0.05,
+                            auto_detect=request.auto_detect_header_footer or False
+                        )
+                        logger.info(f"[任务 {task_id}] 裁剪页眉页脚完成: {preprocessed_path}")
+                    else:
+                        logger.warning(f"[任务 {task_id}] OpenCV 未安装，跳过裁剪页眉页脚")
+                except Exception as e:
+                    logger.warning(f"[任务 {task_id}] 裁剪页眉页脚失败，使用原图继续: {e}")
+            
+            # 去水印
+            if request.remove_watermark:
+                try:
+                    from ..utils.image_preprocessor import remove_watermark, check_opencv_available
+                    
+                    if check_opencv_available():
+                        logger.info(f"[任务 {task_id}] 开始去水印处理，亮度阈值: {request.watermark_light_threshold}, 饱和度阈值: {request.watermark_saturation_threshold}")
+                        
+                        # 去水印后的图片路径
+                        nowm_path = str(PathLib(output_dir) / f"preprocessed_nowm{file_suffix}")
+                        
+                        preprocessed_path = await asyncio.to_thread(
+                            remove_watermark,
+                            preprocessed_path,
+                            output_path=nowm_path,
+                            light_threshold=request.watermark_light_threshold or 200,
+                            saturation_threshold=request.watermark_saturation_threshold or 30,
+                            method="hsv"
+                        )
+                        logger.info(f"[任务 {task_id}] 去水印完成: {preprocessed_path}")
+                    else:
+                        logger.warning(f"[任务 {task_id}] OpenCV 未安装，跳过去水印处理")
+                except Exception as e:
+                    logger.warning(f"[任务 {task_id}] 去水印处理失败，使用原图继续: {e}")
+            
+            # 更新文件路径为预处理后的路径
+            if preprocessed_path != file_path:
+                file_path = preprocessed_path
+                logger.info(f"[任务 {task_id}] 图片预处理完成，使用预处理后的文件: {file_path}")
+        
+        # PDF预处理：去水印
+        elif is_pdf and request.remove_watermark:
+            logger.info(f"[任务 {task_id}] 检测到PDF文件，开始去水印预处理...")
+            try:
+                from ..utils.pdf_watermark_remover import remove_watermark_from_pdf
+                
+                # 去水印后的PDF路径
+                nowm_pdf_path = str(PathLib(output_dir) / f"preprocessed_nowm.pdf")
+                
+                # 执行去水印
+                logger.info(f"[任务 {task_id}] 开始PDF去水印处理，亮度阈值: {request.watermark_light_threshold}, 饱和度阈值: {request.watermark_saturation_threshold}")
+                success = await asyncio.to_thread(
+                    remove_watermark_from_pdf,
+                    input_pdf=file_path,
+                    output_pdf=nowm_pdf_path,
+                    light_threshold=request.watermark_light_threshold or 200,
+                    saturation_threshold=request.watermark_saturation_threshold or 30,
+                    dpi=200  # PDF转图片的DPI
+                )
+                
+                if success and PathLib(nowm_pdf_path).exists():
+                    file_path = nowm_pdf_path
+                    logger.info(f"[任务 {task_id}] PDF去水印完成: {file_path}")
+                else:
+                    logger.warning(f"[任务 {task_id}] PDF去水印失败，使用原PDF继续")
+            except Exception as e:
+                logger.warning(f"[任务 {task_id}] PDF去水印处理失败，使用原PDF继续: {e}")
         
         result = None
         tables_info = None
@@ -544,6 +649,35 @@ async def convert_file(
         Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview", "fsApproval", "fsReview", "pdApproval", "finalAccount"]],
         Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | finalAccount")
     ] = None,
+    # 新增：去水印参数
+    remove_watermark: Annotated[
+        Optional[bool],
+        Form(description="是否去除水印，默认为false")
+    ] = False,
+    watermark_light_threshold: Annotated[
+        Optional[int],
+        Form(description="水印亮度阈值（0-255），默认200，高于此值的浅色像素可能是水印")
+    ] = 200,
+    watermark_saturation_threshold: Annotated[
+        Optional[int],
+        Form(description="水印饱和度阈值（0-255），默认30，低于此值的低饱和度像素可能是水印")
+    ] = 30,
+    crop_header_footer: Annotated[
+        Optional[bool],
+        Form(description="是否裁剪页眉页脚，默认为false")
+    ] = False,
+    header_ratio: Annotated[
+        Optional[float],
+        Form(description="页眉裁剪比例（0-1），默认0.05表示裁剪顶部5%")
+    ] = 0.05,
+    footer_ratio: Annotated[
+        Optional[float],
+        Form(description="页脚裁剪比例（0-1），默认0.05表示裁剪底部5%")
+    ] = 0.05,
+    auto_detect_header_footer: Annotated[
+        Optional[bool],
+        Form(description="是否自动检测页眉页脚边界，默认为false（启用后忽略header_ratio和footer_ratio）")
+    ] = False,
 ):
     """
     转换PDF/图片文件（异步处理）
@@ -564,6 +698,14 @@ async def convert_file(
       * fsApproval - 可研批复投资估算
       * fsReview - 可研评审投资估算
       * pdApproval - 初设批复概算投资
+      * finalAccount - 决算报告
+    - **remove_watermark**: 是否去除水印（仅对图片有效），默认为false
+    - **watermark_light_threshold**: 水印亮度阈值（0-255），默认200
+    - **watermark_saturation_threshold**: 水印饱和度阈值（0-255），默认30
+    - **crop_header_footer**: 是否裁剪页眉页脚（仅对图片有效），默认为false
+    - **header_ratio**: 页眉裁剪比例（0-1），默认0.05
+    - **footer_ratio**: 页脚裁剪比例（0-1），默认0.05
+    - **auto_detect_header_footer**: 是否自动检测页眉页脚边界，默认为false
     
     注意：v2 版本内部使用外部API进行转换，v2特有的配置参数（如API URL、backend等）
     通过环境变量或配置文件设置，不通过API参数传入。
@@ -699,6 +841,13 @@ async def convert_file(
     # 创建请求对象（v2 精简）
     request = ConversionRequest(
         doc_type=doc_type,
+        remove_watermark=remove_watermark,
+        watermark_light_threshold=watermark_light_threshold,
+        watermark_saturation_threshold=watermark_saturation_threshold,
+        crop_header_footer=crop_header_footer,
+        header_ratio=header_ratio,
+        footer_ratio=footer_ratio,
+        auto_detect_header_footer=auto_detect_header_footer,
     )
     
     # 使用 asyncio.create_task 创建后台任务，确保立即返回

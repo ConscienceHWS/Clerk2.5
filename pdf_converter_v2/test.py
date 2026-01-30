@@ -26,7 +26,7 @@ except ImportError:
     print("  安装命令: pip install PyMuPDF")
 
 # ==================== 配置区域 ====================
-pdf_path = '/home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2/2-数据源/5-（初设批复）晋电建设〔2019〕566号　国网山西省电力公司关于晋城周村220kV输变电工程初步设计的批复 .pdf'
+pdf_path = '/home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2/3-数据/鄂电司发展〔2024〕124号　国网湖北省电力有限公司关于襄阳连云220千伏输变电工程可行性研究报告的批复.pdf'
 output_dir = Path('extracted_tables')  # 原始表格输出目录（包含表格前文本）
 merged_output_dir = Path('merged_tables')  # 合并后的表格输出目录（已剔除表格前文本）
 filtered_output_dir = Path('filtered_tables')  # 筛选后的表格输出目录
@@ -89,7 +89,7 @@ TABLE_HEADER_RULES = {
 }
 
 # 是否启用表头过滤（如果为False，则提取所有表格）
-ENABLE_HEADER_FILTER = True
+ENABLE_HEADER_FILTER = False
 
 # 要排除的规则名称列表（如果某个规则匹配了不该匹配的表格，可以在这里排除）
 # 例如: EXCLUDE_RULES = ["物资采购合同2"] 将不会匹配该规则
