@@ -1,0 +1,20 @@
+# PDF Converter v2 - 容器内依赖（Paddle NPU 环境已预装 paddle/paddlex，此处不重复安装）
+
+# 核心依赖
+aiohttp>=3.8.0
+aiofiles>=23.0.0
+Pillow>=9.0.0
+
+# PDF 处理（至少安装一个）
+pypdfium2>=4.0.0
+pdf2image>=1.16.0
+pdfplumber>=0.11.0
+
+# Web 框架
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+pydantic>=2.0.0
+typing-extensions>=4.0.0
+
+# 日志
+loguru>=0.7.0

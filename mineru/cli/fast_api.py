@@ -16,6 +16,11 @@ from typing import List, Optional
 from loguru import logger
 from base64 import b64encode
 
+# NumPy 1.24+ removed np.complex; librosa (via transformers) still uses it in constantq.py
+import numpy as _np
+if not hasattr(_np, "complex"):
+    _np.complex = _np.complex128  # type: ignore[attr-defined]
+
 from mineru.cli.common import aio_do_parse, read_fn, pdf_suffixes, image_suffixes
 from mineru.utils.cli_parser import arg_parse
 from mineru.utils.guess_suffix_or_lang import guess_suffix_by_path

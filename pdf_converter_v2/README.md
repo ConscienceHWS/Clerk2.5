@@ -63,6 +63,7 @@ asyncio.run(main())
 ### FastAPI服务接口
 
 **启动服务：**
+
 ```bash
 # 使用默认配置
 python pdf_converter_v2/api_server.py
@@ -75,6 +76,7 @@ python pdf_converter_v2/api_server.py --help
 ```
 
 **主要端点：**
+
 - `POST /convert`: 转换文件（异步处理）
   - 参数：
     - `file` (required): PDF或图片文件
@@ -86,6 +88,7 @@ python pdf_converter_v2/api_server.py --help
 - `DELETE /task/{task_id}`: 删除任务
 
 **示例调用：**
+
 ```bash
 # 上传文件并指定类型
 curl -X POST "http://localhost:4214/convert" \
@@ -99,6 +102,18 @@ curl "http://localhost:4214/task/{task_id}"
 curl "http://localhost:4214/task/{task_id}/json"
 ```
 
+### 在 Paddle NPU 容器内部署
+
+若在 Docker 容器 `paddle-npu-dev`（已安装 PaddlePaddle NPU、PaddleX）内部署本项目，可参考：
+
+- **[docs/DEPLOY_PADDLE_NPU.md](docs/DEPLOY_PADDLE_NPU.md)**：进入容器、安装依赖、配置 `API_URL`、启动 API 的完整步骤。
+- 一键安装并启动（在 `pdf_converter_v2` 目录下执行）：
+  ```bash
+  bash scripts/run_in_paddle_npu.sh
+  ```
+
+  可通过环境变量 `API_URL`、`API_PORT` 指定外部 file_parse 地址和本服务端口。
+
 ### 外部API接口
 
 v2版本内部调用的外部API接口：
@@ -110,11 +125,11 @@ v2版本内部调用的外部API接口：
 
 ### 文档类型说明
 
-| 参数值 | 中文名称 | 正式全称（代码内） |
-|--------|---------|------------------|
-| `noiseRec` | 噪声原始记录 | `noiseMonitoringRecord` |
-| `emRec` | 电磁原始记录 | `electromagneticTestRecord` |
-| `opStatus` | 工况信息 | `operatingConditionInfo` |
+| 参数值       | 中文名称     | 正式全称（代码内）            |
+| ------------ | ------------ | ----------------------------- |
+| `noiseRec` | 噪声原始记录 | `noiseMonitoringRecord`     |
+| `emRec`    | 电磁原始记录 | `electromagneticTestRecord` |
+| `opStatus` | 工况信息     | `operatingConditionInfo`    |
 
 ## 文件结构
 
@@ -142,12 +157,14 @@ pdf_converter_v2/
 在安装依赖之前，需要确定服务使用的Python环境：
 
 **方法1：使用检查脚本（推荐）**
+
 ```bash
 cd /home/hws/workspace/GitLab/Clerk2.5/pdf_converter_v2
 bash check_python_env.sh
 ```
 
 **方法2：手动检查**
+
 ```bash
 # 检查systemd服务使用的Python
 cat /etc/systemd/system/pdf-converter-v2.service | grep ExecStart
@@ -164,6 +181,7 @@ python3 --version
 ```
 
 **方法3：通过Python代码检查**
+
 ```bash
 # 在Python中检查
 python3 -c "import sys; print('Python路径:', sys.executable); print('Python版本:', sys.version)"
@@ -187,6 +205,7 @@ python3 -m pip install -r requirements.txt
 ### 手动安装
 
 **必需依赖：**
+
 ```bash
 # 根据你的Python环境选择对应的pip命令
 pip3 install aiohttp aiofiles Pillow
@@ -195,6 +214,7 @@ python3 -m pip install aiohttp aiofiles Pillow
 ```
 
 **PDF处理库（至少安装一个）：**
+
 ```bash
 # 方案1：安装 pypdfium2（推荐，文件更小）
 pip3 install pypdfium2
@@ -211,6 +231,7 @@ python3 -m pip install pdf2image
 ```
 
 **如果使用API服务：**
+
 ```bash
 pip3 install fastapi uvicorn[standard] pydantic typing-extensions
 # 或
@@ -218,6 +239,7 @@ python3 -m pip install fastapi uvicorn[standard] pydantic typing-extensions
 ```
 
 **日志库（至少安装一个）：**
+
 ```bash
 pip3 install loguru
 # 或
@@ -231,17 +253,18 @@ pip3 install happy-python
 如果使用 `pdf2image`，需要安装系统级的 `poppler` 工具：
 
 - **Ubuntu/Debian:**
+
   ```bash
   sudo apt-get update
   sudo apt-get install poppler-utils
   ```
-
 - **CentOS/RHEL:**
+
   ```bash
   sudo yum install poppler-utils
   ```
-
 - **macOS:**
+
   ```bash
   brew install poppler
   ```
@@ -257,30 +280,33 @@ pip3 install happy-python
 
 ## 与v1版本的区别
 
-| 特性 | v1版本 | v2版本 |
-|------|--------|--------|
-| PDF处理方式 | 本地MinerU处理 | API接口处理 |
-| 返回格式 | 直接markdown | zip文件（包含md） |
-| 性能 | 本地处理 | 服务器端处理（更快） |
-| JSON解析 | 直接解析 | 复用v1逻辑 |
+| 特性        | v1版本         | v2版本               |
+| ----------- | -------------- | -------------------- |
+| PDF处理方式 | 本地MinerU处理 | API接口处理          |
+| 返回格式    | 直接markdown   | zip文件（包含md）    |
+| 性能        | 本地处理       | 服务器端处理（更快） |
+| JSON解析    | 直接解析       | 复用v1逻辑           |
 
 ## 服务部署
 
 ### 使用 systemd 服务
 
 1. **安装服务文件：**
+
 ```bash
 sudo cp pdf-converter-v2.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
 2. **修改配置：**
-编辑 `/etc/systemd/system/pdf-converter-v2.service`，根据实际情况修改：
+   编辑 `/etc/systemd/system/pdf-converter-v2.service`，根据实际情况修改：
+
 - `WorkingDirectory`: 工作目录路径
 - `ExecStart`: Python路径和脚本路径
 - 环境变量配置
 
 3. **启动服务：**
+
 ```bash
 sudo systemctl start pdf-converter-v2
 sudo systemctl enable pdf-converter-v2  # 开机自启
@@ -288,6 +314,7 @@ sudo systemctl status pdf-converter-v2  # 查看状态
 ```
 
 4. **查看日志：**
+
 ```bash
 sudo journalctl -u pdf-converter-v2 -f
 ```
@@ -295,6 +322,7 @@ sudo journalctl -u pdf-converter-v2 -f
 ### 环境变量配置
 
 主要环境变量：
+
 - `API_URL`: 外部API地址（默认: http://192.168.2.3:8000）
 - `API_HOST`: 服务监听地址（默认: 0.0.0.0）
 - `API_PORT`: 服务监听端口（默认: 4214）
@@ -313,4 +341,3 @@ sudo journalctl -u pdf-converter-v2 -f
 ## 更新说明
 
 详细更新内容请参考项目根目录的 [CHANGELOG.md](../CHANGELOG.md)
-

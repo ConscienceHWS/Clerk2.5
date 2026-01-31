@@ -7,8 +7,11 @@ from ftfy import fix_text
 from loguru import logger
 
 from transformers import AutoConfig, AutoModel, AutoModelForCausalLM, AutoTokenizer, PretrainedConfig, PreTrainedModel
-from transformers import VisionEncoderDecoderConfig, VisionEncoderDecoderModel
-from transformers.models.vision_encoder_decoder.modeling_vision_encoder_decoder import logger as base_model_logger
+from transformers.models.vision_encoder_decoder.configuration_vision_encoder_decoder import VisionEncoderDecoderConfig
+from transformers.models.vision_encoder_decoder.modeling_vision_encoder_decoder import (
+    VisionEncoderDecoderModel,
+    logger as base_model_logger,
+)
 
 from .unimer_swin import UnimerSwinConfig, UnimerSwinModel, UnimerSwinImageProcessor
 from .unimer_mbart import UnimerMBartConfig, UnimerMBartForCausalLM
