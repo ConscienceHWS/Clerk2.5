@@ -402,6 +402,127 @@ kill -9 <PID>
 python pdf_converter_v2/api_server.py --port 4215
 ```
 
+#### operator torchvision::nms does not exist（MinerU API）
+
+**问题**：MinerU API 处理 PDF 时崩溃，日志中出现 `RuntimeError: operator torchvision::nms does not exist`。
+
+**原因**：当前环境中的 `torch` 与 `torchvision` 版本不匹配。常见于：
+- ARM/aarch64 或 NPU 环境使用厂商提供的 PyTorch，未搭配同源同版本的 torchvision；
+- 单独升级或降级过 PyTorch 后未重装匹配的 torchvision。
+
+**解决方案**：
+
+1. **使用匹配的 torch + torchvision**  
+   在运行 MinerU API 的同一环境中，从**同一来源**安装**版本对应**的 PyTorch 与 torchvision（见 [PyTorch 官方版本对应](https://github.com/pytorch/vision#installation)）。例如：
+   ```bash
+   pip uninstall torch torchvision -y
+   pip install torch==2.x.x torchvision==0.x.x  # 版本需对应
+   ```
+
+2. **NPU/ARM 环境**  
+   若使用昇腾等 NPU 或 ARM 的预编译 PyTorch，请使用厂商提供的 **torch + torchvision 配对包**，或按下面第 4 步从源码编译 torchvision。
+
+3. **验证**  
+   ```bash
+   python -c "import torch; import torchvision; print(torch.__version__, torchvision.__version__)"
+   ```
+   确认无报错后重启 MinerU API。
+
+4. **从源码编译 torchvision（NPU/自定义 PyTorch 时推荐）**  
+   当环境中是厂商或自定义构建的 PyTorch（如 `torch_npu`）时，pip 上的 torchvision 与当前 torch 的 C++ ABI 不一致，会报 `operator torchvision::nms does not exist`。解决方式：**在当前环境中用已安装的 PyTorch 从源码编译安装 torchvision**。
+
+   **步骤：**
+
+   ```bash
+   # 1. 查看当前 PyTorch 版本（不要先 import torchvision）
+   python3 -c "import torch; print(torch.__version__)"
+   # 例如输出 2.1.0、2.0.1 等
+
+   # 2. 根据版本选 torchvision 标签（见 https://github.com/pytorch/vision#installation）
+   # torch 2.1 -> v0.16.0   torch 2.0 -> v0.15.2   torch 2.2 -> v0.17.0
+   TORCH_VER=$(python3 -c "import torch; print(torch.__version__.split('+')[0])")
+   case "$TORCH_VER" in
+     2.1*) TV_TAG="v0.16.0";;
+     2.0*) TV_TAG="v0.15.2";;
+     2.2*) TV_TAG="v0.17.0";;
+     2.3*) TV_TAG="v0.18.0";;
+     2.4*) TV_TAG="v0.19.0";;
+     2.5*) TV_TAG="v0.20.0";;
+     *)    TV_TAG="v0.16.0";;  # 默认
+   esac
+
+   # 3. 卸载已有的 torchvision
+   pip3 uninstall torchvision -y
+
+   # 4. 安装编译依赖（按需）
+   pip3 install ninja cmake
+
+   # 5. 克隆并编译安装 torchvision（使用与当前 torch 匹配的版本）
+   git clone --depth 1 --branch "$TV_TAG" https://github.com/pytorch/vision.git /tmp/torchvision_build
+   cd /tmp/torchvision_build
+   pip3 install -e .
+   cd - && rm -rf /tmp/torchvision_build
+   ```
+
+   若未装 git 或希望手动指定版本，可先查表确定 tag 后执行：
+   ```bash
+   pip3 uninstall torchvision -y
+   pip3 install ninja cmake
+   git clone https://github.com/pytorch/vision.git && cd vision && git checkout v0.16.0 && pip3 install -e . && cd .. && rm -rf vision
+   ```
+   （将 `v0.16.0` 换成与当前 `torch.__version__` 对应的版本。）
+
+   编译完成后再次验证：
+   ```bash
+   python3 -c "import torch; import torchvision; print(torch.__version__, torchvision.__version__)"
+   ```
+   无报错后重启 MinerU API。
+
+#### MinerU 使用 NPU 时报 No module named 'tbe' / ACL 500001
+
+**问题**：MinerU API 在 NPU 上处理时崩溃，日志中出现 `ModuleNotFoundError: No module named 'tbe'` 或 `SetPrecisionMode ... error code is 500001`、`GEInitialize failed`。
+
+**原因**：启动 MinerU 前未加载华为昇腾 CANN 环境，导致 `tbe`（Tensor Boost Engine）等模块不在 PYTHONPATH，NPU 运行时初始化失败。
+
+**解决方案**：
+
+1. **启动前加载 CANN**  
+   在**启动 MinerU API 的同一 shell** 中先执行 CANN 的 `set_env.sh`（路径以实际安装为准）：
+   ```bash
+   # 常见路径（root 安装）
+   source /usr/local/Ascend/ascend-toolkit/set_env.sh
+   # 或 ascend-toolkit 下带版本号的目录
+   source /usr/local/Ascend/ascend-toolkit/latest/set_env.sh
+   ```
+   然后再启动 MinerU（如 `bash start_mineru_in_container.sh` 或 `mineru-api ...`）。
+
+2. **用启动脚本自动加载**  
+   若使用 `pdf_converter_v2/scripts/start_mineru_in_container.sh`，可设置 `ASCEND_ENV` 指向 `set_env.sh` 或其所在目录，脚本会在启动前 source：
+   ```bash
+   export ASCEND_ENV=/usr/local/Ascend/ascend-toolkit/set_env.sh
+   bash pdf_converter_v2/scripts/start_mineru_in_container.sh
+   ```
+   若 CANN 装在带版本号的子目录下：
+   ```bash
+   export ASCEND_ENV=/usr/local/Ascend/ascend-toolkit/latest
+   bash pdf_converter_v2/scripts/start_mineru_in_container.sh
+   ```
+
+3. **临时改用 CPU**  
+   若当前环境未安装/未配置好 CANN，可让 MinerU 使用 CPU，避免 NPU 初始化：
+   ```bash
+   export MINERU_DEVICE_MODE=cpu
+   bash pdf_converter_v2/scripts/start_mineru_in_container.sh
+   ```
+   转换会变慢，但可先跑通流程。
+
+4. **确认 CANN 路径**  
+   若不确定 `set_env.sh` 位置：
+   ```bash
+   echo $ASCEND_HOME_PATH
+   find /usr/local/Ascend -name set_env.sh 2>/dev/null
+   ```
+
 ---
 
 ## 完整部署流程总结

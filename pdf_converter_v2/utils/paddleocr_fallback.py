@@ -45,10 +45,10 @@ MINERU_LOCK_FILE = "/tmp/mineru_service_lock"
 MINERU_COUNT_FILE = "/tmp/mineru_service_count"
 
 # PaddleOCR 推理设备：NPU 环境下需设为 npu 或 npu:0，否则会走 CPU 并可能段错误
-# 通过环境变量 PADDLE_OCR_DEVICE 指定；未设置时默认 npu:0，便于 NPU 容器内直接启动 API 时也能走 NPU
+# 通过环境变量 PADDLE_OCR_DEVICE 指定，例如：export PADDLE_OCR_DEVICE=npu:0
 def _paddle_ocr_device_args() -> list:
-    """返回 PaddleOCR 命令的 --device 参数列表（未设置时默认 npu:0；设为空字符串则不添加）"""
-    device = os.getenv("PADDLE_OCR_DEVICE", "npu:0").strip()
+    """返回 PaddleOCR 命令的 --device 参数列表（若未设置则返回空列表）"""
+    device = os.getenv("PADDLE_OCR_DEVICE", "").strip()
     if device:
         return ["--device", device]
     return []
@@ -129,37 +129,12 @@ def _decrement_service_count(lock_file: object) -> int:
         return 0
 
 
-def _systemd_available() -> bool:
-    """检测当前环境是否有 systemd（容器内通常无 systemd，无法操作 mineru-api.service）"""
-    # 容器内通常没有 /run/systemd/system，先做快速判断
-    if not os.path.exists("/run/systemd/system"):
-        return False
-    try:
-        r = subprocess.run(
-            ["systemctl", "is-system-running"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-            check=False,
-        )
-        out = (r.stderr or "") + (r.stdout or "")
-        if "Failed to connect to bus" in out or "not been booted with systemd" in out or "Connection refused" in out:
-            return False
-        return True
-    except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
-        return False
-
-
 def stop_mineru_service() -> bool:
     """停止mineru-api.service以释放GPU内存（线程安全）
-    容器内无 systemd 时直接返回 True，不报错。
     
     Returns:
-        True表示成功停止或已停止/无需操作，False表示失败
+        True表示成功停止或已停止，False表示失败
     """
-    if not _systemd_available():
-        logger.debug("[PaddleOCR] 无 systemd，跳过停止 mineru-api.service")
-        return True
     lock_file = _acquire_service_lock()
     if not lock_file:
         # 如果无法获取锁，等待一小段时间后检查服务状态
@@ -225,14 +200,10 @@ def stop_mineru_service() -> bool:
 
 def start_mineru_service() -> bool:
     """启动mineru-api.service（线程安全）
-    容器内无 systemd 时直接返回 True，不报错。
     
     Returns:
-        True表示成功启动或已启动/无需操作，False表示失败
+        True表示成功启动或已启动，False表示失败
     """
-    if not _systemd_available():
-        logger.debug("[PaddleOCR] 无 systemd，跳过启动 mineru-api.service")
-        return True
     lock_file = _acquire_service_lock()
     if not lock_file:
         # 如果无法获取锁，等待一小段时间后检查服务状态
@@ -288,17 +259,10 @@ def start_mineru_service() -> bool:
         if result.returncode == 0:
             logger.info("[PaddleOCR] 成功启动mineru-api.service")
             return True
-        err = (result.stderr or "") + (result.stdout or "")
-        if "Failed to connect to bus" in err or "not been booted with systemd" in err:
-            logger.debug("[PaddleOCR] 无 systemd（容器环境），跳过启动 mineru-api.service")
-            return True
-        logger.warning(f"[PaddleOCR] 启动mineru-api.service失败: {result.stderr}")
-        return False
+        else:
+            logger.warning(f"[PaddleOCR] 启动mineru-api.service失败: {result.stderr}")
+            return False
     except Exception as e:
-        err_str = str(e)
-        if "Failed to connect to bus" in err_str or "not been booted" in err_str:
-            logger.debug("[PaddleOCR] 无 systemd（容器环境），跳过启动 mineru-api.service")
-            return True
         logger.warning(f"[PaddleOCR] 启动mineru-api.service时出错: {e}")
         return False
     finally:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 PDF Converter API 测试脚本
 
@@ -22,8 +23,8 @@ import requests
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-# API 配置
-API_BASE_URL = "http://47.101.133.94:14213"
+# API 配置（默认本机 4214 端口；可通过环境变量 PDF_CONVERTER_API_URL 覆盖）
+API_BASE_URL = os.getenv("PDF_CONVERTER_API_URL", "http://127.0.0.1:4214")
 
 # 测试文件配置
 TEST_DIR = Path(__file__).parent / "test"
