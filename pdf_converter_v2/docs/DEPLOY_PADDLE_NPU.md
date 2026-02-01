@@ -566,9 +566,9 @@ curl -X POST "http://127.0.0.1:5282/file_parse" \
      ```bash
      paddleocr ocr -i /path/to/image.png --save_path /path/to/output --device npu:0
      ```  
-   - **通过 pdf_converter_v2 调用**：在启动 API 或执行转换的**同一 shell** 里先执行 `export PADDLE_OCR_DEVICE=npu:0`，本项目在调用 `paddleocr ocr` / `doc_parser` 时会自动把 `--device npu:0` 传给命令。  
+   - **通过 pdf_converter_v2 调用**：本项目在调用 `paddleocr ocr` / `doc_parser` 时**未设置环境变量时默认使用 `npu:0`**，因此直接 `python3 api_server.py` 启动也会传 `--device npu:0`。若需用 GPU 或 CPU，可设置 `export PADDLE_OCR_DEVICE=gpu:0` 或 `PADDLE_OCR_DEVICE=cpu`；设为空则不添加 `--device`。  
    - **多卡**：若需指定其他卡，可设 `PADDLE_OCR_DEVICE=npu:1` 等。  
-   若不设 `PADDLE_OCR_DEVICE`，本项目不会添加 `--device`，PaddleOCR 使用默认设备（多为 CPU），在 NPU 容器内易触发上述段错误。  
+   本项目**默认**在未设置 `PADDLE_OCR_DEVICE` 时使用 `npu:0`，故 NPU 容器内直接启动 API 即可走 NPU；若显式设为空则不加 `--device`，PaddleOCR 用默认设备（易在 NPU 容器内段错误）。  
    **若已加 `--device npu:0` 仍崩溃且栈里仍是 CPUContext**：可能是 PaddleOCR/PaddleX 中部分模型或算子仍在 CPU 上执行（无 NPU 内核或回退到 CPU），属上游问题，可查阅 PaddleOCR 华为 NPU 文档或提 issue。
 
 ---
