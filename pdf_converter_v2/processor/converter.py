@@ -77,7 +77,10 @@ async def _convert_with_paddle(
         "--save_path",
         save_path_base,
     ]
-    
+    # NPU 下需加 --device npu:0，否则 PaddleOCR 走 CPU 易段错误
+    paddle_device = os.getenv("PADDLE_OCR_DEVICE", "").strip()
+    if paddle_device:
+        cmd.extend(["--device", paddle_device])
     try:
         return_code, _, stderr = await _run_paddle_doc_parser(cmd)
         if return_code != 0:

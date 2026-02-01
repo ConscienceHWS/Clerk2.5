@@ -44,6 +44,15 @@ except ImportError:
 MINERU_LOCK_FILE = "/tmp/mineru_service_lock"
 MINERU_COUNT_FILE = "/tmp/mineru_service_count"
 
+# PaddleOCR 推理设备：NPU 环境下需设为 npu 或 npu:0，否则会走 CPU 并可能段错误
+# 通过环境变量 PADDLE_OCR_DEVICE 指定，例如：export PADDLE_OCR_DEVICE=npu:0
+def _paddle_ocr_device_args() -> list:
+    """返回 PaddleOCR 命令的 --device 参数列表（若未设置则返回空列表）"""
+    device = os.getenv("PADDLE_OCR_DEVICE", "").strip()
+    if device:
+        return ["--device", device]
+    return []
+
 
 def _acquire_service_lock() -> Optional[object]:
     """获取服务操作锁（文件锁）
@@ -504,7 +513,7 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
         image_basename = os.path.splitext(os.path.basename(image_path))[0]
         save_path_base = os.path.join(image_dir, image_basename)
         
-        # 构建paddleocr命令，添加所有参数
+        # 构建paddleocr命令，添加所有参数（NPU 下需加 --device npu:0，否则走 CPU 易段错误）
         # PaddleOCR会在save_path下创建目录，文件保存在该目录内
         cmd = [
             "paddleocr", "doc_parser", "-i", image_path,
@@ -513,7 +522,7 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
             "--use_doc_orientation_classify", "True",
             "--use_chart_recognition", "True",
             "--save_path", save_path_base
-        ]
+        ] + _paddle_ocr_device_args()
         
         # 设置环境变量，限制GPU内存使用
         # env = os.environ.copy()
@@ -847,8 +856,8 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
             logger.error(f"[PaddleOCR OCR] 图片文件不存在: {image_path}")
             return None, None
 
-        # 构建paddleocr ocr命令
-        cmd = ["paddleocr", "ocr", "-i", image_path, "--save_path", save_path]
+        # 构建paddleocr ocr命令（NPU 下需加 --device npu:0，否则走 CPU 易段错误）
+        cmd = ["paddleocr", "ocr", "-i", image_path, "--save_path", save_path] + _paddle_ocr_device_args()
 
         logger.info(f"[PaddleOCR OCR] 执行命令: {' '.join(cmd)}")
 
@@ -942,7 +951,7 @@ def call_paddleocr_doc_parser_for_text(image_path: str, save_path: str) -> tuple
         save_path_base = os.path.join(save_path, image_basename)
         os.makedirs(save_path_base, exist_ok=True)
         
-        # 构建paddleocr doc_parser命令
+        # 构建paddleocr doc_parser命令（NPU 下需加 --device npu:0，否则走 CPU 易段错误）
         cmd = [
             "paddleocr", "doc_parser", "-i", image_path,
             "--precision", "fp32",
@@ -950,7 +959,7 @@ def call_paddleocr_doc_parser_for_text(image_path: str, save_path: str) -> tuple
             "--use_doc_orientation_classify", "True",
             "--use_chart_recognition", "True",
             "--save_path", save_path_base
-        ]
+        ] + _paddle_ocr_device_args()
         
         logger.info(f"[PaddleOCR DocParser] 执行命令: {' '.join(cmd)}")
         

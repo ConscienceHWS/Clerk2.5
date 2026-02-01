@@ -270,12 +270,18 @@ pip3 install -r mineru/requirements-paddle-npu.txt
 ```bash
 cd /workspace/Clerk2.5
 export PYTHONPATH=/workspace/Clerk2.5
+# 使用 NPU 推理（layout/mfd/mfr 等 PyTorch 模型跑在 NPU 上）；不设则可能回退到 CPU
+export MINERU_DEVICE_MODE=npu
 python3 -m uvicorn mineru.cli.fast_api:app --host 0.0.0.0 --port 5282
 ```
 
 若启动或首次调用 `/file_parse` 时报错 **cannot allocate memory in static TLS block**（与 simsimd/libgomp 相关），请先设置 `LD_PRELOAD` 再启动，见本文档末尾「常见问题」中对应条目。
 
-如需后台运行，可用 `nohup` 或 screen/tmux。**容器内无 systemd**：请使用 `pdf_converter_v2/scripts/start_mineru_in_container.sh`，例如 `nohup bash scripts/start_mineru_in_container.sh &`。宿主机若以 systemd 为 init，可用 `scripts/mineru-api.service` 托管。
+**使用 NPU 推理**：MinerU pipeline 的 layout、MFD、MFR 等 PyTorch 模型通过 `get_device()` 选择设备；设置 **`MINERU_DEVICE_MODE=npu`**（或 `npu:0`）可强制使用 NPU。脚本 `pdf_converter_v2/scripts/start_mineru_in_container.sh` 已默认设置 `MINERU_DEVICE_MODE=npu`，用该脚本启动即可走 NPU。
+
+**PaddleOCR 使用 NPU**：若使用 **PaddleOCR**（`paddleocr ocr` / `doc_parser`，含 pdf_converter_v2 的 PaddleOCR 备用或工况附件转换），需设置 **`PADDLE_OCR_DEVICE=npu:0`**，否则 PaddleOCR 默认在 CPU 上推理，在 NPU 容器内易触发段错误（`phi::ConvKernel<float, phi::CPUContext>`）。本项目在调用 PaddleOCR 子进程时会读取该环境变量并自动加上 `--device npu:0`。
+
+如需后台运行，可用 `nohup` 或 screen/tmux。**容器内无 systemd**：请使用 `pdf_converter_v2/scripts/start_mineru_in_container.sh`，例如在 Clerk2.5 下执行 `bash pdf_converter_v2/scripts/start_mineru_in_container.sh`（脚本内已含 `LD_PRELOAD` 与 `MINERU_DEVICE_MODE=npu`）。宿主机若以 systemd 为 init，可用 `scripts/mineru-api.service` 托管，并在其中添加 `Environment=MINERU_DEVICE_MODE=npu`。
 
 验证：
 
@@ -457,6 +463,56 @@ bash scripts/run_in_paddle_npu.sh
 
 ---
 
+## 若 MinerU 也需要用 LLM
+
+MinerU 的 VLM 推理支持多种后端；是否能用 LLM/vLLM 取决于运行环境。
+
+### 1. GPU 环境（进程内 vLLM）
+
+在 MinerU 所在环境安装 vLLM 后，可直接用 vLLM 做 VLM 推理：
+
+- 安装：`pip install vllm`
+- 调用 MinerU 时使用：`backend=vlm-vllm-async-engine`（异步）或 `backend=vlm-vllm-engine`（同步）
+- pdf_converter_v2：设置 `export BACKEND=vlm-vllm-async-engine` 后启动 API，或 curl/调用时传 `backend=vlm-vllm-async-engine`
+
+MinerU 会在进程内加载 vLLM 和 VLM 模型，无需单独起 VLM 服务。
+
+### 2. NPU 环境（当前容器）
+
+当前 NPU 容器内**未安装** vLLM（vLLM 主要面向 GPU/CUDA），因此：
+
+- **推荐**：继续使用 **pipeline** 后端（Paddle pipeline 做 VLM），设置 `BACKEND=pipeline`。无需 LLM 进程。
+- **可选**：通过 **vlm-http-client** 连接**外部** VLM 服务：
+  - MinerU 支持 `backend=vlm-http-client`，并需传入 `server_url`（例如 `http://host:30000`）。
+  - 该 URL 需指向**与 MinerUClient 协议兼容**的 VLM 服务（如 MinerU 自带的 vLLM 服务默认端口 30000）。
+  - 文档中 PaddleOCR 的 **genai_server**（端口 8118）是 PaddleOCR-VL 的接口，与 MinerU 的 vlm-http-client 协议**不一定兼容**；若要用 8118，需确认协议或存在适配层。
+  - 使用方式：
+    - 先在一台 GPU 机器上启动 MinerU 的 vLLM 服务（端口如 30000），或其它兼容 MinerUClient 的 VLM 服务。
+    - 调用 MinerU 的 `file_parse` 时传：`backend=vlm-http-client`、`server_url=http://gpu-host:30000`。
+    - pdf_converter_v2：设置 `export BACKEND=vlm-http-client`、`export SERVER_URL=http://gpu-host:30000` 后启动；API 会把 `SERVER_URL` 传给 MinerU。
+
+### 3. 使用 vlm-http-client 时 pdf_converter_v2 的配置
+
+| 环境变量     | 说明 |
+|--------------|------|
+| `BACKEND`    | 设为 `vlm-http-client` |
+| `SERVER_URL` | VLM 服务地址，例如 `http://127.0.0.1:30000` 或 `http://gpu-server:30000` |
+
+curl 测试示例（MinerU 在本机 5282，VLM 服务在 30000）：
+
+```bash
+curl -X POST "http://127.0.0.1:5282/file_parse" \
+  -F "files=@./your.pdf" \
+  -F "backend=vlm-http-client" \
+  -F "server_url=http://127.0.0.1:30000" \
+  -F "return_md=true" \
+  -F "response_format_zip=true" \
+  # ... 其他参数同前 ...
+  -o result.zip
+```
+
+---
+
 ## 常见问题
 
 1. **ImportError: Please install vllm to use the vllm-async-engine backend**  
@@ -502,6 +558,19 @@ bash scripts/run_in_paddle_npu.sh
 8. **已安装 Paddle，但希望用本机 PaddleOCR 做备用**  
    本项目当前主流程通过 `API_URL` 调用外部接口；容器内若已安装 PaddleOCR，可在同一容器内另行部署提供 `file_parse` 的服务，并将 `API_URL` 指到该服务即可。
 
+9. **PaddleOCR 段错误：`paddleocr ocr` / `doc_parser` 崩溃、`phi::ConvKernel<float, phi::CPUContext>`**  
+   表现：运行 **`paddleocr ocr`** 或 **`paddleocr doc_parser`**（或 pdf_converter_v2 触发 PaddleOCR 备用）时，在「Processing N items」或推理阶段崩溃，C++ 栈里有 `AnalysisPredictor::ZeroCopyRun`、`ConvKernel`/`Im2ColFunctor`、`CPUContext`。  
+   说明：PaddleOCR 未指定设备时**默认在 CPU 上推理**，在部分环境（如 ARM）上 CPU Conv 会触发段错误。NPU 已加载（日志中有 CustomDevice: npu）但推理仍走 CPU。  
+   **解决**：让 PaddleOCR 推理走 NPU：  
+   - **命令行直接测试**：环境变量 `PADDLE_OCR_DEVICE` **不会被** `paddleocr` 命令行读取，必须在命令中**显式加上** `--device npu:0`：  
+     ```bash
+     paddleocr ocr -i /path/to/image.png --save_path /path/to/output --device npu:0
+     ```  
+   - **通过 pdf_converter_v2 调用**：在启动 API 或执行转换的**同一 shell** 里先执行 `export PADDLE_OCR_DEVICE=npu:0`，本项目在调用 `paddleocr ocr` / `doc_parser` 时会自动把 `--device npu:0` 传给命令。  
+   - **多卡**：若需指定其他卡，可设 `PADDLE_OCR_DEVICE=npu:1` 等。  
+   若不设 `PADDLE_OCR_DEVICE`，本项目不会添加 `--device`，PaddleOCR 使用默认设备（多为 CPU），在 NPU 容器内易触发上述段错误。  
+   **若已加 `--device npu:0` 仍崩溃且栈里仍是 CPUContext**：可能是 PaddleOCR/PaddleX 中部分模型或算子仍在 CPU 上执行（无 NPU 内核或回退到 CPU），属上游问题，可查阅 PaddleOCR 华为 NPU 文档或提 issue。
+
 ---
 
 ## 小结
@@ -512,7 +581,9 @@ bash scripts/run_in_paddle_npu.sh
 | 2. 进入项目 | `cd /workspace/Clerk2.5/pdf_converter_v2`（或你的路径） |
 | 3. 安装依赖 | `pip3 install -r requirements-paddle-npu.txt` |
 | 4. 配置 API | `export API_URL=...`，NPU 下加 `export BACKEND=pipeline` |
-| 5. 启动服务 | `python3 api_server.py --host 0.0.0.0 --port 4214` |
-| 6. 验证     | `curl http://localhost:4214/health` |
+| 5. MinerU 用 NPU | 启动 MinerU 前设 `export MINERU_DEVICE_MODE=npu`，或使用 `scripts/start_mineru_in_container.sh` |
+| 6. PaddleOCR 用 NPU | 若使用 PaddleOCR 备用/工况附件：设 `export PADDLE_OCR_DEVICE=npu:0`，避免 CPU 段错误 |
+| 7. 启动服务 | `python3 api_server.py --host 0.0.0.0 --port 4214` |
+| 8. 验证     | `curl http://localhost:4214/health` |
 
 按上述步骤即可在 Paddle NPU 容器内完成项目部署。
