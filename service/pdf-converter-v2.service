@@ -28,7 +28,7 @@ Environment="PDF_CONVERTER_LOG_DIR=/mnt/win_d/Clerk2.5/logs"
 Environment="LOG_LEVEL=INFO"
 
 # 外部API配置（v2版本使用外部API）
-Environment="API_URL=http://192.168.2.3:8000"
+Environment="API_URL=http://127.0.0.1:5282"
 Environment="BACKEND=vlm-vllm-async-engine"
 Environment="PARSE_METHOD=auto"
 Environment="LANGUAGE=ch"
