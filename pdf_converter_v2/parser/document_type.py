@@ -19,6 +19,7 @@ def detect_document_type(markdown_content: str) -> str:
             - "fsApproval" - 可研批复投资估算
             - "fsReview" - 可研评审投资估算
             - "pdApproval" - 初设批复概算投资
+            - "safetyFsApproval" - 安评可研批复投资估算
             - "unknown" - 未知类型
     """
     # 检测表格类型（噪声、电磁）- 兼容旧名称
@@ -27,7 +28,13 @@ def detect_document_type(markdown_content: str) -> str:
     if "工频电场/磁场环境检测原始记录表" in markdown_content or "工频电场磁场环境检测原始记录表" in markdown_content:
         return "emRec"  # 也支持 electromagnetic_detection
     
-    # 检测投资估算类型（新增3个类型）
+    # 检测投资估算类型
+    # 安评可研批复（先于可研批复判断，结构同可研批复）
+    if ("安评可研批复" in markdown_content or ("安全评价" in markdown_content and "可行性研究报告的批复" in markdown_content)) and \
+       ("工程或费用名称" in markdown_content or "静态投资" in markdown_content) and \
+       ("架空线" in markdown_content or "间隔" in markdown_content):
+        return "safetyFsApproval"
+    
     # 可研批复投资估算（包含建设规模相关字段）
     if ("可研批复" in markdown_content or "可行性研究报告的批复" in markdown_content) and \
        ("工程或费用名称" in markdown_content or "静态投资" in markdown_content):

@@ -329,7 +329,7 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                 op_list = parse_operational_conditions(markdown_content, require_title=False)
             serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
             result = {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
-        elif forced_document_type in ["fsApproval", "fsReview", "pdApproval"]:
+        elif forced_document_type in ["fsApproval", "fsReview", "pdApproval", "safetyFsApproval"]:
             # 投资估算类型处理
             logger.info(f"[JSON转换] 处理投资估算类型: {forced_document_type}")
             logger.debug(f"[JSON转换] Markdown内容长度: {len(markdown_content)} 字符")
@@ -432,7 +432,7 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
     elif doc_type == "emRec":
         data = parse_electromagnetic_detection_record(markdown_content).to_dict()
         result = {"document_type": doc_type, "data": data}
-    elif doc_type in ["fsApproval", "fsReview", "pdApproval"]:
+    elif doc_type in ["fsApproval", "fsReview", "pdApproval", "safetyFsApproval"]:
         # 新增：投资估算类型
         logger.info(f"[JSON转换] 检测到投资估算类型: {doc_type}")
         logger.debug(f"[JSON转换] Markdown内容长度: {len(markdown_content)} 字符")
