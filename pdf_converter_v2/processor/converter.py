@@ -18,6 +18,7 @@ from PIL import Image
 
 from ..utils.logging_config import get_logger
 from ..utils.file_utils import safe_stem
+from ..utils.pdf_splitter import get_pdf_page_count, split_pdf_by_pages
 
 logger = get_logger("pdf_converter_v2.processor")
 PADDLE_CMD = os.getenv("PADDLE_DOC_PARSER_CMD", "paddleocr")
@@ -293,8 +294,12 @@ async def convert_to_markdown(
                             logger.info(f"等待 {wait_time} 秒后重试...")
                             await asyncio.sleep(wait_time)
                             
-                            # 重新创建 form_data（因为已经被消费了）
-                            file_obj.seek(0)  # 重置文件指针
+                            # 重试时重新打开文件（aiohttp 可能已关闭原 handle，seek(0) 会报 seek of closed file）
+                            try:
+                                file_obj.close()
+                            except Exception:
+                                pass
+                            file_obj = open(input_file, 'rb')
                             form_data = aiohttp.FormData()
                             form_data.add_field('return_middle_json', str(return_middle_json).lower())
                             form_data.add_field('return_model_output', str(return_model_output).lower())
@@ -427,6 +432,10 @@ async def convert_to_markdown(
         return None
 
 
+# PDF 超过此页数时按段切割后分别转换再合并，降低单次请求内存（避免 MinerU OOM）
+PDF_CHUNK_PAGES = 50
+
+
 async def convert_pdf_to_markdown_only(
     input_file: str,
     output_dir: str,
@@ -439,7 +448,7 @@ async def convert_pdf_to_markdown_only(
 ) -> Optional[dict]:
     """
     仅将 PDF/图片 转为 Markdown 文本，不解析 JSON。
-    用于 API 同步返回 MD 内容。
+    大 PDF（>50 页）会先按 50 页切割，分段转换后合并 MD，降低单次请求内存。
     :param input_file: 输入文件路径
     :param output_dir: 输出目录（临时使用）
     :param backend: "mineru" 调用 MinerU file_parse，"paddle" 调用 PaddleOCR doc_parser
@@ -449,7 +458,63 @@ async def convert_pdf_to_markdown_only(
     if not os.path.exists(input_file):
         logger.error(f"输入文件不存在: {input_file}")
         return None
+
+    ext = (Path(input_file).suffix or "").lower()
     url = url or os.getenv("API_URL", "http://127.0.0.1:5282")
+
+    # 仅对 PDF 做按页切割；图片或页数不足则单次转换
+    if ext == ".pdf":
+        page_count = get_pdf_page_count(input_file)
+        if page_count <= 0:
+            logger.error(f"无法获取 PDF 页数: {input_file}")
+            return None
+        if page_count > PDF_CHUNK_PAGES:
+            chunks_dir = tempfile.mkdtemp(prefix="pdf_chunks_", dir=output_dir)
+            try:
+                chunk_paths = split_pdf_by_pages(input_file, chunks_dir, chunk_size=PDF_CHUNK_PAGES)
+                if not chunk_paths:
+                    return None
+                logger.info(f"PDF 共 {page_count} 页，按 {PDF_CHUNK_PAGES} 页切割为 {len(chunk_paths)} 段，分段转换后合并")
+                parts = []
+                for i, chunk_path in enumerate(chunk_paths):
+                    chunk_out = os.path.join(output_dir, f"chunk_{i}")
+                    os.makedirs(chunk_out, exist_ok=True)
+                    if backend == "paddle":
+                        r = await _convert_with_paddle(
+                            input_file=chunk_path,
+                            output_dir=chunk_out,
+                            embed_images=False,
+                            output_json=False,
+                            forced_document_type=None,
+                        )
+                    else:
+                        r = await convert_to_markdown(
+                            input_file=chunk_path,
+                            output_dir=chunk_out,
+                            max_pages=max_pages,
+                            output_json=False,
+                            formula_enable=formula_enable,
+                            table_enable=table_enable,
+                            language=language,
+                            url=url,
+                            embed_images=False,
+                        )
+                    if r and r.get("content"):
+                        parts.append(r["content"])
+                    else:
+                        logger.warning(f"第 {i + 1} 段转换无内容，跳过")
+                if not parts:
+                    return None
+                merged = "\n\n".join(parts)
+                filename = Path(input_file).stem + ".md"
+                return {"markdown": merged, "filename": filename}
+            finally:
+                try:
+                    shutil.rmtree(chunks_dir, ignore_errors=True)
+                except Exception as e:
+                    logger.debug(f"清理切割临时目录失败: {e}")
+
+    # 单次转换（非 PDF、或 PDF 页数 <= PDF_CHUNK_PAGES）
     result = None
     if backend == "paddle":
         result = await _convert_with_paddle(
