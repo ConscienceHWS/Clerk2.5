@@ -330,7 +330,7 @@ async def process_conversion_task(
         tables_info = None
         
         # 针对投资估算类型，需要先切割附件页
-        if request.doc_type in ("fsApproval", "fsReview", "pdApproval"):
+        if request.doc_type in ("fsApproval", "fsReview", "pdApproval", "safetyFsApproval"):
             logger.info(f"[任务 {task_id}] 文档类型 {request.doc_type}，需要先切割附件页")
             
             # 导入附件页切割函数
@@ -654,10 +654,10 @@ async def process_pdf_to_markdown_task(
 @app.post("/convert", response_model=ConversionResponse)
 async def convert_file(
     file: Annotated[UploadFile, File(description="上传的PDF或图片文件")],
-    # 新增：类型参数（英文传参） noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | finalAccount
+    # 新增：类型参数（英文传参）含 safetyFsApproval 安评可研批复
     type: Annotated[
-        Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview", "fsApproval", "fsReview", "pdApproval", "finalAccount"]],
-        Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | finalAccount")
+        Optional[Literal["noiseRec", "emRec", "opStatus", "settlementReport", "designReview", "fsApproval", "fsReview", "pdApproval", "safetyFsApproval", "finalAccount"]],
+        Form(description="文档类型：noiseRec | emRec | opStatus | settlementReport | designReview | fsApproval | fsReview | pdApproval | safetyFsApproval | finalAccount")
     ] = None,
 ):
     """
@@ -679,6 +679,7 @@ async def convert_file(
       * fsApproval - 可研批复投资估算
       * fsReview - 可研评审投资估算
       * pdApproval - 初设批复概算投资
+      * safetyFsApproval - 安评可研批复
     
     注意：v2 版本内部使用外部API进行转换，v2特有的配置参数（如API URL、backend等）
     通过环境变量或配置文件设置，不通过API参数传入。
@@ -797,6 +798,7 @@ async def convert_file(
         "fsApproval": "fsApproval",
         "fsReview": "fsReview",
         "pdApproval": "pdApproval",
+        "safetyFsApproval": "safetyFsApproval",
         # 决算报告
         "finalAccount": "finalAccount",
     }
