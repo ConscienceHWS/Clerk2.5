@@ -426,3 +426,54 @@ async def convert_to_markdown(
         logger.exception(f"转换过程出错: {e}")
         return None
 
+
+async def convert_pdf_to_markdown_only(
+    input_file: str,
+    output_dir: str,
+    backend: str = "mineru",
+    url: Optional[str] = None,
+    max_pages: int = 99999,
+    formula_enable: bool = True,
+    table_enable: bool = True,
+    language: str = "ch",
+) -> Optional[dict]:
+    """
+    仅将 PDF/图片 转为 Markdown 文本，不解析 JSON。
+    用于 API 同步返回 MD 内容。
+    :param input_file: 输入文件路径
+    :param output_dir: 输出目录（临时使用）
+    :param backend: "mineru" 调用 MinerU file_parse，"paddle" 调用 PaddleOCR doc_parser
+    :param url: MinerU API 地址（backend=mineru 时使用）
+    :return: {"markdown": str, "filename": str} 或 None
+    """
+    if not os.path.exists(input_file):
+        logger.error(f"输入文件不存在: {input_file}")
+        return None
+    url = url or os.getenv("API_URL", "http://127.0.0.1:5282")
+    result = None
+    if backend == "paddle":
+        result = await _convert_with_paddle(
+            input_file=input_file,
+            output_dir=output_dir,
+            embed_images=False,
+            output_json=False,
+            forced_document_type=None,
+        )
+    else:
+        result = await convert_to_markdown(
+            input_file=input_file,
+            output_dir=output_dir,
+            max_pages=max_pages,
+            output_json=False,
+            formula_enable=formula_enable,
+            table_enable=table_enable,
+            language=language,
+            url=url,
+            embed_images=False,
+        )
+    if not result or not result.get("content"):
+        return None
+    md_path = result.get("markdown_file") or ""
+    filename = Path(md_path).name if md_path else Path(input_file).stem + ".md"
+    return {"markdown": result["content"], "filename": filename}
+

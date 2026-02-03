@@ -381,6 +381,73 @@ pip install -r pdf_converter_v2/requirements-paddle-npu.txt
 - **使用启动脚本**：`start_mineru_in_container.sh` 已默认使用 `MINERU_MODEL_SOURCE=modelscope`；若需用 Hugging Face，可设置 `export MINERU_MODEL_SOURCE=huggingface` 后执行脚本。
 - **首次使用 ModelScope**：需安装 `pip install modelscope`，模型会下载到 ModelScope 默认缓存目录。
 
+## 多 NPU 配置（MinerU 与 PaddleOCR）
+
+多张昇腾 NPU 时，可按「单进程指定卡」或「多进程多卡」方式配置。
+
+### 1. 指定使用某一张 NPU（单进程）
+
+- **MinerU**：通过环境变量指定设备号（逻辑编号从 0 起）：
+  ```bash
+  export MINERU_DEVICE_MODE=npu:0   # 使用第 0 号 NPU
+  export MINERU_DEVICE_MODE=npu:1   # 使用第 1 号 NPU
+  ```
+  再启动 MinerU API（如 `start_mineru_in_container.sh`）。
+
+- **PaddleOCR**（pdf_converter_v2 内调用）：通过环境变量指定设备号：
+  ```bash
+  export PADDLE_OCR_DEVICE=npu:0    # 使用第 0 号 NPU
+  export PADDLE_OCR_DEVICE=npu:1    # 使用第 1 号 NPU
+  ```
+  再启动 pdf_converter_v2 API（如 `start_api_in_container.sh`）。
+
+### 2. 限制进程可见的 NPU（物理卡映射）
+
+若希望某进程只看到部分物理卡（再在进程内用 `npu:0`、`npu:1` 指逻辑卡），可在**启动该进程前**设置昇腾可见设备（与 CUDA 的 `CUDA_VISIBLE_DEVICES` 类似）：
+
+```bash
+# 仅让当前进程看到物理卡 1（在进程内为 npu:0）
+export ASCEND_RT_VISIBLE_DEVICES=1
+
+# 让当前进程看到物理卡 2、3（在进程内为 npu:0、npu:1）
+export ASCEND_RT_VISIBLE_DEVICES=2,3
+```
+
+再设置 `MINERU_DEVICE_MODE=npu:0` 或 `PADDLE_OCR_DEVICE=npu:0` 等，即使用上述「可见」卡中的逻辑编号。
+
+### 3. 多进程多卡（多个 MinerU API 实例）
+
+多张 NPU 时，可起多个 MinerU API 进程，每个进程绑定一张卡、不同端口，再由负载均衡或 pdf_converter_v2 配置多后端：
+
+| 实例 | 环境变量 | 端口 |
+|------|----------|------|
+| MinerU 实例 1 | `MINERU_DEVICE_MODE=npu:0` | 5282 |
+| MinerU 实例 2 | `MINERU_DEVICE_MODE=npu:1` | 5283 |
+
+示例（在同一台机起两个 MinerU，不同卡、不同端口）：
+
+```bash
+# 终端 1：使用 npu:0，端口 5282
+export MINERU_DEVICE_MODE=npu:0
+export MINERU_PORT=5282
+sh pdf_converter_v2/scripts/start_mineru_in_container.sh
+
+# 终端 2：使用 npu:1，端口 5283
+export MINERU_DEVICE_MODE=npu:1
+export MINERU_PORT=5283
+sh pdf_converter_v2/scripts/start_mineru_in_container.sh
+```
+
+pdf_converter_v2 API 默认只连一个 MinerU 地址（如 `API_URL=http://127.0.0.1:5282`）。若要轮询多实例，需在应用层或反向代理（如 Nginx）做负载均衡，或后续在 pdf_converter_v2 中支持多 MinerU 地址配置。
+
+### 4. 小结
+
+| 组件 | 环境变量 | 示例 |
+|------|----------|------|
+| MinerU | `MINERU_DEVICE_MODE` | `npu`、`npu:0`、`npu:1` |
+| PaddleOCR | `PADDLE_OCR_DEVICE` | `npu:0`、`npu:1` |
+| 昇腾可见卡 | `ASCEND_RT_VISIBLE_DEVICES` | `0`、`1,2`（物理卡号） |
+
 ## 更新说明
 
 详细更新内容请参考项目根目录的 [CHANGELOG.md](../CHANGELOG.md)

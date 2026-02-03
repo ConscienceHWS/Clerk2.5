@@ -13,14 +13,15 @@ import base64
 import json
 from pathlib import Path
 from typing import Optional, List
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing_extensions import Annotated, Literal
 
-from ..processor.converter import convert_to_markdown
+from ..processor.converter import convert_to_markdown, convert_pdf_to_markdown_only
 from ..utils.logging_config import get_logger
 
 # 尝试导入配置，如果不存在则使用默认值
@@ -216,6 +217,12 @@ class OCRResponse(BaseModel):
     gpu_info: Optional[GpuInfo] = None  # GPU监控信息
 
 
+class PdfToMarkdownResponse(BaseModel):
+    """PDF 转 Markdown 同步接口响应"""
+    markdown: str  # 生成的 Markdown 全文
+    filename: str  # 建议的文件名（如 xxx.md）
+
+
 @app.get("/")
 async def root():
     """API根路径"""
@@ -232,6 +239,7 @@ async def root():
         },
         "endpoints": {
             "POST /convert": "转换PDF/图片文件（异步，立即返回task_id）",
+            "POST /pdf_to_markdown": "PDF/图片转 Markdown（同步，默认返回 .md 文件下载，format=json 可返回 JSON）",
             "GET /task/{task_id}": "查询任务状态（轮询接口）",
             "GET /task/{task_id}/json": "直接获取JSON数据（返回JSON对象，不下载文件）",
             "GET /download/{task_id}/markdown": "下载Markdown文件",
@@ -720,6 +728,76 @@ async def convert_file(
         json_file=None,
         document_type=None
     )
+
+
+@app.post("/pdf_to_markdown")
+async def pdf_to_markdown(
+    file: Annotated[UploadFile, File(description="上传的 PDF 或图片文件")],
+    backend: Annotated[
+        Optional[Literal["mineru", "paddle"]],
+        Form(description="识别后端：mineru 调用 MinerU file_parse，paddle 调用 PaddleOCR doc_parser")
+    ] = "mineru",
+    format: Annotated[
+        Literal["file", "json"],
+        Form(description="返回格式：file 直接返回 .md 文件下载（适合多页），json 返回 JSON 内嵌 markdown 字段（适合少页）")
+    ] = "file",
+):
+    """
+    PDF/图片转 Markdown（同步接口）
+    直接调用 MinerU 或 PaddleOCR 进行识别，生成完整 MD 后返回。
+    - **file**: 上传的 PDF 或图片
+    - **backend**: mineru（默认）/ paddle
+    - **format**: file（默认）— 直接返回 .md 文件下载，适合多页、大文本；json — 返回 JSON { "markdown", "filename" }，适合少页
+    注意：大文件或页数多时可能较慢，建议页数不超过 20。
+    """
+    temp_dir = None
+    file_path = None
+    try:
+        content_type = file.content_type or ""
+        ext_map = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg"}
+        ext = ext_map.get(content_type, "") or (Path(file.filename or "").suffix if file.filename else "") or ".pdf"
+        temp_dir = tempfile.mkdtemp(prefix="pdf_converter_v2_pdf_to_md_")
+        file_path = os.path.join(temp_dir, f"file{ext}")
+        content = await file.read()
+        with open(file_path, "wb") as f:
+            f.write(content)
+        # 页数限制（与 /convert 一致）
+        pages = 1
+        if ext.lower() == ".pdf" and content:
+            pages = max(1, content.count(b"/Type /Page"))
+        if pages > 20:
+            raise HTTPException(status_code=400, detail="文件页数超过 20 页，拒绝处理")
+        output_dir = os.path.join(temp_dir, "output")
+        os.makedirs(output_dir, exist_ok=True)
+        api_url = os.getenv("API_URL", "http://127.0.0.1:5282")
+        result = await convert_pdf_to_markdown_only(
+            input_file=file_path,
+            output_dir=output_dir,
+            backend=backend or "mineru",
+            url=api_url,
+        )
+        if not result:
+            raise HTTPException(status_code=500, detail="PDF 转 Markdown 失败，请查看服务端日志")
+        if format == "file":
+            # 直接返回 .md 文件下载，避免大文本放在 JSON 里
+            safe_filename = quote(result["filename"])
+            return Response(
+                content=result["markdown"],
+                media_type="text/markdown; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"; filename*=UTF-8\'\'{safe_filename}'},
+            )
+        return PdfToMarkdownResponse(markdown=result["markdown"], filename=result["filename"])
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[pdf_to_markdown] 转换失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if temp_dir and os.path.isdir(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception as exc:
+                logger.debug(f"[pdf_to_markdown] 清理临时目录失败: {exc}")
 
 
 @app.get("/task/{task_id}", response_model=TaskStatus)
