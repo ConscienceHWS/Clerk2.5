@@ -42,7 +42,7 @@ except ImportError:
     DEFAULT_DPI = 200
     DEFAULT_MAX_PAGES = 10
     DEFAULT_API_URL = os.getenv("API_URL", "http://127.0.0.1:5282")
-    DEFAULT_BACKEND = os.getenv("BACKEND", "vlm-vllm-async-engine")
+    DEFAULT_BACKEND = os.getenv("BACKEND", "pipeline")
     DEFAULT_PARSE_METHOD = os.getenv("PARSE_METHOD", "auto")
     DEFAULT_START_PAGE_ID = int(os.getenv("START_PAGE_ID", "0"))
     DEFAULT_END_PAGE_ID = int(os.getenv("END_PAGE_ID", "99999"))

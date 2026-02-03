@@ -33,7 +33,7 @@ def main():
     
     # API选项
     parser.add_argument('--url', default='http://127.0.0.1:5282', help='API服务器URL（默认: http://127.0.0.1:5282）')
-    parser.add_argument('--backend', default='vlm-vllm-async-engine', help='处理后端（默认: vlm-vllm-async-engine）')
+    parser.add_argument('--backend', default='vlm-vllm-async-engine', help='MinerU 后端（默认: vlm-vllm-async-engine；无 vLLM 时用 pipeline）')
     parser.add_argument('--parse-method', default='auto', help='解析方法（默认: auto）')
     parser.add_argument('--start-page-id', type=int, default=0, help='起始页ID（默认: 0）')
     parser.add_argument('--end-page-id', type=int, default=99999, help='结束页ID（默认: 99999）')

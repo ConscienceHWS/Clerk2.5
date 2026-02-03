@@ -6,6 +6,11 @@
 
 import os
 
+# 设备环境：nvi（NVIDIA GPU）/ npu（华为昇腾 NPU）/ cpu，用于按环境选择 VLLM_PLUGINS、PADDLE_OCR_DEVICE 等
+from .utils.device_env import detect_device_kind
+
+DEVICE_KIND = os.getenv("PDF_CONVERTER_DEVICE_KIND") or detect_device_kind()
+
 # 默认模型配置（与 v1 保持一致）
 DEFAULT_MODEL_NAME = "OpenDataLab/MinerU2.5-2509-1.2B"
 DEFAULT_GPU_MEMORY_UTILIZATION = 0.9

@@ -45,10 +45,14 @@ MINERU_LOCK_FILE = "/tmp/mineru_service_lock"
 MINERU_COUNT_FILE = "/tmp/mineru_service_count"
 
 # PaddleOCR 推理设备：NPU 环境下需设为 npu 或 npu:0，否则会走 CPU 并可能段错误
-# 通过环境变量 PADDLE_OCR_DEVICE 指定，例如：export PADDLE_OCR_DEVICE=npu:0
+# 通过环境变量 PADDLE_OCR_DEVICE 指定；未设置时根据设备环境自动选择（NPU 下默认 npu:0）
 def _paddle_ocr_device_args() -> list:
     """返回 PaddleOCR 命令的 --device 参数列表（若未设置则返回空列表）"""
     device = os.getenv("PADDLE_OCR_DEVICE", "").strip()
+    if not device:
+        from .device_env import is_npu
+        if is_npu():
+            device = "npu:0"
     if device:
         return ["--device", device]
     return []
