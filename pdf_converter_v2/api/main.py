@@ -23,6 +23,7 @@ from typing_extensions import Annotated, Literal
 
 from ..processor.converter import convert_to_markdown, convert_pdf_to_markdown_only
 from ..utils.logging_config import get_logger
+from ..utils.pdf_watermark_remover import remove_watermark_from_pdf, crop_header_footer_from_pdf
 
 # 尝试导入配置，如果不存在则使用默认值
 try:
@@ -750,6 +751,30 @@ async def pdf_to_markdown(
         Literal["file", "json"],
         Form(description="返回格式：file 直接返回 .md 文件下载（适合多页），json 返回 JSON 内嵌 markdown 字段（适合少页）")
     ] = "file",
+    remove_watermark: Annotated[
+        bool,
+        Form(description="是否先对 PDF 去水印（仅对 PDF 生效，默认关闭）"),
+    ] = False,
+    watermark_light_threshold: Annotated[
+        int,
+        Form(description="去水印亮度阈值 0–255，高于此值的浅色像素视为水印"),
+    ] = 200,
+    watermark_saturation_threshold: Annotated[
+        int,
+        Form(description="去水印饱和度阈值 0–255，低于此值的低饱和度像素视为水印"),
+    ] = 30,
+    crop_header_footer: Annotated[
+        bool,
+        Form(description="是否裁剪 PDF 页眉页脚（仅对 PDF 生效，默认关闭）"),
+    ] = False,
+    header_ratio: Annotated[
+        float,
+        Form(description="页眉裁剪比例 0–1，如 0.05 表示裁掉顶部 5%"),
+    ] = 0.05,
+    footer_ratio: Annotated[
+        float,
+        Form(description="页脚裁剪比例 0–1，如 0.05 表示裁掉底部 5%"),
+    ] = 0.05,
 ):
     """
     PDF/图片转 Markdown（同步接口）
@@ -757,6 +782,8 @@ async def pdf_to_markdown(
     - **file**: 上传的 PDF 或图片
     - **backend**: mineru（默认）/ paddle
     - **format**: file（默认）— 直接返回 .md 文件下载，适合多页、大文本；json — 返回 JSON { "markdown", "filename" }，适合少页
+    - **remove_watermark**: 是否先对 PDF 去水印（仅 PDF）
+    - **crop_header_footer**: 是否裁剪页眉页脚（仅 PDF）
     注意：大文件或页数多时可能较慢，建议页数不超过 20。
     """
     temp_dir = None
@@ -778,9 +805,36 @@ async def pdf_to_markdown(
             raise HTTPException(status_code=400, detail="文件页数超过 20 页，拒绝处理")
         output_dir = os.path.join(temp_dir, "output")
         os.makedirs(output_dir, exist_ok=True)
+
+        # 仅对 PDF 做预处理：去水印 → 裁剪页眉页脚
+        is_pdf = ext.lower() == ".pdf"
+        current_path = file_path
+        if is_pdf and remove_watermark:
+            next_path = os.path.join(temp_dir, "no_watermark.pdf")
+            if remove_watermark_from_pdf(
+                current_path,
+                next_path,
+                light_threshold=watermark_light_threshold,
+                saturation_threshold=watermark_saturation_threshold,
+            ):
+                current_path = next_path
+            else:
+                logger.warning("[pdf_to_markdown] 去水印失败，使用原文件继续")
+        if is_pdf and crop_header_footer:
+            next_path = os.path.join(temp_dir, "cropped.pdf")
+            if crop_header_footer_from_pdf(
+                current_path,
+                next_path,
+                header_ratio=header_ratio,
+                footer_ratio=footer_ratio,
+            ):
+                current_path = next_path
+            else:
+                logger.warning("[pdf_to_markdown] 页眉页脚裁剪失败，使用原文件继续")
+
         api_url = os.getenv("API_URL", "http://127.0.0.1:5282")
         result = await convert_pdf_to_markdown_only(
-            input_file=file_path,
+            input_file=current_path,
             output_dir=output_dir,
             backend=backend or "mineru",
             url=api_url,
