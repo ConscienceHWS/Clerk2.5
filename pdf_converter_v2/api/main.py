@@ -240,7 +240,7 @@ async def root():
         },
         "endpoints": {
             "POST /convert": "转换PDF/图片文件（异步，立即返回task_id）",
-            "POST /pdf_to_markdown": "PDF/图片转 Markdown（同步，默认返回 .md 文件下载，format=json 可返回 JSON）",
+            "POST /pdf_to_markdown": "PDF/图片转 Markdown（异步，立即返回task_id，通过 task_id 查询状态并下载 .md）",
             "GET /task/{task_id}": "查询任务状态（轮询接口）",
             "GET /task/{task_id}/json": "直接获取JSON数据（返回JSON对象，不下载文件）",
             "GET /download/{task_id}/markdown": "下载Markdown文件",
@@ -544,6 +544,90 @@ async def process_conversion_task(
     # 这样可以方便用户查看上传的文件内容
 
 
+async def process_pdf_to_markdown_task(
+    task_id: str,
+    file_path: str,
+    output_dir: str,
+    backend: str,
+    remove_watermark: bool,
+    watermark_light_threshold: int,
+    watermark_saturation_threshold: int,
+    crop_header_footer: bool,
+    header_ratio: float,
+    footer_ratio: float,
+):
+    """后台执行 PDF/图片转 Markdown（仅转 MD，无 doc_type 等）。"""
+    try:
+        logger.info(f"[任务 {task_id}] PDF转Markdown 后台任务开始...")
+        task_status[task_id]["status"] = "processing"
+        task_status[task_id]["message"] = "正在转换 PDF/图片为 Markdown..."
+
+        ext = (Path(file_path).suffix or "").lower()
+        is_pdf = ext == ".pdf"
+        current_path = file_path
+
+        if is_pdf and remove_watermark:
+            next_path = os.path.join(os.path.dirname(output_dir), "no_watermark.pdf")
+            ok = await asyncio.to_thread(
+                remove_watermark_from_pdf,
+                current_path,
+                next_path,
+                light_threshold=watermark_light_threshold,
+                saturation_threshold=watermark_saturation_threshold,
+            )
+            if ok:
+                current_path = next_path
+            else:
+                logger.warning(f"[任务 {task_id}] 去水印失败，使用原文件继续")
+        if is_pdf and crop_header_footer:
+            next_path = os.path.join(os.path.dirname(output_dir), "cropped.pdf")
+            ok = await asyncio.to_thread(
+                crop_header_footer_from_pdf,
+                current_path,
+                next_path,
+                header_ratio=header_ratio,
+                footer_ratio=footer_ratio,
+            )
+            if ok:
+                current_path = next_path
+            else:
+                logger.warning(f"[任务 {task_id}] 页眉页脚裁剪失败，使用原文件继续")
+
+        api_url = os.getenv("API_URL", "http://127.0.0.1:5282")
+        result = await convert_pdf_to_markdown_only(
+            input_file=current_path,
+            output_dir=output_dir,
+            backend=backend,
+            url=api_url,
+        )
+        if not result:
+            task_status[task_id]["status"] = "failed"
+            task_status[task_id]["message"] = "转换失败"
+            task_status[task_id]["error"] = "PDF 转 Markdown 返回空"
+            logger.error(f"[任务 {task_id}] PDF 转 Markdown 返回空")
+            return
+
+        md_content = result.get("markdown", "")
+        filename = result.get("filename", "output.md")
+        if not filename.endswith(".md"):
+            filename = filename + ".md"
+        markdown_file_path = os.path.join(output_dir, filename)
+        with open(markdown_file_path, "w", encoding="utf-8") as f:
+            f.write(md_content)
+
+        task_status[task_id]["status"] = "completed"
+        task_status[task_id]["message"] = "转换成功"
+        task_status[task_id]["markdown_file"] = markdown_file_path
+        task_status[task_id]["json_data"] = {"markdown": md_content, "filename": filename}
+        task_status[task_id]["document_type"] = None
+        logger.info(f"[任务 {task_id}] PDF 转 Markdown 完成: {markdown_file_path}")
+    except Exception as e:
+        task_status[task_id]["status"] = "failed"
+        task_status[task_id]["message"] = f"处理出错: {str(e)}"
+        task_status[task_id]["error"] = str(e)
+        logger.exception(f"[任务 {task_id}] PDF 转 Markdown 失败: {e}")
+
+
 @app.post("/convert", response_model=ConversionResponse)
 async def convert_file(
     file: Annotated[UploadFile, File(description="上传的PDF或图片文件")],
@@ -734,11 +818,12 @@ async def convert_file(
 @app.post(
     "/pdf_to_markdown",
     tags=["PDF转Markdown"],
-    summary="PDF/图片转 Markdown（同步）",
+    summary="PDF/图片转 Markdown（异步）",
+    response_model=ConversionResponse,
     responses={
-        200: {"description": "format=file 时返回 .md 文件；format=json 时返回 JSON { markdown, filename }"},
+        200: {"description": "立即返回 task_id，通过 GET /task/{task_id} 轮询，完成后 GET /download/{task_id}/markdown 或 GET /task/{task_id}/json 获取结果"},
         400: {"description": "文件页数超过 20 页"},
-        500: {"description": "转换失败"},
+        500: {"description": "保存文件失败等"},
     },
 )
 async def pdf_to_markdown(
@@ -747,10 +832,6 @@ async def pdf_to_markdown(
         Optional[Literal["mineru", "paddle"]],
         Form(description="识别后端：mineru 调用 MinerU file_parse，paddle 调用 PaddleOCR doc_parser")
     ] = "mineru",
-    format: Annotated[
-        Literal["file", "json"],
-        Form(description="返回格式：file 直接返回 .md 文件下载（适合多页），json 返回 JSON 内嵌 markdown 字段（适合少页）")
-    ] = "file",
     remove_watermark: Annotated[
         bool,
         Form(description="是否先对 PDF 去水印（仅对 PDF 生效，默认关闭）"),
@@ -777,90 +858,80 @@ async def pdf_to_markdown(
     ] = 0.05,
 ):
     """
-    PDF/图片转 Markdown（同步接口）
-    直接调用 MinerU 或 PaddleOCR 进行识别，生成完整 MD 后返回。
+    PDF/图片转 Markdown（异步接口）
+    提交后立即返回 task_id，通过 task_id 轮询状态，完成后下载 .md 或取 JSON。
     - **file**: 上传的 PDF 或图片
     - **backend**: mineru（默认）/ paddle
-    - **format**: file（默认）— 直接返回 .md 文件下载，适合多页、大文本；json — 返回 JSON { "markdown", "filename" }，适合少页
-    - **remove_watermark**: 是否先对 PDF 去水印（仅 PDF）
-    - **crop_header_footer**: 是否裁剪页眉页脚（仅 PDF）
-    注意：大文件或页数多时可能较慢，建议页数不超过 20。
+    - **remove_watermark** / **crop_header_footer**: 仅对 PDF 生效
+    流程：POST 本接口 → GET /task/{task_id} 轮询 → 完成后 GET /download/{task_id}/markdown 或 GET /task/{task_id}/json
     """
-    temp_dir = None
-    file_path = None
+    task_id = str(uuid.uuid4())
+    content_type = file.content_type or ""
+    ext_map = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg"}
+    ext = ext_map.get(content_type, "") or (Path(file.filename or "").suffix if file.filename else "") or ".pdf"
+    temp_dir = tempfile.mkdtemp(prefix=f"pdf_converter_v2_{task_id}_")
+    file_path = os.path.join(temp_dir, f"file{ext}")
     try:
-        content_type = file.content_type or ""
-        ext_map = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg"}
-        ext = ext_map.get(content_type, "") or (Path(file.filename or "").suffix if file.filename else "") or ".pdf"
-        temp_dir = tempfile.mkdtemp(prefix="pdf_converter_v2_pdf_to_md_")
-        file_path = os.path.join(temp_dir, f"file{ext}")
         content = await file.read()
         with open(file_path, "wb") as f:
             f.write(content)
-        # 页数限制（与 /convert 一致）
-        pages = 1
-        if ext.lower() == ".pdf" and content:
-            pages = max(1, content.count(b"/Type /Page"))
-        if pages > 20:
-            raise HTTPException(status_code=400, detail="文件页数超过 20 页，拒绝处理")
-        output_dir = os.path.join(temp_dir, "output")
-        os.makedirs(output_dir, exist_ok=True)
+    except Exception as e:
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
 
-        # 仅对 PDF 做预处理：去水印 → 裁剪页眉页脚
-        is_pdf = ext.lower() == ".pdf"
-        current_path = file_path
-        if is_pdf and remove_watermark:
-            next_path = os.path.join(temp_dir, "no_watermark.pdf")
-            if remove_watermark_from_pdf(
-                current_path,
-                next_path,
-                light_threshold=watermark_light_threshold,
-                saturation_threshold=watermark_saturation_threshold,
-            ):
-                current_path = next_path
-            else:
-                logger.warning("[pdf_to_markdown] 去水印失败，使用原文件继续")
-        if is_pdf and crop_header_footer:
-            next_path = os.path.join(temp_dir, "cropped.pdf")
-            if crop_header_footer_from_pdf(
-                current_path,
-                next_path,
-                header_ratio=header_ratio,
-                footer_ratio=footer_ratio,
-            ):
-                current_path = next_path
-            else:
-                logger.warning("[pdf_to_markdown] 页眉页脚裁剪失败，使用原文件继续")
+    pages = 1
+    if ext.lower() == ".pdf" and content:
+        pages = max(1, content.count(b"/Type /Page"))
+    if pages > 20:
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail="文件页数超过 20 页，拒绝处理")
 
-        api_url = os.getenv("API_URL", "http://127.0.0.1:5282")
-        result = await convert_pdf_to_markdown_only(
-            input_file=current_path,
+    output_dir = os.path.join(temp_dir, "output")
+    os.makedirs(output_dir, exist_ok=True)
+
+    task_status[task_id] = {
+        "status": "pending",
+        "message": "任务已创建",
+        "progress": 0.0,
+        "markdown_file": None,
+        "json_file": None,
+        "json_data": None,
+        "document_type": None,
+        "error": None,
+        "temp_dir": temp_dir,
+        "output_dir": output_dir,
+        "file_path": file_path,
+    }
+
+    asyncio.create_task(
+        process_pdf_to_markdown_task(
+            task_id=task_id,
+            file_path=file_path,
             output_dir=output_dir,
             backend=backend or "mineru",
-            url=api_url,
+            remove_watermark=remove_watermark,
+            watermark_light_threshold=watermark_light_threshold,
+            watermark_saturation_threshold=watermark_saturation_threshold,
+            crop_header_footer=crop_header_footer,
+            header_ratio=header_ratio,
+            footer_ratio=footer_ratio,
         )
-        if not result:
-            raise HTTPException(status_code=500, detail="PDF 转 Markdown 失败，请查看服务端日志")
-        if format == "file":
-            # 直接返回 .md 文件下载，避免大文本放在 JSON 里
-            safe_filename = quote(result["filename"])
-            return Response(
-                content=result["markdown"],
-                media_type="text/markdown; charset=utf-8",
-                headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"; filename*=UTF-8\'\'{safe_filename}'},
-            )
-        return PdfToMarkdownResponse(markdown=result["markdown"], filename=result["filename"])
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"[pdf_to_markdown] 转换失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if temp_dir and os.path.isdir(temp_dir):
-            try:
-                shutil.rmtree(temp_dir)
-            except Exception as exc:
-                logger.debug(f"[pdf_to_markdown] 清理临时目录失败: {exc}")
+    )
+    logger.info(f"[任务 {task_id}] PDF 转 Markdown 任务已创建，立即返回 task_id")
+    return ConversionResponse(
+        task_id=task_id,
+        status="pending",
+        message="任务已创建，请使用 GET /task/{task_id} 查询状态，完成后通过 GET /download/{task_id}/markdown 或 GET /task/{task_id}/json 获取结果",
+        markdown_file=None,
+        json_file=None,
+        document_type=None,
+    )
 
 
 @app.get("/task/{task_id}", response_model=TaskStatus)
