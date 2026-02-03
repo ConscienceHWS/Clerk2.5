@@ -716,7 +716,7 @@ async def convert_file(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
     
-    # 计算页数并限制：>20页直接报错；图片按1页处理
+    # 计算页数并限制：>300页直接报错；图片按1页处理
     try:
         suffix = (Path(file_path).suffix or "").lower()
         pages = 1
@@ -733,13 +733,13 @@ async def convert_file(
         else:
             # 常见图片格式视为单页
             pages = 1
-        if pages > 20:
+        if pages > 300:
             # 清理临时目录后报错
             try:
                 shutil.rmtree(temp_dir)
             except Exception:
                 pass
-            raise HTTPException(status_code=400, detail="文件页数超过20页，拒绝处理")
+            raise HTTPException(status_code=400, detail="文件页数超过300页，拒绝处理")
         logger.info(f"[任务 {task_id}] 页数评估: {pages}")
     except HTTPException:
         raise
@@ -822,7 +822,7 @@ async def convert_file(
     response_model=ConversionResponse,
     responses={
         200: {"description": "立即返回 task_id，通过 GET /task/{task_id} 轮询，完成后 GET /download/{task_id}/markdown 或 GET /task/{task_id}/json 获取结果"},
-        400: {"description": "文件页数超过 20 页"},
+        400: {"description": "文件页数超过 300 页"},
         500: {"description": "保存文件失败等"},
     },
 )
@@ -885,12 +885,12 @@ async def pdf_to_markdown(
     pages = 1
     if ext.lower() == ".pdf" and content:
         pages = max(1, content.count(b"/Type /Page"))
-    if pages > 20:
+    if pages > 300:
         try:
             shutil.rmtree(temp_dir)
         except Exception:
             pass
-        raise HTTPException(status_code=400, detail="文件页数超过 20 页，拒绝处理")
+        raise HTTPException(status_code=400, detail="文件页数超过 300 页，拒绝处理")
 
     output_dir = os.path.join(temp_dir, "output")
     os.makedirs(output_dir, exist_ok=True)
