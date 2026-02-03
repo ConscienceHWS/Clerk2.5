@@ -57,43 +57,42 @@ def split_pdf_by_pages(
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
+    # 整个切割过程保持文件打开，否则 writer.add_page(reader.pages[i]) 时 PyPDF2 会从已关闭的 stream 读取，触发 seek of closed file
     try:
         with open(input_pdf, "rb") as f:
             reader = PyPDF2.PdfReader(f)
             total = len(reader.pages)
+            if total <= 0:
+                return []
+            if total <= chunk_size:
+                return [input_pdf]
+
+            chunk_paths: List[str] = []
+            start = 0
+            idx = 0
+            while start < total:
+                end = min(start + chunk_size, total)
+                chunk_pdf = out_path / f"chunk_{idx}_{input_path.stem}.pdf"
+                try:
+                    writer = PyPDF2.PdfWriter()
+                    for i in range(start, end):
+                        writer.add_page(reader.pages[i])
+                    with open(chunk_pdf, "wb") as w:
+                        writer.write(w)
+                    chunk_paths.append(str(chunk_pdf))
+                    logger.info(f"[PDF切割] 段 {idx + 1}: 页 {start + 1}-{end}/{total} -> {chunk_pdf.name}")
+                except Exception as e:
+                    logger.exception(f"[PDF切割] 写入段 {idx} 失败: {e}")
+                    for p in chunk_paths:
+                        try:
+                            Path(p).unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    return []
+                start = end
+                idx += 1
+
+            return chunk_paths
     except Exception as e:
         logger.error(f"[PDF切割] 读取 PDF 失败 {input_pdf}: {e}")
         return []
-
-    if total <= 0:
-        return []
-
-    if total <= chunk_size:
-        return [input_pdf]
-
-    chunk_paths: List[str] = []
-    start = 0
-    idx = 0
-    while start < total:
-        end = min(start + chunk_size, total)
-        chunk_pdf = out_path / f"chunk_{idx}_{input_path.stem}.pdf"
-        try:
-            writer = PyPDF2.PdfWriter()
-            for i in range(start, end):
-                writer.add_page(reader.pages[i])
-            with open(chunk_pdf, "wb") as w:
-                writer.write(w)
-            chunk_paths.append(str(chunk_pdf))
-            logger.info(f"[PDF切割] 段 {idx + 1}: 页 {start + 1}-{end}/{total} -> {chunk_pdf.name}")
-        except Exception as e:
-            logger.exception(f"[PDF切割] 写入段 {idx} 失败: {e}")
-            for p in chunk_paths:
-                try:
-                    Path(p).unlink(missing_ok=True)
-                except Exception:
-                    pass
-            return []
-        start = end
-        idx += 1
-
-    return chunk_paths
