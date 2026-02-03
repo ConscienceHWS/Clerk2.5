@@ -10,6 +10,7 @@ import shutil
 import tempfile
 import uuid
 import base64
+from datetime import datetime
 import json
 import zipfile
 from pathlib import Path
@@ -626,12 +627,13 @@ async def process_pdf_to_markdown_task(
         task_status[task_id]["document_type"] = None
 
         if return_images:
-            zip_path = os.path.join(output_dir, "markdown_with_images.zip")
+            zip_basename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.zip"
+            zip_path = os.path.join(output_dir, zip_basename)
             try:
                 with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                     for root, _, files in os.walk(output_dir):
                         for f in files:
-                            if f == "markdown_with_images.zip":
+                            if f == zip_basename:
                                 continue
                             abs_path = os.path.join(root, f)
                             arcname = os.path.relpath(abs_path, output_dir)
@@ -1097,7 +1099,7 @@ async def download_zip(task_id: str):
     return FileResponse(
         zip_file,
         media_type="application/zip",
-        filename="markdown_with_images.zip",
+        filename=os.path.basename(zip_file),
     )
 
 
