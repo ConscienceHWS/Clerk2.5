@@ -445,14 +445,12 @@ async def convert_pdf_to_markdown_only(
     formula_enable: bool = True,
     table_enable: bool = True,
     language: str = "ch",
+    return_images: bool = False,
 ) -> Optional[dict]:
     """
     仅将 PDF/图片 转为 Markdown 文本，不解析 JSON。
     大 PDF（>50 页）会先按 50 页切割，分段转换后合并 MD，降低单次请求内存。
-    :param input_file: 输入文件路径
-    :param output_dir: 输出目录（临时使用）
-    :param backend: "mineru" 调用 MinerU file_parse，"paddle" 调用 PaddleOCR doc_parser
-    :param url: MinerU API 地址（backend=mineru 时使用）
+    :param return_images: 是否同时拉取并保存图片（MinerU 的 return_images + 本地 embed_images）
     :return: {"markdown": str, "filename": str} 或 None
     """
     if not os.path.exists(input_file):
@@ -483,7 +481,7 @@ async def convert_pdf_to_markdown_only(
                         r = await _convert_with_paddle(
                             input_file=chunk_path,
                             output_dir=chunk_out,
-                            embed_images=False,
+                            embed_images=return_images,
                             output_json=False,
                             forced_document_type=None,
                         )
@@ -497,7 +495,7 @@ async def convert_pdf_to_markdown_only(
                             table_enable=table_enable,
                             language=language,
                             url=url,
-                            embed_images=False,
+                            embed_images=return_images,
                         )
                     if r and r.get("content"):
                         parts.append(r["content"])
@@ -520,7 +518,7 @@ async def convert_pdf_to_markdown_only(
         result = await _convert_with_paddle(
             input_file=input_file,
             output_dir=output_dir,
-            embed_images=False,
+            embed_images=return_images,
             output_json=False,
             forced_document_type=None,
         )
@@ -534,7 +532,7 @@ async def convert_pdf_to_markdown_only(
             table_enable=table_enable,
             language=language,
             url=url,
-            embed_images=False,
+            embed_images=return_images,
         )
     if not result or not result.get("content"):
         return None

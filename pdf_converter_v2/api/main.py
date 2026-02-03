@@ -11,6 +11,7 @@ import tempfile
 import uuid
 import base64
 import json
+import zipfile
 from pathlib import Path
 from typing import Optional, List
 from urllib.parse import quote
@@ -244,6 +245,7 @@ async def root():
             "GET /task/{task_id}": "查询任务状态（轮询接口）",
             "GET /task/{task_id}/json": "直接获取JSON数据（返回JSON对象，不下载文件）",
             "GET /download/{task_id}/markdown": "下载Markdown文件",
+            "GET /download/{task_id}/zip": "下载 md+图片 压缩包（需 POST /pdf_to_markdown 时 return_images=true）",
             "GET /download/{task_id}/json": "下载JSON文件",
             "DELETE /task/{task_id}": "删除任务及其临时文件",
             "GET /health": "健康检查"
@@ -555,6 +557,7 @@ async def process_pdf_to_markdown_task(
     crop_header_footer: bool,
     header_ratio: float,
     footer_ratio: float,
+    return_images: bool = False,
 ):
     """后台执行 PDF/图片转 Markdown（仅转 MD，无 doc_type 等）。"""
     try:
@@ -599,6 +602,7 @@ async def process_pdf_to_markdown_task(
             output_dir=output_dir,
             backend=backend,
             url=api_url,
+            return_images=return_images,
         )
         if not result:
             task_status[task_id]["status"] = "failed"
@@ -620,6 +624,23 @@ async def process_pdf_to_markdown_task(
         task_status[task_id]["markdown_file"] = markdown_file_path
         task_status[task_id]["json_data"] = {"markdown": md_content, "filename": filename}
         task_status[task_id]["document_type"] = None
+
+        if return_images:
+            zip_path = os.path.join(output_dir, "markdown_with_images.zip")
+            try:
+                with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for root, _, files in os.walk(output_dir):
+                        for f in files:
+                            if f == "markdown_with_images.zip":
+                                continue
+                            abs_path = os.path.join(root, f)
+                            arcname = os.path.relpath(abs_path, output_dir)
+                            zf.write(abs_path, arcname)
+                task_status[task_id]["zip_file"] = zip_path
+                logger.info(f"[任务 {task_id}] 已打包 md+图片: {zip_path}")
+            except Exception as e:
+                logger.warning(f"[任务 {task_id}] 打包 zip 失败: {e}")
+
         logger.info(f"[任务 {task_id}] PDF 转 Markdown 完成: {markdown_file_path}")
     except Exception as e:
         task_status[task_id]["status"] = "failed"
@@ -815,56 +836,112 @@ async def convert_file(
     )
 
 
+PDF_TO_MARKDOWN_DESCRIPTION = """
+将 **PDF 或图片** 转为纯 Markdown 文本的异步接口。提交后立即返回 `task_id`，不等待转换完成。
+
+## 调用流程
+
+1. **POST 本接口**：上传文件（`multipart/form-data`），请求体需包含 `file` 及可选表单项；响应返回 `task_id`、`status: "pending"`。
+2. **轮询状态**：**GET /task/{task_id}**，直到 `status` 为 `completed` 或 `failed`。
+3. **获取结果**（仅当 `status == "completed"` 时）：
+   - **GET /download/{task_id}/markdown**：下载生成的 `.md` 文件；
+   - **GET /task/{task_id}/json**：获取 JSON `{ "markdown": "全文", "filename": "xxx.md" }`；
+   - 若提交时传了 **return_images=true**：**GET /download/{task_id}/zip** 下载 Markdown + 图片压缩包。
+
+## 参数说明
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| file | file | 是 | PDF 或图片文件（如 PNG、JPG）。 |
+| backend | string | 否 | 识别引擎：`mineru`（默认，MinerU file_parse）或 `paddle`（PaddleOCR doc_parser）。 |
+| remove_watermark | boolean | 否 | 是否先对 PDF 去水印，默认 `false`，仅对 PDF 生效。 |
+| watermark_light_threshold | integer | 否 | 去水印亮度阈值 0–255，默认 200。 |
+| watermark_saturation_threshold | integer | 否 | 去水印饱和度阈值 0–255，默认 30。 |
+| crop_header_footer | boolean | 否 | 是否裁剪页眉页脚，默认 `false`，仅对 PDF 生效。 |
+| header_ratio | number | 否 | 页眉裁剪比例 0–1，如 0.05 表示裁掉顶部 5%，默认 0.05。 |
+| footer_ratio | number | 否 | 页脚裁剪比例 0–1，默认 0.05。 |
+| return_images | boolean | 否 | 是否同时拉取并保存图片；为 `true` 时完成后可下载 zip（md+图片），默认 `false`。 |
+
+## 限制与说明
+
+- **页数**：单文件不超过 300 页，超过将返回 400。
+- **大 PDF**：超过 50 页会按 50 页一段切割后分别转换再合并 MD，以降低 MinerU 端内存占用。
+- 去水印、裁剪页眉页脚仅对 **PDF** 生效，图片类型会忽略这些参数。
+"""
+
+
 @app.post(
     "/pdf_to_markdown",
     tags=["PDF转Markdown"],
     summary="PDF/图片转 Markdown（异步）",
+    description=PDF_TO_MARKDOWN_DESCRIPTION,
     response_model=ConversionResponse,
     responses={
-        200: {"description": "立即返回 task_id，通过 GET /task/{task_id} 轮询，完成后 GET /download/{task_id}/markdown 或 GET /task/{task_id}/json 获取结果"},
-        400: {"description": "文件页数超过 300 页"},
-        500: {"description": "保存文件失败等"},
+        200: {
+            "description": "成功创建任务，返回 task_id。需用 GET /task/{task_id} 轮询，完成后通过 GET /download/{task_id}/markdown 或 GET /task/{task_id}/json 获取结果；若传了 return_images=true 还可通过 GET /download/{task_id}/zip 下载 md+图片包。",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "task_id": "550e8400-e29b-41d4-a716-446655440000",
+                        "status": "pending",
+                        "message": "任务已创建，请使用 GET /task/{task_id} 查询状态，完成后通过 GET /download/{task_id}/markdown 或 GET /task/{task_id}/json 获取结果",
+                        "markdown_file": None,
+                        "json_file": None,
+                        "document_type": None,
+                    }
+                }
+            },
+        },
+        400: {
+            "description": "请求非法：例如文件页数超过 300 页。",
+            "content": {
+                "application/json": {"example": {"detail": "文件页数超过 300 页，拒绝处理"}}
+            },
+        },
+        500: {
+            "description": "服务端错误：如保存上传文件失败、转换过程异常等。",
+            "content": {
+                "application/json": {"example": {"detail": "保存文件失败: ..."}}
+            },
+        },
     },
 )
 async def pdf_to_markdown(
-    file: Annotated[UploadFile, File(description="上传的 PDF 或图片文件")],
+    file: Annotated[UploadFile, File(description="上传的 PDF 或图片文件（必填）")],
     backend: Annotated[
         Optional[Literal["mineru", "paddle"]],
-        Form(description="识别后端：mineru 调用 MinerU file_parse，paddle 调用 PaddleOCR doc_parser")
+        Form(description="识别后端：mineru = MinerU file_parse（默认）；paddle = PaddleOCR doc_parser"),
     ] = "mineru",
     remove_watermark: Annotated[
         bool,
-        Form(description="是否先对 PDF 去水印（仅对 PDF 生效，默认关闭）"),
+        Form(description="是否先对 PDF 去水印，仅对 PDF 生效，默认 false"),
     ] = False,
     watermark_light_threshold: Annotated[
         int,
-        Form(description="去水印亮度阈值 0–255，高于此值的浅色像素视为水印"),
+        Form(description="去水印亮度阈值 0–255，高于此值的浅色像素视为水印，默认 200"),
     ] = 200,
     watermark_saturation_threshold: Annotated[
         int,
-        Form(description="去水印饱和度阈值 0–255，低于此值的低饱和度像素视为水印"),
+        Form(description="去水印饱和度阈值 0–255，低于此值的低饱和度像素视为水印，默认 30"),
     ] = 30,
     crop_header_footer: Annotated[
         bool,
-        Form(description="是否裁剪 PDF 页眉页脚（仅对 PDF 生效，默认关闭）"),
+        Form(description="是否裁剪 PDF 页眉页脚，仅对 PDF 生效，默认 false"),
     ] = False,
     header_ratio: Annotated[
         float,
-        Form(description="页眉裁剪比例 0–1，如 0.05 表示裁掉顶部 5%"),
+        Form(description="页眉裁剪比例 0–1，如 0.05 表示裁掉顶部 5%，默认 0.05"),
     ] = 0.05,
     footer_ratio: Annotated[
         float,
-        Form(description="页脚裁剪比例 0–1，如 0.05 表示裁掉底部 5%"),
+        Form(description="页脚裁剪比例 0–1，如 0.05 表示裁掉底部 5%，默认 0.05"),
     ] = 0.05,
+    return_images: Annotated[
+        bool,
+        Form(description="是否同时拉取并保存图片；为 true 时完成后可通过 GET /download/{task_id}/zip 下载 md+图片 压缩包，默认 false"),
+    ] = False,
 ):
-    """
-    PDF/图片转 Markdown（异步接口）
-    提交后立即返回 task_id，通过 task_id 轮询状态，完成后下载 .md 或取 JSON。
-    - **file**: 上传的 PDF 或图片
-    - **backend**: mineru（默认）/ paddle
-    - **remove_watermark** / **crop_header_footer**: 仅对 PDF 生效
-    流程：POST 本接口 → GET /task/{task_id} 轮询 → 完成后 GET /download/{task_id}/markdown 或 GET /task/{task_id}/json
-    """
+    """PDF/图片转 Markdown（异步）：提交后立即返回 task_id，轮询 GET /task/{task_id} 后通过 GET /download/{task_id}/markdown 或 /zip 获取结果。"""
     task_id = str(uuid.uuid4())
     content_type = file.content_type or ""
     ext_map = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg"}
@@ -907,6 +984,7 @@ async def pdf_to_markdown(
         "temp_dir": temp_dir,
         "output_dir": output_dir,
         "file_path": file_path,
+        "zip_file": None,
     }
 
     asyncio.create_task(
@@ -921,6 +999,7 @@ async def pdf_to_markdown(
             crop_header_footer=crop_header_footer,
             header_ratio=header_ratio,
             footer_ratio=footer_ratio,
+            return_images=return_images,
         )
     )
     logger.info(f"[任务 {task_id}] PDF 转 Markdown 任务已创建，立即返回 task_id")
@@ -994,6 +1073,31 @@ async def download_markdown(task_id: str):
         markdown_file,
         media_type="text/markdown",
         filename=os.path.basename(markdown_file)
+    )
+
+
+@app.get("/download/{task_id}/zip")
+async def download_zip(task_id: str):
+    """
+    下载 Markdown + 图片 压缩包（仅当提交任务时传了 return_images=true 时存在）
+
+    - **task_id**: 任务ID
+    """
+    if task_id not in task_status:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    status_info = task_status[task_id]
+    if status_info["status"] != "completed":
+        raise HTTPException(status_code=400, detail="任务尚未完成")
+    zip_file = status_info.get("zip_file")
+    if not zip_file or not os.path.exists(zip_file):
+        raise HTTPException(
+            status_code=404,
+            detail="未生成 zip（请在 POST /pdf_to_markdown 时传 return_images=true）",
+        )
+    return FileResponse(
+        zip_file,
+        media_type="application/zip",
+        filename="markdown_with_images.zip",
     )
 
 
