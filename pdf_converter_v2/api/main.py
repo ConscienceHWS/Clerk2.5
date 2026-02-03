@@ -730,7 +730,16 @@ async def convert_file(
     )
 
 
-@app.post("/pdf_to_markdown")
+@app.post(
+    "/pdf_to_markdown",
+    tags=["PDF转Markdown"],
+    summary="PDF/图片转 Markdown（同步）",
+    responses={
+        200: {"description": "format=file 时返回 .md 文件；format=json 时返回 JSON { markdown, filename }"},
+        400: {"description": "文件页数超过 20 页"},
+        500: {"description": "转换失败"},
+    },
+)
 async def pdf_to_markdown(
     file: Annotated[UploadFile, File(description="上传的 PDF 或图片文件")],
     backend: Annotated[
