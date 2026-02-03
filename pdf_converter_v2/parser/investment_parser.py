@@ -487,28 +487,10 @@ def parse_safety_feasibility_approval_investment(markdown_content: str) -> Feasi
         logger.warning("[安全可研批复投资] 未找到包含投资估算的表格")
         return record
 
-    if len(all_matching_tables) == 1:
-        target_table = all_matching_tables[0][1]
-    else:
-        logger.info(f"[安全可研批复投资] 发现 {len(all_matching_tables)} 个投资估算表格，将进行合并")
-        target_table = []
-        first_table = True
-        for table_idx, table in all_matching_tables:
-            if first_table:
-                target_table.extend(table)
-                first_table = False
-            else:
-                header_end_idx = 0
-                for row_idx, row in enumerate(table):
-                    row_text = " ".join([str(cell) for cell in row]).replace(" ", "")
-                    if "序号" in row_text or "项目名称" in row_text or "建设规模" in row_text:
-                        header_end_idx = row_idx + 1
-                    elif len(row) > 0:
-                        first_cell = str(row[0]).strip()
-                        if first_cell in ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]:
-                            break
-                target_table.extend(table[header_end_idx:])
-        logger.info(f"[安全可研批复投资] 合并后总行数: {len(target_table)}")
+    # 只使用第一个投资估算表，避免多表合并导致 data 中重复出现「变电站工程」「线路工程」
+    target_table = all_matching_tables[0][1]
+    if len(all_matching_tables) > 1:
+        logger.info(f"[安全可研批复投资] 发现 {len(all_matching_tables)} 个投资估算表格，仅使用第一个表格避免重复")
 
     header_row_idx = -1
     no_idx = name_idx = overhead_line_idx = bay_idx = substation_idx = optical_cable_idx = -1
