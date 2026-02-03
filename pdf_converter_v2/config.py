@@ -13,7 +13,7 @@ DEFAULT_DPI = 200
 DEFAULT_MAX_PAGES = 10
 
 # v2 特有配置（外部API相关）
-DEFAULT_API_URL = os.getenv("API_URL", "http://192.168.2.3:5282")
+DEFAULT_API_URL = os.getenv("API_URL", "http://127.0.0.1:5282")
 DEFAULT_BACKEND = os.getenv("BACKEND", "vlm-vllm-async-engine")
 DEFAULT_PARSE_METHOD = os.getenv("PARSE_METHOD", "auto")
 DEFAULT_START_PAGE_ID = int(os.getenv("START_PAGE_ID", "0"))

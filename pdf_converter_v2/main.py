@@ -32,7 +32,7 @@ def main():
     parser.add_argument('--max-pages', type=int, default=10, help='最大转换页数（默认: 10，通过end_page_id控制）')
     
     # API选项
-    parser.add_argument('--url', default='http://192.168.2.3:8000', help='API服务器URL（默认: http://192.168.2.3:8000）')
+    parser.add_argument('--url', default='http://127.0.0.1:5282', help='API服务器URL（默认: http://127.0.0.1:5282）')
     parser.add_argument('--backend', default='vlm-vllm-async-engine', help='处理后端（默认: vlm-vllm-async-engine）')
     parser.add_argument('--parse-method', default='auto', help='解析方法（默认: auto）')
     parser.add_argument('--start-page-id', type=int, default=0, help='起始页ID（默认: 0）')

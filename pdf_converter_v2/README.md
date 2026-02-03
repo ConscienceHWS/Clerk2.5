@@ -4,7 +4,7 @@ PDF转换工具 v2版本 - 使用新的API接口进行PDF转换
 
 ## 主要特性
 
-v2版本通过调用新的API接口（`http://192.168.2.3:8000/file_parse`）进行PDF转换，API返回zip文件，然后从zip中提取md文件进行原有的json解析逻辑。
+v2版本通过调用新的API接口（`http://127.0.0.1:5282/file_parse`）进行PDF转换，API返回zip文件，然后从zip中提取md文件进行原有的json解析逻辑。
 
 ## 主要改进
 
@@ -32,7 +32,7 @@ python -m pdf_converter_v2 input.pdf -o ./output
 python -m pdf_converter_v2 input.pdf --output-json
 
 # 自定义API服务器地址
-python -m pdf_converter_v2 input.pdf --url http://192.168.2.3:8000
+python -m pdf_converter_v2 input.pdf --url http://127.0.0.1:5282
 
 # 更多选项
 python -m pdf_converter_v2 input.pdf --help
@@ -49,7 +49,7 @@ async def main():
         input_file="input.pdf",
         output_dir="./output",
         output_json=True,
-        url="http://192.168.2.3:8000"
+        url="http://127.0.0.1:5282"
     )
     print(f"Markdown文件: {result['markdown_file']}")
     if result.get('json_file'):
@@ -103,7 +103,7 @@ curl "http://localhost:4214/task/{task_id}/json"
 
 v2版本内部调用的外部API接口：
 
-- **URL**: `http://192.168.2.3:8000/file_parse`
+- **URL**: `http://127.0.0.1:5282/file_parse`
 - **方法**: POST
 - **Content-Type**: multipart/form-data
 - **返回格式**: zip文件
@@ -295,7 +295,7 @@ sudo journalctl -u pdf-converter-v2 -f
 ### 环境变量配置
 
 主要环境变量：
-- `API_URL`: 外部API地址（默认: http://192.168.2.3:8000）
+- `API_URL`: 外部API地址（默认: http://127.0.0.1:5282）
 - `API_HOST`: 服务监听地址（默认: 0.0.0.0）
 - `API_PORT`: 服务监听端口（默认: 4214）
 - `LOG_LEVEL`: 日志级别（默认: info）
@@ -303,7 +303,7 @@ sudo journalctl -u pdf-converter-v2 -f
 
 ## 注意事项
 
-1. **API服务器**: 确保外部API服务器（`http://192.168.2.3:8000`）正常运行
+1. **API服务器**: 确保外部API服务器（`http://127.0.0.1:5282`）正常运行
 2. **网络连接**: v2版本需要网络连接以访问外部API
 3. **页数限制**: 文件页数不能超过300页，超过会自动拒绝
 4. **文件格式**: 支持PDF和常见图片格式（PNG、JPG、JPEG、BMP、TIFF、WEBP）

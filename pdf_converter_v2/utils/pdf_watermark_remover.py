@@ -6,9 +6,58 @@ PDF去水印工具
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 import tempfile
 import shutil
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+
+def _pdf_to_pil_images(input_pdf: str, dpi: int = 200) -> Optional[List["Image.Image"]]:
+    """
+    将 PDF 转为 PIL 图片列表。优先 pdf2image（需 poppler），失败时用 pypdfium2（无需 poppler）。
+    """
+    # 1) 尝试 pdf2image（需系统安装 poppler-utils）
+    try:
+        from pdf2image import convert_from_path
+        return convert_from_path(input_pdf, dpi=dpi)
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "pdfinfo" in err_msg or "poppler" in err_msg or "no such file" in err_msg:
+            pass  # 无 poppler，尝试 pypdfium2
+        else:
+            raise
+    # 2) 备用：pypdfium2（无需 poppler）
+    try:
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(input_pdf)
+        try:
+            scale = dpi / 72.0
+            images = []
+            for i in range(len(pdf)):
+                page = pdf[i]
+                bitmap = page.render(scale=scale)
+                try:
+                    pil_image = bitmap.to_pil()
+                    images.append(pil_image)
+                finally:
+                    bitmap.close()
+            return images
+        finally:
+            try:
+                pdf.close()
+            except Exception:
+                pass
+    except ImportError:
+        raise FileNotFoundError(
+            "PDF 转图片需要 pdf2image+poppler 或 pypdfium2。"
+            " 安装其一：apt install poppler-utils 或 pip install pypdfium2"
+        )
+
 
 def remove_watermark_from_pdf(
     input_pdf: str,
@@ -36,25 +85,22 @@ def remove_watermark_from_pdf(
         bool: 是否成功
     """
     try:
-        # 导入必要的库
-        from pdf2image import convert_from_path
         from PIL import Image
-        import PyPDF2
         from utils.image_preprocessor import remove_watermark, check_opencv_available
         
-        # 检查OpenCV是否可用
         if not check_opencv_available():
             print("⚠ OpenCV 未安装，无法进行去水印处理")
             return False
         
-        # 创建临时目录
         temp_dir = tempfile.mkdtemp(prefix="pdf_watermark_")
         temp_path = Path(temp_dir)
         
         try:
             print(f"正在将PDF转换为图片（DPI={dpi}）...")
-            # 将PDF转换为图片
-            images = convert_from_path(input_pdf, dpi=dpi)
+            images = _pdf_to_pil_images(input_pdf, dpi=dpi)
+            if not images:
+                print("⚠ 未得到任何页面图片")
+                return False
             print(f"✓ 转换完成，共 {len(images)} 页")
             
             # 处理每一页
@@ -113,7 +159,10 @@ def remove_watermark_from_pdf(
     
     except ImportError as e:
         print(f"⚠ 缺少必要的库: {e}")
-        print("请安装: pip install pdf2image pillow PyPDF2 opencv-python")
+        print("请安装: pip install pypdfium2 或 pdf2image pillow PyPDF2 opencv-python；pdf2image 需系统安装 poppler-utils")
+        return False
+    except FileNotFoundError as e:
+        print(f"⚠ {e}")
         return False
     except Exception as e:
         print(f"⚠ 去水印处理失败: {e}")
@@ -150,7 +199,6 @@ def crop_header_footer_from_pdf(
         bool: 是否成功
     """
     try:
-        from pdf2image import convert_from_path
         from PIL import Image
         from utils.image_preprocessor import crop_header_footer, check_opencv_available
 
@@ -163,7 +211,10 @@ def crop_header_footer_from_pdf(
 
         try:
             print(f"正在将 PDF 转换为图片（DPI={dpi}）...")
-            images = convert_from_path(input_pdf, dpi=dpi)
+            images = _pdf_to_pil_images(input_pdf, dpi=dpi)
+            if not images:
+                print("⚠ 未得到任何页面图片")
+                return False
             print(f"✓ 转换完成，共 {len(images)} 页")
 
             processed_images = []
@@ -206,7 +257,10 @@ def crop_header_footer_from_pdf(
                 print(f"⚠ 清理临时目录失败: {e}")
     except ImportError as e:
         print(f"⚠ 缺少必要的库: {e}")
-        print("请安装: pip install pdf2image pillow opencv-python")
+        print("请安装: pip install pypdfium2 或 pdf2image pillow opencv-python；pdf2image 需系统安装 poppler-utils")
+        return False
+    except FileNotFoundError as e:
+        print(f"⚠ {e}")
         return False
     except Exception as e:
         print(f"⚠ 页眉页脚裁剪失败: {e}")

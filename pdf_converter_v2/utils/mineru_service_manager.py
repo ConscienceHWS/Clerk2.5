@@ -26,7 +26,7 @@ logger = get_logger("pdf_converter_v2.mineru_manager")
 MINERU_SERVICE_NAME = "mineru-api.service"
 
 # MinerU API 地址和端口（用于健康检查）
-MINERU_API_HOST = os.getenv("MINERU_API_HOST", "192.168.2.3")
+MINERU_API_HOST = os.getenv("MINERU_API_HOST", "127.0.0.1")
 MINERU_API_PORT = int(os.getenv("MINERU_API_PORT", "5282"))
 
 # 空闲超时时间（秒），超过此时间无任务则停止服务
