@@ -329,7 +329,7 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
                 op_list = parse_operational_conditions(markdown_content, require_title=False)
             serialized = [oc.to_dict() if hasattr(oc, "to_dict") else oc for oc in (op_list or [])]
             result = {"document_type": forced_document_type, "data": {"operationalConditions": serialized}}
-        elif forced_document_type in ["fsApproval", "fsReview", "pdApproval", "safetyFsApproval"]:
+        elif forced_document_type in ["fsApproval", "fsReview", "pdApproval"]:
             # 投资估算类型处理
             logger.info(f"[JSON转换] 处理投资估算类型: {forced_document_type}")
             logger.debug(f"[JSON转换] Markdown内容长度: {len(markdown_content)} 字符")
@@ -338,13 +338,13 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
             
             if investment_record:
                 data = investment_record.to_dict()
-                # safetyFsApproval 可能返回 {"projectInfo": {...}, "data": [...]}，取列表用于条数与摘要
-                record_list = data.get("data", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-                logger.info(f"[JSON转换] 投资估算解析成功，共 {len(record_list)} 条记录")
-                if record_list:
-                    for idx, item in enumerate(record_list[:3]):
-                        if isinstance(item, dict):
-                            logger.debug(f"[JSON转换] 记录 {idx+1}: No={item.get('No', '')}, Name={item.get('name', '')}, Level={item.get('Level', '')}")
+                logger.info(f"[JSON转换] 投资估算解析成功，共 {len(data)} 条记录")
+                
+                # 输出前3条记录的摘要
+                if data:
+                    for idx, item in enumerate(data[:3]):
+                        logger.debug(f"[JSON转换] 记录 {idx+1}: No={item.get('No', '')}, Name={item.get('name', '')}, Level={item.get('Level', '')}")
+                
                 result = {"document_type": forced_document_type, "data": data}
             else:
                 logger.error("[JSON转换] 投资估算解析失败：parse_investment_record 返回 None")
@@ -432,7 +432,7 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
     elif doc_type == "emRec":
         data = parse_electromagnetic_detection_record(markdown_content).to_dict()
         result = {"document_type": doc_type, "data": data}
-    elif doc_type in ["fsApproval", "fsReview", "pdApproval", "safetyFsApproval"]:
+    elif doc_type in ["fsApproval", "fsReview", "pdApproval"]:
         # 新增：投资估算类型
         logger.info(f"[JSON转换] 检测到投资估算类型: {doc_type}")
         logger.debug(f"[JSON转换] Markdown内容长度: {len(markdown_content)} 字符")
@@ -441,13 +441,13 @@ def parse_markdown_to_json(markdown_content: str, first_page_image: Optional[Ima
         
         if investment_record:
             data = investment_record.to_dict()
-            # safetyFsApproval 可能返回 {"projectInfo": {...}, "data": [...]}，取列表用于条数与摘要
-            record_list = data.get("data", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-            logger.info(f"[JSON转换] 投资估算解析成功，共 {len(record_list)} 条记录")
-            if record_list:
-                for idx, item in enumerate(record_list[:3]):
-                    if isinstance(item, dict):
-                        logger.debug(f"[JSON转换] 记录 {idx+1}: No={item.get('No', '')}, Name={item.get('name', '')}, Level={item.get('Level', '')}")
+            logger.info(f"[JSON转换] 投资估算解析成功，共 {len(data)} 条记录")
+            
+            # 输出前3条记录的摘要
+            if data:
+                for idx, item in enumerate(data[:3]):
+                    logger.debug(f"[JSON转换] 记录 {idx+1}: No={item.get('No', '')}, Name={item.get('name', '')}, Level={item.get('Level', '')}")
+            
             result = {"document_type": doc_type, "data": data}
         else:
             logger.error("[JSON转换] 投资估算解析失败：parse_investment_record 返回 None")

@@ -5,7 +5,6 @@
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import time
 import random
@@ -45,30 +44,17 @@ except ImportError:
 MINERU_LOCK_FILE = "/tmp/mineru_service_lock"
 MINERU_COUNT_FILE = "/tmp/mineru_service_count"
 
-def _get_paddleocr_executable() -> str:
-    """返回 paddleocr 可执行文件路径或命令名，供 subprocess 使用。
-    当以 systemd 等方式运行时 PATH 可能不包含 venv/bin，故优先使用当前 Python 同目录下的 paddleocr。
-    可通过环境变量 PADDLEOCR_CMD 显式指定（完整路径或命令名）。"""
-    cmd = os.getenv("PADDLEOCR_CMD", "").strip()
-    if cmd:
-        return cmd
-    # 与当前 Python 同目录（venv/bin）下的 paddleocr
-    bin_dir = os.path.dirname(os.path.abspath(sys.executable))
-    candidate = os.path.join(bin_dir, "paddleocr")
-    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-        return candidate
-    return "paddleocr"
-
+# 是否在调用 PaddleOCR 前停止 MinerU、调用后重启，以释放显存。显存足够时可关闭。
+# 环境变量 ENABLE_MINERU_SERVICE_MANAGEMENT=1 或 true 时启用；默认不启用。
+def _mineru_service_management_enabled() -> bool:
+    v = os.getenv("ENABLE_MINERU_SERVICE_MANAGEMENT", "0").strip().lower()
+    return v in ("1", "true", "yes")
 
 # PaddleOCR 推理设备：NPU 环境下需设为 npu 或 npu:0，否则会走 CPU 并可能段错误
-# 通过环境变量 PADDLE_OCR_DEVICE 指定；未设置时根据设备环境自动选择（NPU 下默认 npu:0）
+# 通过环境变量 PADDLE_OCR_DEVICE 指定，例如：export PADDLE_OCR_DEVICE=npu:0
 def _paddle_ocr_device_args() -> list:
     """返回 PaddleOCR 命令的 --device 参数列表（若未设置则返回空列表）"""
     device = os.getenv("PADDLE_OCR_DEVICE", "").strip()
-    if not device:
-        from .device_env import is_npu
-        if is_npu():
-            device = "npu:0"
     if device:
         return ["--device", device]
     return []
@@ -151,10 +137,12 @@ def _decrement_service_count(lock_file: object) -> int:
 
 def stop_mineru_service() -> bool:
     """停止mineru-api.service以释放GPU内存（线程安全）
-    
+    可通过环境变量 ENABLE_MINERU_SERVICE_MANAGEMENT=1 启用；默认不执行。
     Returns:
-        True表示成功停止或已停止，False表示失败
+        True表示成功停止或已停止，False表示失败或未启用
     """
+    if not _mineru_service_management_enabled():
+        return False
     lock_file = _acquire_service_lock()
     if not lock_file:
         # 如果无法获取锁，等待一小段时间后检查服务状态
@@ -220,10 +208,12 @@ def stop_mineru_service() -> bool:
 
 def start_mineru_service() -> bool:
     """启动mineru-api.service（线程安全）
-    
+    可通过环境变量 ENABLE_MINERU_SERVICE_MANAGEMENT=1 启用；默认不执行。
     Returns:
-        True表示成功启动或已启动，False表示失败
+        True表示成功启动或已启动，False表示失败或未启用
     """
+    if not _mineru_service_management_enabled():
+        return False
     lock_file = _acquire_service_lock()
     if not lock_file:
         # 如果无法获取锁，等待一小段时间后检查服务状态
@@ -536,7 +526,7 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
         # 构建paddleocr命令，添加所有参数（NPU 下需加 --device npu:0，否则走 CPU 易段错误）
         # PaddleOCR会在save_path下创建目录，文件保存在该目录内
         cmd = [
-            _get_paddleocr_executable(), "doc_parser", "-i", image_path,
+            "paddleocr", "doc_parser", "-i", image_path,
             "--precision", "fp32",
             "--use_doc_unwarping", "False",
             "--use_doc_orientation_classify", "True",
@@ -877,7 +867,7 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
             return None, None
 
         # 构建paddleocr ocr命令（NPU 下需加 --device npu:0，否则走 CPU 易段错误）
-        cmd = [_get_paddleocr_executable(), "ocr", "-i", image_path, "--save_path", save_path] + _paddle_ocr_device_args()
+        cmd = ["paddleocr", "ocr", "-i", image_path, "--save_path", save_path] + _paddle_ocr_device_args()
 
         logger.info(f"[PaddleOCR OCR] 执行命令: {' '.join(cmd)}")
 
@@ -973,7 +963,7 @@ def call_paddleocr_doc_parser_for_text(image_path: str, save_path: str) -> tuple
         
         # 构建paddleocr doc_parser命令（NPU 下需加 --device npu:0，否则走 CPU 易段错误）
         cmd = [
-            _get_paddleocr_executable(), "doc_parser", "-i", image_path,
+            "paddleocr", "doc_parser", "-i", image_path,
             "--precision", "fp32",
             "--use_doc_unwarping", "False",
             "--use_doc_orientation_classify", "True",

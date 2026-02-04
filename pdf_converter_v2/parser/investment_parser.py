@@ -2,11 +2,10 @@
 
 """
 投资估算表格解析模块
-支持四种类型:
+支持三种类型:
 1. 可研批复投资估算
 2. 可研评审投资估算
 3. 初设批复概算投资
-4. 安评可研批复投资估算
 """
 
 from typing import List, Optional
@@ -34,14 +33,8 @@ def detect_investment_type(markdown_content: str) -> Optional[str]:
             - "fsApproval" - 可研批复
             - "fsReview" - 可研评审
             - "pdApproval" - 初设批复
-            - "safetyFsApproval" - 安评可研批复
             - None - 无法识别
     """
-    # 安评可研批复（先于可研批复判断，结构同可研批复）
-    if "安评可研批复" in markdown_content or ("安全评价" in markdown_content and "可行性研究报告的批复" in markdown_content):
-        if "架空线" in markdown_content or "间隔" in markdown_content:
-            logger.info("[投资估算] 检测到类型: 安评可研批复投资估算")
-            return "safetyFsApproval"
     # 检查标题关键词
     if "可研批复" in markdown_content or "可行性研究报告的批复" in markdown_content:
         # 检查是否有建设规模相关列（可研批复特有）
@@ -424,167 +417,6 @@ def parse_feasibility_approval_investment(markdown_content: str) -> FeasibilityA
     return record
 
 
-def parse_safety_feasibility_approval_investment(markdown_content: str) -> FeasibilityApprovalInvestment:
-    """
-    解析安全可研批复投资估算（湖北省格式）
-    
-    特点：
-    - 没有顶层大类（Level=1），直接从二级分类开始
-    - 中文序号（一、二）表示二级分类（如"变电工程"、"线路工程"）
-    - 阿拉伯数字（1、2、3）表示具体项目
-    - 列名使用"项目名称"和"静态合计/动态合计"
-    - 先扫描项目信息表提取工程名称、项目单位、设计单位
-    
-    返回结构：
-    - Level 1: 二级分类（如"变电工程"、"线路工程"）
-    - Level 2: 具体项目（如"襄阳连云220千伏变电站新建工程"）
-    """
-    record = FeasibilityApprovalInvestment()
-    tables = extract_table_with_rowspan_colspan(markdown_content)
-    if not tables:
-        logger.warning("[安全可研批复投资] 未能提取出任何表格内容")
-        return record
-
-    # 首先尝试提取项目基本信息表格
-    for table_idx, table in enumerate(tables):
-        if len(table) < 2:
-            continue
-        table_text = ""
-        for row in table:
-            table_text += " ".join([str(cell) for cell in row])
-        table_text_no_space = table_text.replace(" ", "").replace("(", "（").replace(")", "）")
-        if "工程（项目）名称" in table_text_no_space or "工程项目名称" in table_text_no_space:
-            logger.info(f"[安全可研批复投资] 找到项目信息表格 (表格{table_idx+1})")
-            for row in table:
-                if len(row) >= 2:
-                    key = str(row[0]).strip()
-                    value = str(row[1]).strip() if len(row) > 1 else ""
-                    if "工程" in key and "名称" in key:
-                        record.projectName = value
-                        logger.info(f"[安全可研批复投资] 提取工程名称: {value}")
-                    elif "项目单位" in key:
-                        record.projectUnit = value
-                        logger.info(f"[安全可研批复投资] 提取项目单位: {value}")
-                    elif "设计单位" in key:
-                        record.designUnit = value
-                        logger.info(f"[安全可研批复投资] 提取设计单位: {value}")
-            break
-
-    # 找到所有投资估算表格并合并
-    all_matching_tables = []
-    for table_idx, table in enumerate(tables):
-        table_text = ""
-        for row in table:
-            table_text += " ".join([str(cell) for cell in row])
-        table_text_no_space = table_text.replace(" ", "")
-        has_name_col = "项目名称" in table_text_no_space
-        has_investment_col = ("静态合计" in table_text_no_space or "静态投资" in table_text_no_space)
-        if has_name_col and has_investment_col:
-            all_matching_tables.append((table_idx, table))
-            logger.info(f"[安全可研批复投资] 找到投资估算表格 (表格{table_idx+1}), 行数: {len(table)}")
-
-    if not all_matching_tables:
-        logger.warning("[安全可研批复投资] 未找到包含投资估算的表格")
-        return record
-
-    # 只使用第一个投资估算表，避免多表合并导致 data 中重复出现「变电站工程」「线路工程」
-    target_table = all_matching_tables[0][1]
-    if len(all_matching_tables) > 1:
-        logger.info(f"[安全可研批复投资] 发现 {len(all_matching_tables)} 个投资估算表格，仅使用第一个表格避免重复")
-
-    header_row_idx = -1
-    no_idx = name_idx = overhead_line_idx = bay_idx = substation_idx = optical_cable_idx = -1
-    static_investment_idx = dynamic_investment_idx = -1
-    construction_project_cost_idx = equipment_purchase_cost_idx = installation_project_cost_idx = other_expenses_idx = -1
-
-    for row_idx in range(min(5, len(target_table))):
-        row = target_table[row_idx]
-        row_text = " ".join([str(cell) for cell in row])
-        row_text_no_space = row_text.replace(" ", "")
-        for col_idx, cell in enumerate(row):
-            cell_text = str(cell).strip()
-            cell_text_no_space = cell_text.replace(" ", "")
-            if "序号" in cell_text and no_idx == -1:
-                no_idx = col_idx
-            elif "项目名称" in cell_text_no_space and name_idx == -1:
-                name_idx = col_idx
-            elif "架空线" in cell_text_no_space and overhead_line_idx == -1:
-                overhead_line_idx = col_idx
-            elif "间隔" in cell_text and bay_idx == -1:
-                bay_idx = col_idx
-            elif "变电" in cell_text and substation_idx == -1:
-                substation_idx = col_idx
-            elif "光缆" in cell_text and optical_cable_idx == -1:
-                optical_cable_idx = col_idx
-            elif ("静态投资" in cell_text_no_space or "静态合计" in cell_text_no_space) and static_investment_idx == -1:
-                static_investment_idx = col_idx
-            elif ("动态投资" in cell_text_no_space or "动态合计" in cell_text_no_space) and dynamic_investment_idx == -1:
-                dynamic_investment_idx = col_idx
-            elif "建筑工程费" in cell_text_no_space and construction_project_cost_idx == -1:
-                construction_project_cost_idx = col_idx
-            elif "设备购置费" in cell_text_no_space and equipment_purchase_cost_idx == -1:
-                equipment_purchase_cost_idx = col_idx
-            elif "安装工程费" in cell_text_no_space and installation_project_cost_idx == -1:
-                installation_project_cost_idx = col_idx
-            elif ("其他费用" in cell_text_no_space or "合计" == cell_text_no_space) and other_expenses_idx == -1:
-                if "其他费用" in cell_text_no_space:
-                    other_expenses_idx = col_idx
-        if ("序号" in row_text or "项目名称" in row_text_no_space) and header_row_idx == -1:
-            header_row_idx = row_idx
-
-    for row_idx in range(min(5, len(target_table))):
-        row = target_table[row_idx]
-        if len(row) > 0:
-            first_cell = str(row[0]).strip()
-            if first_cell and first_cell not in ["序号", ""] and (first_cell in ["一", "二", "三", "四", "五"] or first_cell.isdigit()):
-                header_row_idx = row_idx - 1
-                break
-
-    if header_row_idx == -1:
-        logger.warning("[安全可研批复投资] 未找到表头行")
-        return record
-
-    for row_idx in range(header_row_idx + 1, len(target_table)):
-        row = target_table[row_idx]
-        if len(row) < 3:
-            continue
-        name = str(row[name_idx]).strip() if name_idx >= 0 and name_idx < len(row) else ""
-        if not name or name in ["", "nan", "None"]:
-            continue
-        no = str(row[no_idx]).strip() if no_idx >= 0 and no_idx < len(row) else ""
-        level_input = (no + name) if no else name
-        level = determine_level(level_input, name, strict_mode=False)
-        item = InvestmentItem()
-        item.no = no
-        item.name = name
-        item.level = level
-        if overhead_line_idx >= 0 and overhead_line_idx < len(row):
-            item.constructionScaleOverheadLine = str(row[overhead_line_idx]).strip()
-        if bay_idx >= 0 and bay_idx < len(row):
-            item.constructionScaleBay = str(row[bay_idx]).strip()
-        if substation_idx >= 0 and substation_idx < len(row):
-            item.constructionScaleSubstation = str(row[substation_idx]).strip()
-        if optical_cable_idx >= 0 and optical_cable_idx < len(row):
-            item.constructionScaleOpticalCable = str(row[optical_cable_idx]).strip()
-        if static_investment_idx >= 0 and static_investment_idx < len(row):
-            item.staticInvestment = clean_number_string(str(row[static_investment_idx]))
-        if dynamic_investment_idx >= 0 and dynamic_investment_idx < len(row):
-            item.dynamicInvestment = clean_number_string(str(row[dynamic_investment_idx]))
-        if construction_project_cost_idx >= 0 and construction_project_cost_idx < len(row):
-            item.constructionProjectCost = clean_number_string(str(row[construction_project_cost_idx]))
-        if equipment_purchase_cost_idx >= 0 and equipment_purchase_cost_idx < len(row):
-            item.equipmentPurchaseCost = clean_number_string(str(row[equipment_purchase_cost_idx]))
-        if installation_project_cost_idx >= 0 and installation_project_cost_idx < len(row):
-            item.installationProjectCost = clean_number_string(str(row[installation_project_cost_idx]))
-        if other_expenses_idx >= 0 and other_expenses_idx < len(row):
-            item.otherExpenses = clean_number_string(str(row[other_expenses_idx]))
-        record.items.append(item)
-        logger.info(f"[安全可研批复投资] 解析到数据: No={item.no}, Name={item.name}, Level={item.level}")
-
-    logger.info(f"[安全可研批复投资] 共解析到 {len(record.items)} 条数据")
-    return record
-
-
 def parse_feasibility_review_investment(markdown_content: str) -> FeasibilityReviewInvestment:
     """
     解析可研评审投资估算
@@ -962,7 +794,6 @@ def parse_investment_record(markdown_content: str, investment_type: Optional[str
             - "fsApproval" - 可研批复
             - "fsReview" - 可研评审
             - "pdApproval" - 初设批复
-            - "safetyFsApproval" - 安评可研批复
     
     Returns:
         解析后的记录对象
@@ -990,9 +821,6 @@ def parse_investment_record(markdown_content: str, investment_type: Optional[str
     result = None
     if investment_type == "fsApproval":
         result = parse_feasibility_approval_investment(markdown_content)
-    elif investment_type == "safetyFsApproval":
-        # 安评可研批复使用独立解析（湖北省格式，含项目信息表）
-        result = parse_safety_feasibility_approval_investment(markdown_content)
     elif investment_type == "fsReview":
         result = parse_feasibility_review_investment(markdown_content)
     elif investment_type == "pdApproval":

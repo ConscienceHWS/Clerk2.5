@@ -1,20 +1,27 @@
-# MinerU file_parse API - 最简 systemd 服务（NVIDIA GPU）
-# 安装：sudo cp mineru-api.service /etc/systemd/system/
-#       sudo systemctl daemon-reload && sudo systemctl enable --now mineru-api
+# MinerU file_parse API - systemd 服务
+# 仅适用于宿主机（已用 systemd 作为 init）。Docker 容器内无 systemd，请改用 scripts/start_mineru_in_container.sh
+# 工作目录：/root/work/Clerk2.5
+#
+# 安装步骤（在宿主机上，且以 systemd 启动）：
+#   sudo cp mineru-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable mineru-api
+#   sudo systemctl start mineru-api
+#   sudo systemctl status mineru-api
+#
+# 若本机 simsimd/scikit_learn 的 libgomp 路径不同，请修改 Environment=LD_PRELOAD
 
 [Unit]
-Description=MinerU file_parse API
+Description=MinerU file_parse API (uvicorn)
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/root/workspeac/Clerk2.5
-Environment=MINERU_MODEL_SOURCE=modelscope
-# 不加载 vLLM 插件，避免 PaddleX GenAI 插件在纯 NVIDIA 环境下报错
-Environment=VLLM_PLUGINS=
-# 跳过模型源连通性检查，加快启动（可选）
-Environment=PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
-ExecStart=/root/workspeac/Clerk2.5/.venv_paddleocr/bin/mineru-api --host 0.0.0.0 --port 5282
+WorkingDirectory=/root/work/Clerk2.5
+# NPU/容器内需预加载 libgomp，避免 static TLS 报错
+Environment=LD_PRELOAD=/usr/local/lib/python3.10/dist-packages/simsimd.libs/libgomp-a49a47f9.so.1.0.0:/usr/local/lib/python3.10/dist-packages/scikit_learn.libs/libgomp-d22c30c5.so.1.0.0
+Environment=PYTHONPATH=/root/work/Clerk2.5
+ExecStart=/usr/bin/python3 -m uvicorn mineru.cli.fast_api:app --host 0.0.0.0 --port 5282
 Restart=on-failure
 RestartSec=5
 User=root

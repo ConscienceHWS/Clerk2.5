@@ -297,6 +297,7 @@ sudo journalctl -u pdf-converter-v2 -f
 主要环境变量：
 - `API_URL`: 外部API地址（默认: http://127.0.0.1:5282）
 - `API_HOST`: 服务监听地址（默认: 0.0.0.0）
+- `ENABLE_MINERU_SERVICE_MANAGEMENT`: 是否在调用 PaddleOCR 前停止 MinerU、调用后重启以释放显存；设为 `1` 或 `true` 时启用，默认不启用（显存足够时无需关闭 MinerU）
 - `API_PORT`: 服务监听端口（默认: 4214）
 - `LOG_LEVEL`: 日志级别（默认: info）
 - `PDF_CONVERTER_LOG_DIR`: 日志目录（默认: ./logs）
