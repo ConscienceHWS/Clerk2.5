@@ -5,6 +5,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import random
@@ -43,6 +44,21 @@ except ImportError:
 # 用于管理mineru服务状态的锁文件路径
 MINERU_LOCK_FILE = "/tmp/mineru_service_lock"
 MINERU_COUNT_FILE = "/tmp/mineru_service_count"
+
+def _get_paddleocr_executable() -> str:
+    """返回 paddleocr 可执行文件路径或命令名，供 subprocess 使用。
+    当以 systemd 等方式运行时 PATH 可能不包含 venv/bin，故优先使用当前 Python 同目录下的 paddleocr。
+    可通过环境变量 PADDLEOCR_CMD 显式指定（完整路径或命令名）。"""
+    cmd = os.getenv("PADDLEOCR_CMD", "").strip()
+    if cmd:
+        return cmd
+    # 与当前 Python 同目录（venv/bin）下的 paddleocr
+    bin_dir = os.path.dirname(os.path.abspath(sys.executable))
+    candidate = os.path.join(bin_dir, "paddleocr")
+    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        return candidate
+    return "paddleocr"
+
 
 # PaddleOCR 推理设备：NPU 环境下需设为 npu 或 npu:0，否则会走 CPU 并可能段错误
 # 通过环境变量 PADDLE_OCR_DEVICE 指定；未设置时根据设备环境自动选择（NPU 下默认 npu:0）
@@ -520,7 +536,7 @@ def call_paddleocr(image_path: str) -> Optional[Dict[str, Any]]:
         # 构建paddleocr命令，添加所有参数（NPU 下需加 --device npu:0，否则走 CPU 易段错误）
         # PaddleOCR会在save_path下创建目录，文件保存在该目录内
         cmd = [
-            "paddleocr", "doc_parser", "-i", image_path,
+            _get_paddleocr_executable(), "doc_parser", "-i", image_path,
             "--precision", "fp32",
             "--use_doc_unwarping", "False",
             "--use_doc_orientation_classify", "True",
@@ -861,7 +877,7 @@ def call_paddleocr_ocr(image_path: str, save_path: str) -> tuple[Optional[List[s
             return None, None
 
         # 构建paddleocr ocr命令（NPU 下需加 --device npu:0，否则走 CPU 易段错误）
-        cmd = ["paddleocr", "ocr", "-i", image_path, "--save_path", save_path] + _paddle_ocr_device_args()
+        cmd = [_get_paddleocr_executable(), "ocr", "-i", image_path, "--save_path", save_path] + _paddle_ocr_device_args()
 
         logger.info(f"[PaddleOCR OCR] 执行命令: {' '.join(cmd)}")
 
@@ -957,7 +973,7 @@ def call_paddleocr_doc_parser_for_text(image_path: str, save_path: str) -> tuple
         
         # 构建paddleocr doc_parser命令（NPU 下需加 --device npu:0，否则走 CPU 易段错误）
         cmd = [
-            "paddleocr", "doc_parser", "-i", image_path,
+            _get_paddleocr_executable(), "doc_parser", "-i", image_path,
             "--precision", "fp32",
             "--use_doc_unwarping", "False",
             "--use_doc_orientation_classify", "True",
